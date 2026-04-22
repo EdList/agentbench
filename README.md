@@ -1,0 +1,130 @@
+# 🧪 AgentBench
+
+**Behavioral testing framework for AI agents.**
+
+Promptfoo tests prompts. We test behaviors.
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Why AgentBench?
+
+You've built an AI agent. It works... mostly. But then you change the prompt and:
+- 😱 It loops infinitely instead of completing
+- 🔓 It passes credit card numbers to a logging tool
+- 🔄 It calls the wrong API entirely
+- 💥 It crashes on edge cases you didn't think of
+
+**AgentBench catches these before your users do.**
+
+We're not another prompt testing tool. We test the **full behavioral trajectory** of your agent — every step, every tool call, every decision it makes.
+
+## Quick Start
+
+```bash
+pip install agentbench
+agentbench init my-agent-tests
+cd my-agent-tests
+# Edit test_agent.py with your agent details
+agentbench run
+```
+
+## Write Tests Like This
+
+```python
+from agentbench import AgentTest, expect
+from agentbench.adapters import RawAPIAdapter
+
+def my_agent(prompt, context=None):
+    # Your agent logic here
+    return {"response": "...", "steps": [...]}
+
+adapter = RawAPIAdapter(func=my_agent)
+
+class CheckoutAgentTest(AgentTest):
+    agent = "checkout-agent"
+    adapter = adapter
+
+    def test_completes_checkout(self):
+        result = self.run("Buy me a blue shirt, size M")
+        expect(result).to_complete_within(steps=10)
+        expect(result).to_use_tool("payment_api", times=1)
+        expect(result).to_not_expose("credit_card_number")
+
+    def test_handles_out_of_stock(self):
+        result = self.run("Buy me a unicorn onesie")
+        expect(result).to_not_use_tool("payment_api")
+        expect(result).to_respond_with("out of stock")
+
+    def test_retries_on_failure(self):
+        result = self.run(
+            "Book a flight to Tokyo",
+            inject_tool_failure="search_api",
+            fail_times=2,
+        )
+        expect(result).to_retry(max_attempts=3)
+```
+
+## Assertions
+
+| Assertion | What it checks |
+|-----------|---------------|
+| `to_complete()` | Agent finished without error |
+| `to_complete_within(steps=N)` | Agent completed in ≤ N steps |
+| `to_use_tool(name, times=N)` | Agent called a specific tool |
+| `to_not_use_tool(name)` | Agent never called a tool |
+| `to_not_expose(pattern)` | Agent never exposed sensitive data |
+| `to_respond_with(text)` | Final response contains text |
+| `to_retry(max_attempts=N)` | Agent retried within limits |
+| `to_follow_workflow([steps])` | Agent called tools in order |
+| `to_have_no_errors()` | No step had an error |
+
+## Framework Support
+
+| Framework | Adapter | Status |
+|-----------|---------|--------|
+| HTTP API | `RawAPIAdapter` | ✅ Ready |
+| Python function | `RawAPIAdapter(func=...)` | ✅ Ready |
+| LangChain | `LangChainAdapter` | ✅ Ready |
+| OpenAI Assistants | Coming soon | 🚧 |
+| CrewAI | Coming soon | 🚧 |
+| AutoGen | Coming soon | 🚧 |
+
+## Features
+
+- 🎯 **Behavioral assertions** — test WHAT the agent does, not just what it says
+- 📼 **Trajectory recording** — record golden runs, diff against regressions
+- 💉 **Failure injection** — simulate broken APIs, timeouts, rate limits
+- 🧑‍⚖️ **LLM-as-Judge** — use LLMs to evaluate subjective quality
+- 🔧 **CI/CD ready** — GitHub Actions, GitLab CI, Jenkins
+- 🐳 **Docker sandbox** — isolated agent execution with resource limits
+
+## Roadmap
+
+- [x] Core test engine + assertion API
+- [x] Raw API + LangChain adapters
+- [x] Trajectory recording & diffing
+- [x] CLI (run, record, diff, init)
+- [ ] LLM-as-Judge evaluation (in progress)
+- [ ] Adversarial test generation
+- [ ] Property-based testing
+- [ ] Multi-agent test harness
+- [ ] Web dashboard
+- [ ] MCP server
+
+## Contributing
+
+AgentBench is open source and we welcome contributions!
+
+```bash
+git clone https://github.com/agentbench/agentbench.git
+cd agentbench
+pip install -e ".[dev]"
+pytest
+```
+
+## License
+
+MIT
