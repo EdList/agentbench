@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import io
 import json
 import time
 from dataclasses import dataclass
@@ -67,17 +67,18 @@ class SandboxManager:
         """
         timeout = timeout or self._config.timeout_seconds
         start = time.time()
+        container = None
 
         try:
+            # Don't use remove=True — we need to read logs before the container
+            # is removed (Docker SDK race condition with remove=True + wait).
             container = self.client.containers.run(
                 image=self._config.image,
                 command=["python", "-c", agent_code],
                 environment=env or {},
                 mem_limit=self._config.memory_limit,
-                cpu_count=self._config.cpu_limit,
                 network_mode="bridge" if self._config.network_enabled else "none",
                 detach=True,
-                remove=True,
                 stdout=True,
                 stderr=True,
             )
@@ -88,13 +89,16 @@ class SandboxManager:
                 stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
                 stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
             except Exception:
-                container.kill()
+                try:
+                    container.kill()
+                except Exception:
+                    pass
                 return SandboxResult(
                     exit_code=-1,
                     stdout="",
                     stderr=f"Container timed out after {timeout}s",
                     duration_ms=(time.time() - start) * 1000,
-                    container_id=container.id,
+                    container_id=container.id if container else None,
                 )
 
             return SandboxResult(
@@ -112,6 +116,13 @@ class SandboxManager:
                 stderr=f"Sandbox error: {e}",
                 duration_ms=(time.time() - start) * 1000,
             )
+        finally:
+            # Clean up the container
+            if container is not None:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    pass
 
     def build_image(self, dockerfile: str | None = None) -> str:
         """Build the sandbox Docker image."""
@@ -119,8 +130,10 @@ class SandboxManager:
             dockerfile = self._default_dockerfile()
 
         try:
+            # docker.images.build() requires a file-like object for fileobj=
+            dockerfile_bytes = io.BytesIO(dockerfile.encode("utf-8"))
             image, logs = self.client.images.build(
-                fileobj=dockerfile,
+                fileobj=dockerfile_bytes,
                 tag=self._config.image,
                 rm=True,
             )
@@ -137,12 +150,10 @@ class SandboxManager:
         return """FROM python:3.11-slim
 
 RUN pip install --no-cache-dir \\
-    langchain langchain-core langchain-openai \\
-    openai anthropic \\
-    httpx pydantic
+    httpx pyyaml
 
 WORKDIR /agent
 COPY . .
 
-CMD ["python", "-m", "agentbench.sandbox_runner"]
+CMD ["python", "-c", "print('AgentBench sandbox ready')"]
 """

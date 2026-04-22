@@ -68,7 +68,7 @@ class RawAPIAdapter(AgentAdapter):
         context: dict[str, Any] | None = None,
     ) -> AgentTrajectory:
         if self._func:
-            return self._run_function(prompt, trajectory, context)
+            return self._run_function(prompt, trajectory, context, failure_injections, latency_injections)
         return self._run_http(
             prompt, trajectory, failure_injections, latency_injections,
             max_steps, timeout_seconds, context,
@@ -79,6 +79,8 @@ class RawAPIAdapter(AgentAdapter):
         prompt: str,
         trajectory: AgentTrajectory,
         context: dict[str, Any] | None,
+        failure_injections: list[ToolFailureInjection] | None = None,
+        latency_injections: list[ToolLatencyInjection] | None = None,
     ) -> AgentTrajectory:
         """Run agent via Python callable."""
         start = time.time()
@@ -89,7 +91,32 @@ class RawAPIAdapter(AgentAdapter):
             if isinstance(result, dict):
                 if "steps" in result:
                     for step_data in result["steps"]:
-                        self._record_step(trajectory, **step_data)
+                        # Apply failure injection to matching tool calls
+                        tool_name = step_data.get("tool_name", "")
+                        action = step_data.get("action", "")
+
+                        # Check failure injection
+                        if action == "tool_call" and failure_injections:
+                            fail_msg = self._should_inject_failure(tool_name, failure_injections)
+                            if fail_msg:
+                                step_data = {**step_data, "action": "error", "error": fail_msg}
+
+                        # Check latency injection
+                        if action == "tool_call" and latency_injections:
+                            for inj in latency_injections:
+                                if inj.tool_name == tool_name:
+                                    time.sleep(inj.delay_ms / 1000)
+
+                        self._record_step(trajectory, **self._safe_step_kwargs(step_data))
+
+                # If agent returned empty steps list but has a response, record it as a step
+                if "steps" in result and not result["steps"] and result.get("response"):
+                    self._record_step(
+                        trajectory,
+                        action="llm_response",
+                        response=result["response"],
+                        latency_ms=(time.time() - start) * 1000,
+                    )
                 elif "response" in result:
                     self._record_step(
                         trajectory,
@@ -162,7 +189,7 @@ class RawAPIAdapter(AgentAdapter):
             # Parse response into trajectory
             if "steps" in data:
                 for step_data in data["steps"]:
-                    self._record_step(trajectory, **step_data)
+                    self._record_step(trajectory, **self._safe_step_kwargs(step_data))
 
             trajectory.final_response = data.get("response", "")
             trajectory.completed = data.get("completed", True)

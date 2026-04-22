@@ -67,6 +67,28 @@ class CheckoutAgentTest(AgentTest):
         expect(result).to_retry(max_attempts=3)
 ```
 
+## CLI Commands
+
+```bash
+# Run all tests in a directory
+agentbench run ./tests
+
+# Run with verbose assertion output
+agentbench run ./tests -v
+
+# Filter tests by name pattern
+agentbench run ./tests -f "checkout"
+
+# Record a golden trajectory
+agentbench record ./tests "Book a flight to Paris" -o golden.json
+
+# Diff current run against golden
+agentbench diff golden.json
+
+# Save JSON report for CI
+agentbench run ./tests -r report.json
+```
+
 ## Assertions
 
 | Assertion | What it checks |
@@ -98,8 +120,8 @@ class CheckoutAgentTest(AgentTest):
 - 📼 **Trajectory recording** — record golden runs, diff against regressions
 - 💉 **Failure injection** — simulate broken APIs, timeouts, rate limits
 - 🧑‍⚖️ **LLM-as-Judge** — use LLMs to evaluate subjective quality
-- 🔧 **CI/CD ready** — GitHub Actions, GitLab CI, Jenkins
-- 🐳 **Docker sandbox** — isolated agent execution with resource limits
+- 🔧 **CI/CD ready** — JSON reports, exit codes, `--filter` for selective runs
+- 🐳 **Docker sandbox** — isolated agent execution with resource limits (optional)
 
 ## Roadmap
 
@@ -107,12 +129,14 @@ class CheckoutAgentTest(AgentTest):
 - [x] Raw API + LangChain adapters
 - [x] Trajectory recording & diffing
 - [x] CLI (run, record, diff, init)
-- [ ] LLM-as-Judge evaluation (in progress)
+- [x] Failure injection for function and HTTP modes
+- [x] Verbose mode with assertion details
+- [ ] OpenAI Assistants adapter
+- [ ] CrewAI / AutoGen adapters
 - [ ] Adversarial test generation
 - [ ] Property-based testing
 - [ ] Multi-agent test harness
 - [ ] Web dashboard
-- [ ] MCP server
 
 ## Contributing
 

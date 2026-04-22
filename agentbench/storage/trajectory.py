@@ -43,13 +43,14 @@ class DiffResult:
 
     def format_output(self) -> str:
         """Format diff result for console output."""
-        console = Console(record=True)
+        from io import StringIO
+        console = Console(file=StringIO(), force_terminal=True, width=100)
 
         console.print(f"\n[bold]Trajectory Diff: {self.golden_name} vs {self.current_name}[/bold]\n")
 
         if not self.step_diffs:
             console.print("[green]✓ Trajectories match perfectly[/green]")
-            return console.export_text()
+            return console.file.getvalue()
 
         # Summary
         summary_table = Table(title="Summary")
@@ -72,7 +73,7 @@ class DiffResult:
                 f"Step {diff.step_number} — {diff.field}: {diff.message}[/{style}]"
             )
 
-        return console.export_text()
+        return console.file.getvalue()
 
 
 class TrajectoryStore:

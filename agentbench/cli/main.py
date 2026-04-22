@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
+import json
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -15,6 +21,34 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _find_adapter_in_path(path: Path) -> Any:
+    """Discover an AgentTest class and extract its adapter from a Python file or directory."""
+    from agentbench.core.test import AgentTest
+
+    if path.is_file() and path.suffix == ".py":
+        files = [path]
+    elif path.is_dir():
+        files = sorted(path.rglob("test_*.py"))
+    else:
+        return None
+
+    for py_file in files:
+        try:
+            spec = importlib.util.spec_from_file_location(py_file.stem, py_file)
+            if not spec or not spec.loader:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            for _name, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, AgentTest) and obj is not AgentTest:
+                    instance = obj()
+                    if instance.adapter:
+                        return instance
+        except Exception:
+            continue
+    return None
 
 
 @app.command()
@@ -37,12 +71,24 @@ def run(
     # Discover and run
     console.print(Panel("🧪 AgentBench", subtitle="Testing what your agent actually does"))
 
-    runner = TestRunner(config={"verbose": verbose, "filter": filter})
+    runner = TestRunner(config={
+        "verbose": verbose,
+        "filter": filter,
+        "parallel": parallel,
+    })
     result = runner.run(Path(path))
 
     # Display results
     for suite_result in result.suite_results:
         console.print(suite_result.summary())
+
+        # Verbose: show assertion details for each test
+        if verbose:
+            for test_result in suite_result.results:
+                if test_result.assertions:
+                    for a in test_result.assertions:
+                        icon = "✓" if a.passed else "✗"
+                        console.print(f"    {icon} {a.message}")
 
     # Summary
     console.print(f"\n[bold]Total: {result.total_passed} passed, {result.total_failed} failed, "
@@ -51,7 +97,6 @@ def run(
 
     # Save report if requested
     if report:
-        import json
         report_data = {
             "total_tests": result.total_tests,
             "passed": result.total_passed,
@@ -68,6 +113,10 @@ def run(
                             "passed": t.passed,
                             "duration_ms": t.duration_ms,
                             "error": t.error,
+                            "assertions": [
+                                {"passed": a.passed, "message": a.message, "type": a.assertion_type}
+                                for a in t.assertions
+                            ],
                         }
                         for t in s.results
                     ],
@@ -84,33 +133,53 @@ def run(
 
 @app.command()
 def record(
-    agent: str = typer.Argument(..., help="Agent name or path"),
+    agent: str = typer.Argument(..., help="Agent name or path to test directory"),
     prompt: str = typer.Argument(..., help="Prompt to send to the agent"),
     output: str | None = typer.Option(None, "--output", "-o", help="Output file for trajectory"),
     name: str | None = typer.Option(None, "--name", "-n", help="Name for this recording"),
 ) -> None:
     """Record a golden agent trajectory for diffing later."""
-    import json
-    from datetime import datetime
-
     console.print(f"[bold]Recording trajectory[/bold] for agent '{agent}'")
     console.print(f"Prompt: {prompt!r}")
 
-    # TODO: Actually run the agent and record
-    # For now, create a placeholder
-    trajectory = {
-        "name": name or f"recording-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        "agent": agent,
-        "prompt": prompt,
-        "recorded_at": datetime.now().isoformat(),
-        "steps": [],
-    }
+    # Try to discover an adapter from the given path
+    agent_path = Path(agent)
+    test_instance = None
 
-    output_path = Path(output or f".agentbench/trajectories/{trajectory['name']}.json")
+    if agent_path.exists():
+        test_instance = _find_adapter_in_path(agent_path)
+    else:
+        # Try common locations
+        for candidate in [Path("."), Path("tests"), Path("test")]:
+            if candidate.exists():
+                test_instance = _find_adapter_in_path(candidate)
+                if test_instance:
+                    break
+
+    if test_instance is None:
+        console.print("[red]Could not find an agent adapter. Provide a path to your test directory.[/red]")
+        console.print("[dim]Usage: agentbench record ./tests \"Your prompt\"[/dim]")
+        raise typer.Exit(1)
+
+    # Run the agent
+    trajectory = test_instance.run(prompt)
+
+    # Build recording
+    recording_name = name or f"recording-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    trajectory_data = trajectory.to_dict()
+    trajectory_data["name"] = recording_name
+    trajectory_data["recorded_at"] = datetime.now().isoformat()
+    trajectory_data["prompt"] = prompt
+
+    # Save
+    output_path = Path(output or f".agentbench/trajectories/{recording_name}.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(trajectory, indent=2))
+    output_path.write_text(json.dumps(trajectory_data, indent=2, default=str))
 
     console.print(f"[green]✓[/green] Trajectory saved to {output_path}")
+    console.print(f"  Steps recorded: {trajectory.step_count}")
+    console.print(f"  Completed: {trajectory.completed}")
+    console.print(f"  Duration: {trajectory.total_latency_ms:.0f}ms")
 
 
 @app.command()
@@ -118,9 +187,10 @@ def diff(
     golden: str = typer.Argument(..., help="Path to golden trajectory JSON"),
     current: str | None = typer.Option(None, "--current", "-c",
                                         help="Path to current trajectory (runs agent if not provided)"),
+    agent_path: str = typer.Option(".", "--agent", "-a",
+                                    help="Path to agent test directory (for auto re-run)"),
 ) -> None:
     """Compare current agent run against a golden trajectory."""
-    import json
     from agentbench.storage.trajectory import TrajectoryDiff
 
     # Load golden
@@ -139,15 +209,31 @@ def diff(
             raise typer.Exit(1)
         current_data = json.loads(current_path.read_text())
     else:
-        # TODO: Re-run agent with same prompt
-        console.print("[yellow]Auto re-run not yet implemented. Provide --current path.[/yellow]")
-        raise typer.Exit(1)
+        # Auto re-run: find the adapter and execute with the same prompt
+        prompt = golden_data.get("prompt", golden_data.get("input_prompt", ""))
+        if not prompt:
+            console.print("[red]Golden trajectory has no recorded prompt. Provide --current path.[/red]")
+            raise typer.Exit(1)
+
+        test_instance = _find_adapter_in_path(Path(agent_path))
+        if test_instance is None:
+            console.print(f"[red]No agent adapter found in {agent_path}. Provide --current path.[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[dim]Re-running agent with prompt: {prompt!r}[/dim]")
+        trajectory = test_instance.run(prompt)
+        current_data = trajectory.to_dict()
+        current_data["name"] = f"current-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     # Diff
     differ = TrajectoryDiff()
     result = differ.compare(golden_data, current_data)
 
     console.print(result.format_output())
+
+    # Exit with error if critical differences found
+    if result.has_critical:
+        raise typer.Exit(1)
 
 
 @app.command()

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from agentbench.core.test import AgentTest, AgentTrajectory
-from agentbench.core.assertions import Expectation, AssertionResult
+from agentbench.core.assertions import Expectation, AssertionResult, _set_active_test, _clear_active_test
 
 
 @dataclass
@@ -124,10 +124,15 @@ class RunResult:
 
 
 class TestRunner:
-    """Discovers and executes agent test suites."""
+    """Discovers and runs agent test suites."""
+
+    # Prevent pytest from trying to collect this class as a test
+    __test__ = False
 
     def __init__(self, config: dict[str, Any] | None = None):
         self._config = config or {}
+        self._verbose = self._config.get("verbose", False)
+        self._filter = self._config.get("filter", None)
 
     def discover_suites(self, path: Path | str) -> list[type[AgentTest]]:
         """Discover AgentTest subclasses in the given path."""
@@ -163,16 +168,23 @@ class TestRunner:
         suite_result = TestSuiteResult(suite_name=suite_name)
         suite_start = time.time()
 
-        instance = suite_class()
-
-        # Find all test methods
+        # Discover test methods on a temporary instance
+        temp_instance = suite_class()
         test_methods = [
             name
-            for name, method in inspect.getmembers(instance, predicate=inspect.ismethod)
+            for name, method in inspect.getmembers(temp_instance, predicate=inspect.ismethod)
             if name.startswith("test_")
         ]
 
+        # Apply filter if specified
+        if self._filter:
+            import re
+            pattern = re.compile(self._filter, re.IGNORECASE)
+            test_methods = [m for m in test_methods if pattern.search(m)]
+
         for method_name in test_methods:
+            # Create a fresh instance for each test to prevent state leakage
+            instance = suite_class()
             result = self._run_test(instance, method_name, suite_name)
             suite_result.results.append(result)
 
@@ -184,17 +196,38 @@ class TestRunner:
         test_start = time.time()
         result = TestResult(test_name=method_name, suite_name=suite_name)
 
+        # Reset per-test expectations tracker
+        _active_expectations: list[Expectation] = []
+
         try:
+            # Tell expect() which test instance to register with
+            _set_active_test(instance)
+            instance._expectations = []
+
             method = getattr(instance, method_name)
             method()
 
-            # Collect assertions from any expectations that were created
+            # Collect trajectory
             if instance.trajectory:
                 result.trajectory = instance.trajectory
+                # Populate trajectory metadata
+                result.trajectory.test_name = f"{suite_name}.{method_name}"
+                result.trajectory.agent_name = instance.agent or suite_name
 
-            # If the test didn't raise, check if assertions were made
-            # Assertions are collected by the expect() chains
-            result.passed = True
+            # Collect assertion results from all Expectation objects created during this test.
+            # We gather them from the instance-level tracker (set by expect()).
+            _active_expectations = getattr(instance, '_expectations', [])
+            instance._expectations = []
+
+            for exp in _active_expectations:
+                result.assertions.extend(exp.results)
+
+            # Determine pass/fail from assertion results
+            if result.assertions:
+                result.passed = all(a.passed for a in result.assertions)
+            else:
+                # No assertions made — treat as passed (empty test)
+                result.passed = True
 
         except AssertionError as e:
             result.passed = False
@@ -203,6 +236,8 @@ class TestRunner:
             result.passed = False
             result.error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
+        finally:
+            _clear_active_test()
 
         result.duration_ms = (time.time() - test_start) * 1000
         return result

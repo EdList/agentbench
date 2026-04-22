@@ -82,6 +82,13 @@ class AgentAdapter(ABC):
         trajectory.steps.append(step)
         return step
 
+    @staticmethod
+    def _safe_step_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+        """Filter a step dict to only include keys accepted by _record_step."""
+        valid_keys = {"action", "tool_name", "tool_input", "tool_output",
+                      "reasoning", "response", "latency_ms", "error"}
+        return {k: v for k, v in data.items() if k in valid_keys}
+
     def _should_inject_failure(
         self,
         tool_name: str,

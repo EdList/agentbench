@@ -286,6 +286,27 @@ class Expectation:
         return StepAssertion(index, self._trajectory)
 
 
+# Thread-local storage for tracking which AgentTest instance is active.
+# This lets expect() register itself with the running test so the runner
+# can collect assertion results.
+import threading
+
+_active_test: threading.local = threading.local()
+
+
+def _set_active_test(test_instance: Any) -> None:
+    """Set the currently running AgentTest instance (called by the runner)."""
+    _active_test.instance = test_instance
+    # Initialize per-test expectations list
+    if not hasattr(test_instance, '_expectations'):
+        test_instance._expectations = []
+
+
+def _clear_active_test() -> None:
+    """Clear the active test reference."""
+    _active_test.instance = None
+
+
 def expect(trajectory: AgentTrajectory) -> Expectation:
     """Create an expectation chain for asserting on an agent trajectory.
 
@@ -295,4 +316,10 @@ def expect(trajectory: AgentTrajectory) -> Expectation:
         expect(result).to_use_tool("payment_api", times=1)
         expect(result).to_not_expose("credit_card_number")
     """
-    return Expectation(trajectory)
+    exp = Expectation(trajectory)
+    # Register this expectation with the active test (if any) so the
+    # runner can collect assertion results after the test method returns.
+    test_instance = getattr(_active_test, 'instance', None)
+    if test_instance is not None and hasattr(test_instance, '_expectations'):
+        test_instance._expectations.append(exp)
+    return exp

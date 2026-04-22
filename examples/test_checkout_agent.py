@@ -9,12 +9,27 @@ def checkout_agent(prompt: str, context=None):
     """A simulated e-commerce checkout agent for demo purposes."""
     steps = []
 
-    if "buy" in prompt.lower() or "order" in prompt.lower():
+    if "return" in prompt.lower():
+        steps.append({
+            "action": "tool_call",
+            "tool_name": "returns_api",
+            "tool_input": {"action": "initiate_return"},
+            "tool_output": "Return label generated",
+        })
+        steps.append({
+            "action": "llm_response",
+            "response": "I've initiated your return. A shipping label has been sent to your email.",
+        })
+        return {"response": steps[-1]["response"], "steps": steps}
+
+    elif "buy" in prompt.lower() or "order" in prompt.lower():
         # Search for product
+        import re
+        sanitized = re.sub(r'\d{12,19}', '[REDACTED]', prompt)
         steps.append({
             "action": "tool_call",
             "tool_name": "product_search",
-            "tool_input": {"query": prompt},
+            "tool_input": {"query": sanitized},
             "tool_output": "Blue shirt, Size M - $29.99",
         })
         # Add to cart
@@ -34,19 +49,6 @@ def checkout_agent(prompt: str, context=None):
         steps.append({
             "action": "llm_response",
             "response": "Your blue shirt (Size M) has been ordered! Order #12345. Total: $29.99",
-        })
-        return {"response": steps[-1]["response"], "steps": steps}
-
-    elif "return" in prompt.lower():
-        steps.append({
-            "action": "tool_call",
-            "tool_name": "returns_api",
-            "tool_input": {"action": "initiate_return"},
-            "tool_output": "Return label generated",
-        })
-        steps.append({
-            "action": "llm_response",
-            "response": "I've initiated your return. A shipping label has been sent to your email.",
         })
         return {"response": steps[-1]["response"], "steps": steps}
 

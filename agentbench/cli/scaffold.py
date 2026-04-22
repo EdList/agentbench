@@ -63,7 +63,7 @@ from agentbench.adapters.langchain import LangChainAdapter
 from agentbench.adapters import RawAPIAdapter
 
 def placeholder_agent(prompt: str, context=None) -> dict:
-    return {"response": f"LangChain response: {prompt}"}
+    return {"response": f"LangChain response: {prompt}", "steps": []}
 
 adapter = RawAPIAdapter(func=placeholder_agent)
 

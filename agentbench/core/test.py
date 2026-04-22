@@ -35,7 +35,7 @@ class AgentStep:
         parts = []
         if self.response:
             parts.append(self.response)
-        if self.tool_output:
+        if self.tool_output is not None:
             parts.append(str(self.tool_output))
         if self.tool_input:
             parts.append(str(self.tool_input))
@@ -47,7 +47,7 @@ class AgentStep:
             "action": self.action,
             "tool_name": self.tool_name,
             "tool_input": self.tool_input,
-            "tool_output": str(self.tool_output) if self.tool_output else None,
+            "tool_output": str(self.tool_output) if self.tool_output is not None else None,
             "reasoning": self.reasoning,
             "response": self.response,
             "latency_ms": self.latency_ms,
@@ -131,15 +131,20 @@ class AgentTest:
                 expect(result).to_use_tool("payment_api", times=1)
     """
 
+    # Prevent pytest from trying to collect this class as a test
+    __test__ = False
+
     # Subclasses override these
     agent: str = ""
     adapter: AgentAdapter | None = None
     config: AgentBenchConfig | None = None
 
-    # Internal state
-    _trajectory: AgentTrajectory | None = None
-    _failure_injections: list[ToolFailureInjection] = []
-    _latency_injections: list[ToolLatencyInjection] = []
+    def __init__(self):
+        # Per-instance state (not shared between tests)
+        self._trajectory: AgentTrajectory | None = None
+        self._failure_injections: list[ToolFailureInjection] = []
+        self._latency_injections: list[ToolLatencyInjection] = []
+        self._expectations: list = []  # populated by expect()
 
     def run(
         self,
@@ -201,13 +206,15 @@ class AgentTest:
         # Execute through adapter
         start_time = time.time()
         try:
+            effective_max_steps = max_steps if max_steps is not None else self._get_config().max_steps
+            effective_timeout = timeout_seconds if timeout_seconds is not None else self._get_config().timeout_seconds
             self._trajectory = self.adapter.run(
                 prompt=prompt,
                 trajectory=self._trajectory,
                 failure_injections=self._failure_injections,
                 latency_injections=self._latency_injections,
-                max_steps=max_steps or self._get_config().max_steps,
-                timeout_seconds=timeout_seconds or self._get_config().timeout_seconds,
+                max_steps=effective_max_steps,
+                timeout_seconds=effective_timeout,
                 context=context,
             )
         except Exception as e:
