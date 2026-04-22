@@ -42,12 +42,17 @@ class AgentStep:
         return " ".join(parts)
 
     def to_dict(self) -> dict[str, Any]:
+        import json
+        # Preserve complex types as JSON strings for clean serialization
+        tool_output = self.tool_output
+        if tool_output is not None and not isinstance(tool_output, (str, int, float, bool)):
+            tool_output = json.dumps(tool_output, default=str)
         return {
             "step_number": self.step_number,
             "action": self.action,
             "tool_name": self.tool_name,
             "tool_input": self.tool_input,
-            "tool_output": str(self.tool_output) if self.tool_output is not None else None,
+            "tool_output": tool_output,
             "reasoning": self.reasoning,
             "response": self.response,
             "latency_ms": self.latency_ms,

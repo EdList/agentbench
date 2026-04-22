@@ -83,15 +83,29 @@ class TrajectoryStore:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        """Sanitize a trajectory name to prevent path traversal."""
+        import re
+        clean = re.sub(r'[^\w\-.]', '_', name)
+        if not clean or clean == '_':
+            raise ValueError(f"Invalid trajectory name: {name!r}")
+        return clean
+
     def save(self, trajectory_data: dict[str, Any], name: str | None = None) -> Path:
         """Save a trajectory to disk."""
         name = name or trajectory_data.get("name", f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+        name = self._sanitize_name(name)
         path = self._base_dir / f"{name}.json"
+        # Verify path hasn't escaped base_dir
+        if not path.resolve().is_relative_to(self._base_dir.resolve()):
+            raise ValueError(f"Trajectory name escapes base directory: {name!r}")
         path.write_text(json.dumps(trajectory_data, indent=2, default=str))
         return path
 
     def load(self, name: str) -> dict[str, Any]:
         """Load a trajectory from disk."""
+        name = self._sanitize_name(name)
         path = self._base_dir / f"{name}.json"
         if not path.exists():
             raise FileNotFoundError(f"Trajectory not found: {path}")
@@ -103,6 +117,7 @@ class TrajectoryStore:
 
     def delete(self, name: str) -> None:
         """Delete a saved trajectory."""
+        name = self._sanitize_name(name)
         path = self._base_dir / f"{name}.json"
         if path.exists():
             path.unlink()

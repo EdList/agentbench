@@ -117,7 +117,7 @@ class RawAPIAdapter(AgentAdapter):
                         response=result["response"],
                         latency_ms=(time.time() - start) * 1000,
                     )
-                elif "response" in result:
+                elif "response" in result and "steps" not in result:
                     self._record_step(
                         trajectory,
                         action="llm_response",

@@ -69,6 +69,8 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
         self._current_tool_input = kwargs.get("tool_input", None) or (
             {"input": input_str} if input_str else {}
         )
+        # Track if this tool was failure-injected (skip on_tool_end)
+        self._injected_failure = False
 
         # Apply latency injection
         for inj in self._latency_injections:
@@ -76,6 +78,11 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
                 time.sleep(inj.delay_ms / 1000)
 
     def on_tool_end(self, output: str, **kwargs: Any) -> None:
+        # Skip if failure was injected — error step already recorded in on_agent_action
+        if getattr(self, '_injected_failure', False):
+            self._injected_failure = False
+            return
+
         latency = (time.time() - self._step_start) * 1000 if self._step_start else 0
         tool_name = getattr(self, '_current_tool_name', None) or kwargs.get("serialized", {}).get("name", "unknown")
         tool_input = getattr(self, '_current_tool_input', None)
@@ -121,6 +128,7 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
                 break
 
         if error_msg:
+            self._injected_failure = True
             step = AgentStep(
                 step_number=len(self._trajectory.steps),
                 action="error",

@@ -281,7 +281,7 @@ class Expectation:
 
     def step(self, index: int) -> StepAssertion:
         """Get assertions for a specific step."""
-        if index >= len(self._trajectory.steps):
+        if index < 0 or index >= len(self._trajectory.steps):
             raise IndexError(f"Step {index} out of range (trajectory has {self._trajectory.step_count} steps)")
         return StepAssertion(index, self._trajectory)
 

@@ -56,7 +56,7 @@ def run(
     path: str = typer.Argument(".", help="Path to test suite or directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config YAML"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show step-by-step output"),
-    filter: str | None = typer.Option(None, "--filter", "-f", help="Filter tests by name pattern"),
+    filter_pattern: str | None = typer.Option(None, "--filter", "-f", help="Filter tests by name pattern"),
     parallel: int = typer.Option(1, "--parallel", "-p", help="Number of parallel workers"),
     report: str | None = typer.Option(None, "--report", "-r", help="Output file for report (JSON)"),
 ) -> None:
@@ -73,10 +73,20 @@ def run(
 
     runner = TestRunner(config={
         "verbose": verbose,
-        "filter": filter,
+        "filter": filter_pattern,
         "parallel": parallel,
+        "max_steps": bench_config.max_steps,
+        "timeout_seconds": bench_config.timeout_seconds,
+        "max_retries": bench_config.max_retries,
+        "default_adapter": bench_config.default_adapter,
+        "bench_config": bench_config,
     })
     result = runner.run(Path(path))
+
+    # Warn if no tests found
+    if result.total_tests == 0:
+        console.print("[yellow]⚠ No tests found.[/yellow] Check your path and test file names (test_*.py).")
+        raise typer.Exit(1)
 
     # Display results
     for suite_result in result.suite_results:

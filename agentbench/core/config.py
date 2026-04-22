@@ -77,10 +77,23 @@ class AgentBenchConfig:
         config = cls()
 
         # Top-level fields
-        for key in ["max_steps", "timeout_seconds", "max_retries", "parallel_workers",
-                     "default_agent", "default_adapter"]:
+        expected_types: dict[str, type | tuple[type, ...]] = {
+            "max_steps": int,
+            "timeout_seconds": (int, float),
+            "max_retries": int,
+            "parallel_workers": int,
+            "default_agent": str,
+            "default_adapter": str,
+        }
+        for key in expected_types:
             if key in data:
-                setattr(config, key, data[key])
+                value = data[key]
+                if not isinstance(value, expected_types[key]):
+                    raise TypeError(
+                        f"Config '{key}' expected {expected_types[key].__name__ if isinstance(expected_types[key], type) else 'number'}, "
+                        f"got {type(value).__name__}"
+                    )
+                setattr(config, key, value)
 
         # Nested configs
         if "sandbox" in data:

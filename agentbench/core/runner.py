@@ -159,7 +159,8 @@ class TestRunner:
                     if issubclass(obj, AgentTest) and obj is not AgentTest:
                         suites.append(obj)
         except Exception as e:
-            print(f"Warning: Could not load {path}: {e}")
+            import logging
+            logging.warning("Could not load %s: %s", path, e)
         return suites
 
     def run_suite(self, suite_class: type[AgentTest]) -> TestSuiteResult:
@@ -203,6 +204,11 @@ class TestRunner:
             # Tell expect() which test instance to register with
             _set_active_test(instance)
             instance._expectations = []
+
+            # Pass runner-level config to the test instance
+            bench_config = self._config.get("bench_config")
+            if bench_config and not instance.config:
+                instance.config = bench_config
 
             method = getattr(instance, method_name)
             method()

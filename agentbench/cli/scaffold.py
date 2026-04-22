@@ -102,6 +102,7 @@ def scaffold_project(output_path: Path, name: str, framework: str) -> None:
 
     # Get template for framework (fallback to raw_api)
     template = TEMPLATES.get(framework, TEMPLATES["raw_api"])
+    effective_framework = framework if framework in TEMPLATES else "raw_api"
 
     # Write template files
     for filename, content in template.items():
@@ -113,7 +114,7 @@ def scaffold_project(output_path: Path, name: str, framework: str) -> None:
 
 max_steps: 50
 timeout_seconds: 120
-default_adapter: {framework}
+default_adapter: {effective_framework}
 
 sandbox:
   enabled: false  # Enable for Docker-based isolation
