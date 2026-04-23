@@ -4,6 +4,7 @@
 
 Promptfoo tests prompts. We test behaviors.
 
+[![Tests](https://img.shields.io/github/actions/workflow/status/EdList/agentbench/test.yml?branch=main&label=tests&logo=github)](https://github.com/EdList/agentbench/actions/workflows/test.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -141,6 +142,10 @@ agentbench run ./tests -r report.json
 - [x] `agentbench list` command
 - [x] CrewAI / AutoGen / LangGraph adapters
 - [x] LLM-as-Judge: confidence scoring, caching, batch eval, custom providers
+- [x] GitHub Action CI/CD integration
+- [x] GitLab CI template
+- [x] Cloud API scaffold (FastAPI + SQLAlchemy + JWT auth)
+- [x] Complete documentation (6 guides)
 - [ ] Adversarial test generation
 - [ ] Property-based testing
 - [ ] Multi-agent test harness
@@ -151,11 +156,35 @@ agentbench run ./tests -r report.json
 AgentBench is open source and we welcome contributions!
 
 ```bash
-git clone https://github.com/agentbench/agentbench.git
+git clone https://github.com/EdList/agentbench.git
 cd agentbench
 pip install -e ".[dev]"
 pytest
 ```
+
+See [CONTRIBUTING.md](docs/contributing.md) for detailed guidelines.
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/getting-started.md) | 5-minute quickstart |
+| [API Reference](docs/api-reference.md) | Complete public API docs |
+| [Adapters](docs/adapters.md) | Framework-specific guides |
+| [Examples](docs/examples.md) | 5+ real-world test suites |
+| [Architecture](docs/architecture.md) | How the engine works |
+| [Contributing](docs/contributing.md) | Dev setup & PR process |
+
+## Cloud API
+
+AgentBench includes an optional cloud API server:
+
+```bash
+pip install agentbench[server]
+agentbench serve --port 8000
+```
+
+See `agentbench/server/` for the FastAPI scaffold with JWT auth, test run management, and trajectory storage.
 
 ## License
 

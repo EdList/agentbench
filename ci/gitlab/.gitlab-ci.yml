@@ -1,0 +1,182 @@
+# =============================================================================
+# AgentBench — GitLab CI/CD Template
+# =============================================================================
+#
+# Drop this file into your repository (or include it with `include:`) to run
+# AgentBench behavioral tests in GitLab CI/CD.
+#
+# Usage — copy to your project root as .gitlab-ci.yml or include remotely:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/EdList/agentbench/main/ci/gitlab/.gitlab-ci.yml
+#
+# Variables (set in Settings → CI/CD → Variables or override inline):
+#   AGENTBENCH_CONFIG   — path to agentbench.yaml (default: "" — no config)
+#   AGENTBENCH_PATH     — test directory / file (default: ".")
+#   AGENTBENCH_FAIL_ON  — critical | warning | any (default: "any")
+#   AGENTBENCH_REPORT   — "true" to generate HTML report (default: "true")
+#   PYTHON_VERSION      — Python version for the venv (default: "3.11")
+#
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Global defaults
+# ---------------------------------------------------------------------------
+variables:
+  AGENTBENCH_CONFIG: ""
+  AGENTBENCH_PATH: "."
+  AGENTBENCH_FAIL_ON: "any"
+  AGENTBENCH_REPORT: "true"
+  PYTHON_VERSION: "3.11"
+  # Pip cache directory — speeds up subsequent runs
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+# Cache pip downloads between pipelines
+cache:
+  key:
+    files:
+      - pyproject.toml
+      - requirements.txt
+  paths:
+    - .cache/pip
+
+# Run on standard merge-request and branch events
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ---------------------------------------------------------------------------
+# Stages
+# ---------------------------------------------------------------------------
+stages:
+  - test
+  - report
+
+# =============================================================================
+# Stage: test — run AgentBench behavioral tests
+# =============================================================================
+agentbench-test:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+
+  before_script:
+    # Install agentbench — editable if we're in the agentbench repo,
+    # otherwise from PyPI.
+    - |
+      if [ -f pyproject.toml ] && grep -q 'name = "agentbench"' pyproject.toml 2>/dev/null; then
+        echo "Detected AgentBench source checkout — installing in editable mode"
+        pip install -e ".[dev]"
+      else
+        echo "Installing AgentBench from PyPI"
+        pip install agentbench
+      fi
+
+  script:
+    # Build the agentbench run command
+    - |
+      CMD="agentbench run '${AGENTBENCH_PATH}'"
+      if [ -n "${AGENTBENCH_CONFIG}" ]; then
+        CMD="${CMD} --config '${AGENTBENCH_CONFIG}'"
+      fi
+      # Always generate a JSON report so we can inspect results
+      CMD="${CMD} --report agentbench-report.json"
+      echo "Running: ${CMD}"
+      eval "${CMD}" || true   # capture exit code below
+
+    # Parse and display summary
+    - |
+      if [ -f agentbench-report.json ]; then
+        PASSED=$(python3 -c "import json; d=json.load(open('agentbench-report.json')); print(d.get('passed',0))")
+        FAILED=$(python3 -c "import json; d=json.load(open('agentbench-report.json')); print(d.get('failed',0))")
+        TOTAL=$(python3 -c  "import json; d=json.load(open('agentbench-report.json')); print(d.get('total_tests',0))")
+        echo ""
+        echo "========================================"
+        echo "  AgentBench Results"
+        echo "========================================"
+        echo "  Passed : ${PASSED}"
+        echo "  Failed : ${FAILED}"
+        echo "  Total  : ${TOTAL}"
+        echo "========================================"
+      else
+        echo "⚠ No report file produced — tests may have crashed."
+        FAILED=1
+      fi
+
+    # Generate HTML report (if enabled)
+    - |
+      if [ "${AGENTBENCH_REPORT}" = "true" ] && [ -f agentbench-report.json ]; then
+        agentbench report agentbench-report.json --output agentbench-report.html
+        echo "HTML report generated: agentbench-report.html"
+      fi
+
+    # Apply fail-on threshold
+    - |
+      if [ "${AGENTBENCH_FAIL_ON}" = "any" ]; then
+        if [ "${FAILED}" != "0" ]; then
+          echo "❌ ${FAILED} test(s) failed (fail-on=any)"
+          exit 1
+        fi
+      elif [ "${AGENTBENCH_FAIL_ON}" = "critical" ]; then
+        CRITICAL=$(python3 -c "
+        import json
+        try:
+            d = json.load(open('agentbench-report.json'))
+            count = 0
+            for suite in d.get('suites', []):
+                for test in suite.get('tests', []):
+                    if not test.get('passed', True):
+                        for a in test.get('assertions', []):
+                            if a.get('severity','critical')=='critical' and not a.get('passed',True):
+                                count += 1
+                                break
+            print(count)
+        except Exception:
+            print(d.get('failed', 0))
+        " 2>/dev/null || echo "${FAILED}")
+        if [ "${CRITICAL}" != "0" ]; then
+          echo "❌ ${CRITICAL} critical failure(s) (fail-on=critical)"
+          exit 1
+        fi
+      elif [ "${AGENTBENCH_FAIL_ON}" = "warning" ]; then
+        if [ "${FAILED}" != "0" ]; then
+          echo "❌ ${FAILED} failure(s) include warnings (fail-on=warning)"
+          exit 1
+        fi
+      fi
+      echo "✅ All checks passed for fail-on=${AGENTBENCH_FAIL_ON}"
+
+  # Publish the JSON + HTML reports as downloadable artifacts
+  artifacts:
+    when: always
+    paths:
+      - agentbench-report.json
+      - agentbench-report.html
+    expire_in: 30 days
+    reports:
+      # GitLab can display JUnit reports natively — a future enhancement
+      # could convert the agentbench JSON to JUnit XML here.
+
+  # Runner tags — adjust to match your GitLab runners
+  tags:
+    - docker
+
+# =============================================================================
+# Stage: report — publish HTML report as a GitLab Pages site (optional)
+# =============================================================================
+# Uncomment the job below if you want the HTML report published to
+# GitLab Pages after every successful run on the default branch.
+#
+# pages:
+#   stage: report
+#   image: alpine:latest
+#   dependencies:
+#     - agentbench-test
+#   script:
+#     - mkdir -p public
+#     - cp agentbench-report.html public/index.html
+#   artifacts:
+#     paths:
+#       - public
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

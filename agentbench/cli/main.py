@@ -418,5 +418,33 @@ def list_tests(
     console.print(f"\n[bold]Summary:[/bold] {total_suites} suite(s), {total_methods} test method(s)")
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
+    port: int = typer.Option(8000, "--port", "-p", help="Bind port"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev only)"),
+) -> None:
+    """Start the AgentBench Cloud API server."""
+    try:
+        import uvicorn  # noqa: F401
+    except ImportError:
+        console.print("[red]Server dependencies not installed. Install with: pip install agentbench[server][/red]")
+        raise typer.Exit(1)
+
+    from agentbench.server.models import create_tables
+
+    console.print(Panel("🌐 AgentBench API Server", subtitle=f"http://{host}:{port}"))
+    create_tables()
+    console.print("[dim]Database tables ready.[/dim]")
+
+    import uvicorn as _uvicorn
+    _uvicorn.run(
+        "agentbench.server.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 if __name__ == "__main__":
     app()

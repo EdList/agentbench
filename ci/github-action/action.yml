@@ -1,0 +1,269 @@
+# =============================================================================
+# AgentBench GitHub Action — Run behavioral tests for AI agents in CI
+# =============================================================================
+#
+# This is a reusable composite action that:
+#   1. Sets up the requested Python version
+#   2. Installs agentbench (from PyPI or a local checkout)
+#   3. Runs agentbench test suites
+#   4. Optionally generates an HTML report and uploads it as an artifact
+#   5. Fails the workflow when test results match the configured severity
+#
+# Usage in any workflow:
+#
+#   steps:
+#     - uses: EdList/agentbench/ci/github-action@main
+#       with:
+#         config: agentbench.yaml          # optional path to config YAML
+#         fail-on: critical                # critical | warning | any
+#         report: true                     # generate + upload HTML report
+#         python-version: "3.11"           # Python version for the venv
+#         path: tests                      # test directory or file
+#
+# =============================================================================
+
+name: "AgentBench Test Runner"
+description: "Run AgentBench behavioral tests for AI agents"
+author: "AgentBench Team"
+
+# ---------------------------------------------------------------------------
+# Inputs — configurable via workflow `with:` block
+# ---------------------------------------------------------------------------
+inputs:
+  # Path to an agentbench.yaml config file (optional)
+  config:
+    description: >-
+      Path to an agentbench YAML config file.
+      Relative paths are resolved against the workspace root.
+    required: false
+    default: ""
+
+  # Minimum severity that should cause a workflow failure
+  #   critical  — only fail on critical test failures
+  #   warning   — fail on warnings *and* critical failures
+  #   any       — fail on any test failure (default, safest option)
+  fail-on:
+    description: >-
+      Failure severity threshold: critical, warning, or any.
+      'any' (default) fails on every test failure.
+    required: false
+    default: "any"
+
+  # Whether to generate an HTML report and upload it as a GitHub artifact
+  report:
+    description: >-
+      Set to 'true' to generate an HTML report from the test results and
+      upload it as a downloadable workflow artifact named 'agentbench-report'.
+    required: false
+    default: "false"
+
+  # Python version used by setup-python
+  python-version:
+    description: "Python version to use (must be >= 3.11)."
+    required: false
+    default: "3.11"
+
+  # Test path — file or directory passed to `agentbench run`
+  path:
+    description: >-
+      Path to the test suite or directory to run.
+      Defaults to the workspace root ('.').
+    required: false
+    default: "."
+
+# ---------------------------------------------------------------------------
+# Outputs (available to downstream steps)
+# ---------------------------------------------------------------------------
+outputs:
+  passed:
+    description: "Number of tests that passed"
+    value: ${{ steps.agentbench-run.outputs.passed }}
+  failed:
+    description: "Number of tests that failed"
+    value: ${{ steps.agentbench-run.outputs.failed }}
+  total:
+    description: "Total number of tests executed"
+    value: ${{ steps.agentbench-run.outputs.total }}
+  report-file:
+    description: "Path to the generated HTML report (empty if report=false)"
+    value: ${{ steps.generate-report.outputs.report-file }}
+
+# ---------------------------------------------------------------------------
+# Runs — composite action steps
+# ---------------------------------------------------------------------------
+runs:
+  using: "composite"
+
+  steps:
+    # ------------------------------------------------------------------
+    # Step 1: Set up Python
+    # ------------------------------------------------------------------
+    - name: "Set up Python ${{ inputs.python-version }}"
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # ------------------------------------------------------------------
+    # Step 2: Install agentbench
+    # If the workspace itself contains agentbench source (i.e. this repo),
+    # install in editable mode so local changes are tested. Otherwise,
+    # install from PyPI for use in external repositories.
+    # ------------------------------------------------------------------
+    - name: "Install AgentBench"
+      shell: bash
+      run: |
+        echo "::group::Installing AgentBench"
+        # Check if we're running inside the agentbench repo itself
+        if [ -f "${{ github.workspace }}/pyproject.toml" ] && \
+           grep -q 'name = "agentbench"' "${{ github.workspace }}/pyproject.toml" 2>/dev/null; then
+          echo "Detected AgentBench source checkout — installing in editable mode"
+          pip install -e "${{ github.workspace }}"
+        else
+          echo "Installing AgentBench from PyPI"
+          pip install agentbench
+        fi
+        echo "::endgroup::"
+
+    # ------------------------------------------------------------------
+    # Step 3: Run agentbench tests
+    #
+    # We capture summary counts into GITHUB_OUTPUT so downstream steps
+    # (and the action's own outputs) can reference them.
+    # ------------------------------------------------------------------
+    - name: "Run AgentBench tests"
+      id: agentbench-run
+      shell: bash
+      run: |
+        echo "::group::Running tests"
+
+        # Build the command
+        CMD="agentbench run '${{ inputs.path }}'"
+
+        # Append optional config flag
+        if [ -n "${{ inputs.config }}" ]; then
+          CMD="$CMD --config '${{ inputs.config }}'"
+        fi
+
+        # Always produce a JSON report so we can inspect results
+        JSON_REPORT="agentbench-report.json"
+        CMD="$CMD --report $JSON_REPORT"
+
+        echo "Command: $CMD"
+
+        # Run — capture exit code so we can apply fail-on logic
+        set +e
+        eval "$CMD"
+        EXIT_CODE=$?
+        set -e
+
+        echo "::endgroup::"
+
+        # Parse results from the JSON report
+        if [ -f "$JSON_REPORT" ]; then
+          PASSED=$(python3 -c "import json; d=json.load(open('$JSON_REPORT')); print(d.get('passed', 0))")
+          FAILED=$(python3 -c "import json; d=json.load(open('$JSON_REPORT')); print(d.get('failed', 0))")
+          TOTAL=$(python3 -c "import json; d=json.load(open('$JSON_REPORT')); print(d.get('total_tests', 0))")
+
+          echo "passed=$PASSED"  >> "$GITHUB_OUTPUT"
+          echo "failed=$FAILED"  >> "$GITHUB_OUTPUT"
+          echo "total=$TOTAL"    >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "## :test_tube: AgentBench Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Count |"               >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|"               >> "$GITHUB_STEP_SUMMARY"
+          echo "| Passed | $PASSED |"             >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failed | $FAILED |"             >> "$GITHUB_STEP_SUMMARY"
+          echo "| Total  | $TOTAL  |"             >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "::warning::No JSON report was produced — tests may have crashed before completion."
+          echo "passed=0"  >> "$GITHUB_OUTPUT"
+          echo "failed=0"  >> "$GITHUB_OUTPUT"
+          echo "total=0"   >> "$GITHUB_OUTPUT"
+        fi
+
+        # Apply fail-on threshold
+        # For now agentbench returns exit-code 1 on *any* failure.
+        # We reconcile with the user's severity preference here.
+        FAIL_ON="${{ inputs.fail-on }}"
+        echo "Fail-on threshold: $FAIL_ON"
+
+        if [ "$FAIL_ON" = "any" ]; then
+          # Fail on any test failure (strictest — the default)
+          if [ "$FAILED" != "0" ]; then
+            echo "::error::$FAILED test(s) failed (fail-on=any)"
+            exit 1
+          fi
+        elif [ "$FAIL_ON" = "critical" ]; then
+          # Only fail on critical failures.
+          # AgentBench JSON reports include a severity field per test.
+          # We inspect the report for critical-severity failures.
+          CRITICAL=$(python3 -c "
+          import json, sys
+          try:
+              d = json.load(open('$JSON_REPORT'))
+              count = 0
+              for suite in d.get('suites', []):
+                  for test in suite.get('tests', []):
+                      if not test.get('passed', True):
+                          for assertion in test.get('assertions', []):
+                              if assertion.get('severity', 'critical') == 'critical' and not assertion.get('passed', True):
+                                  count += 1
+                                  break
+              print(count)
+          except Exception:
+              # If we can't parse severity, treat every failure as critical
+              print(d.get('failed', 0))
+          " 2>/dev/null || echo "$FAILED")
+          if [ "$CRITICAL" != "0" ]; then
+            echo "::error::$CRITICAL critical test failure(s) (fail-on=critical)"
+            exit 1
+          fi
+        elif [ "$FAIL_ON" = "warning" ]; then
+          # Fail on warnings or worse — effectively any non-passing test
+          if [ "$FAILED" != "0" ]; then
+            echo "::error::$FAILED test failure(s) include warnings (fail-on=warning)"
+            exit 1
+          fi
+        else
+          echo "::warning::Unknown fail-on value '$FAIL_ON' — defaulting to 'any' behavior"
+          if [ "$FAILED" != "0" ]; then
+            exit 1
+          fi
+        fi
+
+        echo "All checks passed for fail-on=$FAIL_ON"
+
+    # ------------------------------------------------------------------
+    # Step 4 (conditional): Generate HTML report
+    # ------------------------------------------------------------------
+    - name: "Generate HTML report"
+      id: generate-report
+      if: inputs.report == 'true'
+      shell: bash
+      run: |
+        echo "::group::Generating HTML report"
+        JSON_REPORT="agentbench-report.json"
+        HTML_REPORT="agentbench-report.html"
+
+        if [ -f "$JSON_REPORT" ]; then
+          agentbench report "$JSON_REPORT" --output "$HTML_REPORT"
+          echo "report-file=$HTML_REPORT" >> "$GITHUB_OUTPUT"
+          echo "HTML report written to $HTML_REPORT"
+        else
+          echo "::warning::No JSON report found — skipping HTML generation"
+          echo "report-file=" >> "$GITHUB_OUTPUT"
+        fi
+        echo "::endgroup::"
+
+    # ------------------------------------------------------------------
+    # Step 5 (conditional): Upload HTML report as a workflow artifact
+    # ------------------------------------------------------------------
+    - name: "Upload report artifact"
+      if: inputs.report == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: agentbench-report
+        path: agentbench-report.html
+        retention-days: 30
+        if-no-files-found: warn

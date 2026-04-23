@@ -1,0 +1,119 @@
+# =============================================================================
+# AgentBench — Example GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow runs AgentBench's own test suite on every push and pull
+# request. It uses the reusable action defined at ci/github-action/action.yml.
+#
+# To use AgentBench in YOUR project, copy this workflow and adjust the
+# `with:` inputs to match your setup. See ci/github-action/action.yml for
+# full documentation of all available inputs.
+#
+# =============================================================================
+
+name: AgentBench Tests
+
+# ---------------------------------------------------------------------------
+# Trigger on pushes to main and on all pull requests
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch / PR
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# Permissions — least-privilege by default
+# ---------------------------------------------------------------------------
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================================
+  # Job 1: Run the AgentBench test suite via the reusable action
+  # =========================================================================
+  test:
+    name: "Run behavioral tests"
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository (needed because we install in editable mode)
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      # Use the local reusable action — this handles Python setup, install,
+      # running tests, generating the report, and uploading the artifact.
+      - name: "Run AgentBench tests"
+        id: agentbench
+        uses: ./ci/github-action
+        with:
+          # Path to tests directory
+          path: "tests"
+          # Config file (uncomment if you have an agentbench.yaml)
+          # config: "agentbench.yaml"
+          # Fail on any test failure (strictest mode)
+          fail-on: "any"
+          # Generate HTML report and upload as artifact
+          report: "true"
+          # Python version
+          python-version: "3.11"
+
+      # Print summary outputs (for debugging / visibility in logs)
+      - name: "Print results"
+        if: always()
+        run: |
+          echo "Passed : ${{ steps.agentbench.outputs.passed }}"
+          echo "Failed : ${{ steps.agentbench.outputs.failed }}"
+          echo "Total  : ${{ steps.agentbench.outputs.total }}"
+          echo "Report : ${{ steps.agentbench.outputs.report-file }}"
+
+  # =========================================================================
+  # Job 2: Run the project's own pytest suite (unit / integration tests)
+  # =========================================================================
+  pytest:
+    name: "Run pytest (internal tests)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "Install dependencies"
+        run: |
+          pip install -e ".[dev]"
+
+      - name: "Run pytest"
+        run: |
+          pytest --tb=short -q
+
+  # =========================================================================
+  # Job 3: Lint check (ruff)
+  # =========================================================================
+  lint:
+    name: "Lint (ruff)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "Install ruff"
+        run: pip install ruff
+
+      - name: "Run ruff check"
+        run: ruff check .
