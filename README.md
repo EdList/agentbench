@@ -110,7 +110,7 @@ agentbench run ./tests -r report.json
 | HTTP API | `RawAPIAdapter` | ✅ Ready |
 | Python function | `RawAPIAdapter(func=...)` | ✅ Ready |
 | LangChain | `LangChainAdapter` | ✅ Ready |
-| OpenAI Assistants | Coming soon | 🚧 |
+| OpenAI Assistants | `OpenAIAdapter` | ✅ Ready |
 | CrewAI | Coming soon | 🚧 |
 | AutoGen | Coming soon | 🚧 |
 
@@ -131,7 +131,7 @@ agentbench run ./tests -r report.json
 - [x] CLI (run, record, diff, init)
 - [x] Failure injection for function and HTTP modes
 - [x] Verbose mode with assertion details
-- [ ] OpenAI Assistants adapter
+- [x] OpenAI Assistants adapter
 - [ ] CrewAI / AutoGen adapters
 - [ ] Adversarial test generation
 - [ ] Property-based testing
