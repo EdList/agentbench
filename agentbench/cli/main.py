@@ -263,5 +263,160 @@ def init(
     console.print(f"  agentbench run")
 
 
+@app.command()
+def watch(
+    path: str = typer.Argument(".", help="Path to test suite or directory"),
+    filter_pattern: str | None = typer.Option(None, "--filter", "-f", help="Filter tests by name pattern"),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config YAML"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show step-by-step output"),
+) -> None:
+    """Watch test files for changes and re-run automatically."""
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
+    except ImportError:
+        console.print("[red]watchdog is required for watch mode. Install with: pip install agentbench[watch][/red]")
+        raise typer.Exit(1)
+
+    from agentbench.core.runner import TestRunner
+    from agentbench.core.config import AgentBenchConfig
+
+    target = Path(path).resolve()
+    if not target.exists():
+        console.print(f"[red]Path does not exist: {path}[/red]")
+        raise typer.Exit(1)
+
+    bench_config = AgentBenchConfig.from_yaml(config) if config else AgentBenchConfig()
+
+    runner = TestRunner(config={
+        "verbose": verbose,
+        "filter": filter_pattern,
+        "bench_config": bench_config,
+    })
+
+    def _run_tests() -> None:
+        console.print(Panel("🧪 AgentBench [dim]watch mode[/dim]"))
+        result = runner.run(target)
+
+        if result.total_tests == 0:
+            console.print("[yellow]⚠ No tests found.[/yellow]")
+            return
+
+        for suite_result in result.suite_results:
+            console.print(suite_result.summary())
+
+        console.print(
+            f"\n[bold]Total: {result.total_passed} passed, {result.total_failed} failed, "
+            f"{result.total_tests} tests[/bold]"
+        )
+        console.print(f"Duration: {result.total_duration_ms / 1000:.1f}s")
+
+        if result.total_failed > 0:
+            console.print("[red]✗ Some tests failed[/red]")
+        else:
+            console.print("[green]✓ All tests passed[/green]")
+
+    # Initial run
+    _run_tests()
+    console.print(f"\n[dim]Watching {target} for changes… (Ctrl+C to stop)[/dim]\n")
+
+    class _TestChangeHandler(FileSystemEventHandler):
+        def on_modified(self, event: FileModifiedEvent) -> None:
+            if event.src_path.endswith(".py"):
+                console.print(f"\n[blue]↻ Change detected: {event.src_path}[/blue]")
+                _run_tests()
+                console.print(f"\n[dim]Watching {target} for changes… (Ctrl+C to stop)[/dim]\n")
+
+        def on_created(self, event: FileCreatedEvent) -> None:
+            if event.src_path.endswith(".py"):
+                console.print(f"\n[blue]↻ New file detected: {event.src_path}[/blue]")
+                _run_tests()
+                console.print(f"\n[dim]Watching {target} for changes… (Ctrl+C to stop)[/dim]\n")
+
+    observer = Observer()
+    watch_path = target if target.is_dir() else target.parent
+    observer.schedule(_TestChangeHandler(), str(watch_path), recursive=True)
+    observer.start()
+
+    try:
+        import threading
+        stop_event = threading.Event()
+        stop_event.wait()
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
+
+@app.command()
+def report(
+    json_report: str = typer.Argument(..., help="Path to JSON report file"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output HTML file path"),
+) -> None:
+    """Generate an HTML report from a saved JSON report."""
+    from agentbench.cli.report import generate_html_report
+
+    report_path = Path(json_report)
+    if not report_path.exists():
+        console.print(f"[red]Report file not found: {json_report}[/red]")
+        raise typer.Exit(1)
+
+    output_path = Path(output) if output else report_path.with_suffix(".html")
+    generate_html_report(report_path, output_path)
+    console.print(f"[green]✓[/green] HTML report generated: {output_path}")
+
+
+@app.command(name="list")
+def list_tests(
+    path: str = typer.Argument(".", help="Path to test directory or file"),
+    filter_pattern: str | None = typer.Option(None, "--filter", "-f", help="Filter by name pattern"),
+) -> None:
+    """Discover and list all test suites and methods without running them."""
+    from agentbench.core.runner import TestRunner
+
+    target = Path(path)
+    runner = TestRunner(config={"filter": filter_pattern})
+    suites = runner.discover_suites(target)
+
+    if not suites:
+        console.print("[yellow]No test suites found.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(Panel("📋 AgentBench Test Discovery"))
+
+    total_suites = 0
+    total_methods = 0
+
+    for suite_class in suites:
+        total_suites += 1
+        temp_instance = suite_class()
+        test_methods = [
+            name
+            for name, method in inspect.getmembers(temp_instance, predicate=inspect.ismethod)
+            if name.startswith("test_")
+        ]
+
+        # Apply filter
+        if filter_pattern:
+            import re
+            pattern = re.compile(filter_pattern, re.IGNORECASE)
+            test_methods = [m for m in test_methods if pattern.search(m)]
+
+        if filter_pattern and not test_methods:
+            continue
+
+        total_methods += len(test_methods)
+
+        suite_icon = "📦"
+        console.print(f"\n{suite_icon} [bold]{suite_class.__name__}[/bold]  [dim]({len(test_methods)} tests)[/dim]")
+
+        for method_name in test_methods:
+            method = getattr(temp_instance, method_name)
+            doc = inspect.getdoc(method)
+            doc_text = f"  [dim]— {doc}[/dim]" if doc else ""
+            console.print(f"  ○ {method_name}{doc_text}")
+
+    console.print(f"\n[bold]Summary:[/bold] {total_suites} suite(s), {total_methods} test method(s)")
+
+
 if __name__ == "__main__":
     app()

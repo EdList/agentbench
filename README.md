@@ -111,8 +111,9 @@ agentbench run ./tests -r report.json
 | Python function | `RawAPIAdapter(func=...)` | ✅ Ready |
 | LangChain | `LangChainAdapter` | ✅ Ready |
 | OpenAI Assistants | `OpenAIAdapter` | ✅ Ready |
-| CrewAI | Coming soon | 🚧 |
-| AutoGen | Coming soon | 🚧 |
+| CrewAI | `CrewAIAdapter` | ✅ Ready |
+| AutoGen | `AutoGenAdapter` | ✅ Ready |
+| LangGraph | `LangGraphAdapter` | ✅ Ready |
 
 ## Features
 
@@ -132,7 +133,14 @@ agentbench run ./tests -r report.json
 - [x] Failure injection for function and HTTP modes
 - [x] Verbose mode with assertion details
 - [x] OpenAI Assistants adapter
-- [ ] CrewAI / AutoGen adapters
+- [x] Parametric tests
+- [x] Parallel test execution
+- [x] Test fixtures and hooks (setup/teardown)
+- [x] Watch mode (file watcher)
+- [x] HTML report generation
+- [x] `agentbench list` command
+- [x] CrewAI / AutoGen / LangGraph adapters
+- [x] LLM-as-Judge: confidence scoring, caching, batch eval, custom providers
 - [ ] Adversarial test generation
 - [ ] Property-based testing
 - [ ] Multi-agent test harness

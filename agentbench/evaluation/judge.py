@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from agentbench.core.test import AgentTrajectory
 
@@ -19,11 +21,13 @@ class JudgeResult:
     judge_model: str
     latency_ms: float = 0.0
     cost_usd: float = 0.0
+    confidence: float = 1.0  # 0.0 to 1.0 — how confident the judge is
     details: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
         icon = "✓" if self.passed else "✗"
-        return f"{icon} Judge ({self.score:.2f}): {self.reasoning}"
+        conf = f" (conf: {self.confidence:.0%})" if self.confidence < 1.0 else ""
+        return f"{icon} Judge ({self.score:.2f}){conf}: {self.reasoning}"
 
 
 # Judge prompt templates
@@ -83,11 +87,17 @@ Respond in JSON format:
 {{"score": 0.0-1.0, "reasoning": "brief explanation", "passed": true/false}}""",
 }
 
+# Confidence thresholds: how far from the pass/fail boundary
+CONFIDENCE_HIGH = 0.2   # score is >0.2 away from threshold → high confidence
+CONFIDENCE_MED = 0.1    # score is 0.1-0.2 away → medium confidence
+# Below 0.1 → low confidence
+
 
 class JudgeEvaluator:
     """Evaluates agent trajectories using LLM-as-Judge.
 
-    Supports OpenAI and Anthropic as judge backends.
+    Supports OpenAI, Anthropic, and custom judge backends.
+    Includes response caching, batch evaluation, and confidence scoring.
 
     Usage:
         judge = JudgeEvaluator(provider="openai", model="gpt-4o-mini")
@@ -95,7 +105,7 @@ class JudgeEvaluator:
             trajectory=trajectory,
             template="appropriate_response",
         )
-        print(result.score, result.reasoning)
+        print(result.score, result.reasoning, result.confidence)
     """
 
     def __init__(
@@ -105,12 +115,46 @@ class JudgeEvaluator:
         api_key: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 500,
+        cache_enabled: bool = True,
+        custom_llm_call: Callable | None = None,
     ):
         self._provider = provider
         self._model = model
         self._api_key = api_key
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._cache_enabled = cache_enabled
+        self._cache: dict[str, JudgeResult] = {}
+        self._custom_llm_call = custom_llm_call
+        self._total_cost_usd: float = 0.0
+        self._total_calls: int = 0
+        self._cache_hits: int = 0
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self._total_cost_usd
+
+    @property
+    def total_calls(self) -> int:
+        return self._total_calls
+
+    @property
+    def cache_hits(self) -> int:
+        return self._cache_hits
+
+    def _cache_key(self, prompt: str) -> str:
+        """Generate a cache key from the judge prompt."""
+        return hashlib.sha256(f"{self._model}:{prompt}".encode()).hexdigest()
+
+    def _compute_confidence(self, score: float, threshold: float) -> float:
+        """Compute confidence based on distance from threshold."""
+        distance = abs(score - threshold)
+        if distance >= CONFIDENCE_HIGH:
+            return 1.0
+        elif distance >= CONFIDENCE_MED:
+            return 0.7
+        else:
+            return 0.4
 
     def evaluate(
         self,
@@ -133,10 +177,22 @@ class JudgeEvaluator:
             criteria=criteria or "General quality assessment",
         )
 
+        # Check cache
+        if self._cache_enabled:
+            cache_key = self._cache_key(prompt)
+            if cache_key in self._cache:
+                self._cache_hits += 1
+                cached = self._cache[cache_key]
+                # Re-apply threshold (might differ from cached run)
+                cached.passed = cached.score >= threshold
+                cached.confidence = self._compute_confidence(cached.score, threshold)
+                return cached
+
         # Call LLM
         try:
             response_text = self._call_llm(prompt)
             result = self._parse_response(response_text, start)
+            self._total_calls += 1
         except Exception as e:
             result = JudgeResult(
                 passed=False,
@@ -144,13 +200,40 @@ class JudgeEvaluator:
                 reasoning=f"Judge error: {e}",
                 judge_model=self._model,
                 latency_ms=(time.time() - start) * 1000,
+                confidence=0.0,
             )
 
         result.passed = result.score >= threshold
+        result.confidence = self._compute_confidence(result.score, threshold)
+
+        # Cache the result
+        if self._cache_enabled:
+            self._cache[self._cache_key(prompt)] = result
+
         return result
+
+    def evaluate_batch(
+        self,
+        trajectories: list[AgentTrajectory],
+        template: str = "appropriate_response",
+        criteria: str | None = None,
+        threshold: float = 0.7,
+    ) -> list[JudgeResult]:
+        """Evaluate multiple trajectories. Uses cache to skip duplicates."""
+        results = []
+        for traj in trajectories:
+            result = self.evaluate(traj, template=template, criteria=criteria, threshold=threshold)
+            results.append(result)
+        return results
+
+    def clear_cache(self) -> None:
+        """Clear the evaluation cache."""
+        self._cache.clear()
 
     def _call_llm(self, prompt: str) -> str:
         """Call the configured LLM provider."""
+        if self._custom_llm_call:
+            return self._custom_llm_call(prompt)
         if self._provider == "openai":
             return self._call_openai(prompt)
         elif self._provider == "anthropic":
@@ -203,6 +286,7 @@ class JudgeEvaluator:
                 reasoning=data.get("reasoning", ""),
                 judge_model=self._model,
                 latency_ms=(time.time() - start) * 1000,
+                confidence=float(data.get("confidence", 1.0)),
                 details=data.get("issues", {}),
             )
         except (json.JSONDecodeError, IndexError):

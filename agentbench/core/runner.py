@@ -7,6 +7,7 @@ import importlib.util
 import inspect
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -134,6 +135,7 @@ class TestRunner:
         self._config = config or {}
         self._verbose = self._config.get("verbose", False)
         self._filter = self._config.get("filter", None)
+        self._parallel = max(1, self._config.get("parallel", 1))
 
     def discover_suites(self, path: Path | str) -> list[type[AgentTest]]:
         """Discover AgentTest subclasses in the given path."""
@@ -164,13 +166,14 @@ class TestRunner:
             logging.warning("Could not load %s: %s", path, e)
         return suites
 
-    def run_suite(self, suite_class: type[AgentTest]) -> TestSuiteResult:
-        """Run all test methods in a suite."""
-        suite_name = suite_class.__name__
-        suite_result = TestSuiteResult(suite_name=suite_name)
-        suite_start = time.time()
+    def _discover_test_methods(self, suite_class: type[AgentTest]) -> list[tuple[str, dict | None]]:
+        """Discover test methods and their parametrize metadata.
 
-        # Discover test methods on a temporary instance
+        Returns:
+            List of (display_name, param_info) where param_info is None
+            for a plain test or a dict with 'arg_name' and 'value' for
+            a parametrized iteration.
+        """
         temp_instance = suite_class()
         test_methods = [
             name
@@ -184,22 +187,97 @@ class TestRunner:
             pattern = re.compile(self._filter, re.IGNORECASE)
             test_methods = [m for m in test_methods if pattern.search(m)]
 
+        expanded: list[tuple[str, str, dict | None]] = []
         for method_name in test_methods:
-            # Create a fresh instance for each test to prevent state leakage
-            instance = suite_class()
-            result = self._run_test(instance, method_name, suite_name)
-            suite_result.results.append(result)
+            raw_method = getattr(suite_class, method_name, None)
+            if raw_method is None:
+                raw_method = getattr(type(temp_instance), method_name, None)
+
+            parametrize_meta = getattr(raw_method, "_agentbench_parametrize", None)
+            if parametrize_meta:
+                arg_name = parametrize_meta["arg_name"]
+                for value in parametrize_meta["arg_values"]:
+                    display_name = f"{method_name}[{value}]"
+                    expanded.append((method_name, display_name, {"arg_name": arg_name, "value": value}))
+            else:
+                expanded.append((method_name, method_name, None))
+
+        return expanded
+
+    def run_suite(self, suite_class: type[AgentTest]) -> TestSuiteResult:
+        """Run all test methods in a suite."""
+        suite_name = suite_class.__name__
+        suite_result = TestSuiteResult(suite_name=suite_name)
+        suite_start = time.time()
+
+        # Discover test methods (with parametrize expansion)
+        test_items = self._discover_test_methods(suite_class)
+
+        if self._parallel > 1:
+            # Parallel execution of individual tests within the suite
+            # Create a shared class-level instance for setup_class / teardown_class
+            class_instance = suite_class()
+
+            # setup_class hook
+            self._run_class_hook(class_instance, "setup_class")
+
+            try:
+                with ThreadPoolExecutor(max_workers=self._parallel) as executor:
+                    futures = {}
+                    for method_name, display_name, param_info in test_items:
+                        instance = suite_class()
+                        future = executor.submit(
+                            self._run_single_test, instance, method_name, display_name, param_info, suite_name
+                        )
+                        futures[future] = display_name
+
+                    for future in as_completed(futures):
+                        result = future.result()
+                        suite_result.results.append(result)
+            finally:
+                # teardown_class hook
+                self._run_class_hook(class_instance, "teardown_class")
+        else:
+            # Sequential execution
+            class_instance = suite_class()
+
+            # setup_class hook
+            self._run_class_hook(class_instance, "setup_class")
+
+            try:
+                for method_name, display_name, param_info in test_items:
+                    # Create a fresh instance for each test to prevent state leakage
+                    instance = suite_class()
+                    result = self._run_single_test(instance, method_name, display_name, param_info, suite_name)
+                    suite_result.results.append(result)
+            finally:
+                # teardown_class hook
+                self._run_class_hook(class_instance, "teardown_class")
 
         suite_result.total_duration_ms = (time.time() - suite_start) * 1000
         return suite_result
 
-    def _run_test(self, instance: AgentTest, method_name: str, suite_name: str) -> TestResult:
-        """Run a single test method and collect results."""
-        test_start = time.time()
-        result = TestResult(test_name=method_name, suite_name=suite_name)
+    def _run_class_hook(self, instance: AgentTest, hook_name: str) -> None:
+        """Run a class-level hook (setup_class / teardown_class) if it exists."""
+        hook = getattr(instance, hook_name, None)
+        if hook and callable(hook):
+            try:
+                hook()
+            except Exception as e:
+                import logging
+                logging.warning("Error in %s for %s: %s", hook_name, type(instance).__name__, e)
 
-        # Reset per-test expectations tracker
-        _active_expectations: list[Expectation] = []
+    def _run_single_test(
+        self,
+        instance: AgentTest,
+        method_name: str,
+        display_name: str,
+        param_info: dict | None,
+        suite_name: str,
+    ) -> TestResult:
+        """Run a single test (with setup/teardown hooks and optional parametrize)."""
+        test_start = time.time()
+        result = TestResult(test_name=display_name, suite_name=suite_name)
 
         try:
             # Tell expect() which test instance to register with
@@ -211,29 +289,43 @@ class TestRunner:
             if bench_config and not instance.config:
                 instance.config = bench_config
 
+            # setup hook (before each test)
+            setup = getattr(instance, "setup", None)
+            if setup and callable(setup):
+                if param_info:
+                    import inspect as _inspect
+                    sig = _inspect.signature(setup)
+                    if param_info["arg_name"] in sig.parameters:
+                        setup(**{param_info["arg_name"]: param_info["value"]})
+                    else:
+                        setup()
+                else:
+                    setup()
+
+            # Execute the test method
             method = getattr(instance, method_name)
-            method()
+            if param_info:
+                method(**{param_info["arg_name"]: param_info["value"]})
+            else:
+                method()
 
             # Collect trajectory
             if instance.trajectory:
                 result.trajectory = instance.trajectory
-                # Populate trajectory metadata
-                result.trajectory.test_name = f"{suite_name}.{method_name}"
+                result.trajectory.test_name = f"{suite_name}.{display_name}"
                 result.trajectory.agent_name = instance.agent or suite_name
 
-            # Collect assertion results from all Expectation objects created during this test.
-            # We gather them from the instance-level tracker (set by expect()).
+            # Collect assertion results
             _active_expectations = getattr(instance, '_expectations', [])
             instance._expectations = []
 
             for exp in _active_expectations:
                 result.assertions.extend(exp.results)
 
-            # Determine pass/fail from assertion results
+            # Determine pass/fail
             if result.assertions:
                 result.passed = all(a.passed for a in result.assertions)
             else:
-                # No assertions made — treat as passed (empty test)
                 result.passed = True
 
         except AssertionError as e:
@@ -244,10 +336,26 @@ class TestRunner:
             result.error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
         finally:
+            # teardown hook (after each test) — always run
+            teardown = getattr(instance, "teardown", None)
+            if teardown and callable(teardown):
+                try:
+                    teardown()
+                except Exception as e:
+                    import logging
+                    logging.warning("Error in teardown for %s: %s", display_name, e)
+
             _clear_active_test()
 
         result.duration_ms = (time.time() - test_start) * 1000
         return result
+
+    def _run_test(self, instance: AgentTest, method_name: str, suite_name: str) -> TestResult:
+        """Run a single test method and collect results (legacy, non-parametric).
+
+        Kept for backwards compatibility; the new path is _run_single_test.
+        """
+        return self._run_single_test(instance, method_name, method_name, None, suite_name)
 
     def run(self, path: Path | str) -> RunResult:
         """Discover and run all test suites in the given path."""
@@ -260,9 +368,25 @@ class TestRunner:
 
         run_result = RunResult()
 
-        for suite_class in suites:
-            suite_result = self.run_suite(suite_class)
-            run_result.suite_results.append(suite_result)
+        if self._parallel > 1 and len(suites) > 1:
+            # Run suites in parallel using threads
+            with ThreadPoolExecutor(max_workers=self._parallel) as executor:
+                futures = {executor.submit(self.run_suite, s): s for s in suites}
+                for future in as_completed(futures):
+                    suite_result = future.result()
+                    run_result.suite_results.append(suite_result)
+            # Sort by original discovery order for deterministic output
+            suite_order = {s: i for i, s in enumerate(suites)}
+            run_result.suite_results.sort(
+                key=lambda r: suite_order.get(
+                    next((s for s in suites if s.__name__ == r.suite_name), suites[0]),
+                    0
+                )
+            )
+        else:
+            for suite_class in suites:
+                suite_result = self.run_suite(suite_class)
+                run_result.suite_results.append(suite_result)
 
         run_result.total_duration_ms = (time.time() - run_start) * 1000
         return run_result
