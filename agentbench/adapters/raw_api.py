@@ -124,7 +124,7 @@ class RawAPIAdapter(AgentAdapter):
                         response=result["response"],
                         latency_ms=(time.time() - start) * 1000,
                     )
-                trajectory.final_response = result.get("response", str(result))
+                trajectory.final_response = str(result.get("response", str(result)))
                 trajectory.completed = True
             else:
                 self._record_step(

@@ -250,7 +250,7 @@ def diff(
 def init(
     name: str = typer.Argument("agent-tests", help="Name for the test project"),
     framework: str = typer.Option("raw_api", "--framework", "-f",
-                                   help="Agent framework: langchain, openai, raw_api"),
+                                   help="Agent framework: raw_api, langchain, openai, crewai, autogen, langgraph"),
     path: str | None = typer.Option(None, "--path", "-p", help="Output directory"),
 ) -> None:
     """Scaffold a new AgentBench test project."""

@@ -69,8 +69,8 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
         self._current_tool_input = kwargs.get("tool_input", None) or (
             {"input": input_str} if input_str else {}
         )
-        # Track if this tool was failure-injected (skip on_tool_end)
-        self._injected_failure = False
+        # Don't reset _injected_failure here — it may have been set by on_agent_action
+        # which fires before on_tool_start in LangChain's callback order
 
         # Apply latency injection
         for inj in self._latency_injections:
@@ -113,6 +113,9 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
 
     def on_agent_action(self, action: Any, **kwargs: Any) -> None:
         """Record agent's decision to use a tool."""
+        # Reset injection flag for this tool cycle
+        self._injected_failure = False
+
         try:
             tool_name = action.tool
             tool_input = action.tool_input if hasattr(action, "tool_input") else {}

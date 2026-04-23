@@ -166,12 +166,12 @@ class TestRunner:
             logging.warning("Could not load %s: %s", path, e)
         return suites
 
-    def _discover_test_methods(self, suite_class: type[AgentTest]) -> list[tuple[str, dict | None]]:
+    def _discover_test_methods(self, suite_class: type[AgentTest]) -> list[tuple[str, str, dict | None]]:
         """Discover test methods and their parametrize metadata.
 
         Returns:
-            List of (display_name, param_info) where param_info is None
-            for a plain test or a dict with 'arg_name' and 'value' for
+            List of (method_name, display_name, param_info) where param_info
+            is None for a plain test or a dict with 'arg_name' and 'value' for
             a parametrized iteration.
         """
         temp_instance = suite_class()

@@ -157,10 +157,17 @@ class Expectation:
     def to_complete_within(self, steps: int) -> Expectation:
         """Assert the agent completed within N steps."""
         actual = self._trajectory.step_count
-        passed = self._trajectory.completed and actual <= steps
+        completed = self._trajectory.completed and self._trajectory.error is None
+        passed = completed and actual <= steps
+        if not completed:
+            msg = f"Agent did not complete ({actual} steps taken, limit: {steps})"
+        elif actual > steps:
+            msg = f"Agent completed but exceeded step limit ({actual} steps, limit: {steps})"
+        else:
+            msg = f"Agent completed in {actual} steps (limit: {steps})"
         self._add_result(
             passed=passed,
-            message=f"Agent completed in {actual} steps (limit: {steps})",
+            message=msg,
             assertion_type="step_limit",
             actual_steps=actual,
             max_steps=steps,

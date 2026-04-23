@@ -62,6 +62,10 @@ class Fixture:
                 pass
             self._gen = None
 
+    def __call__(self) -> Any:
+        """Shortcut for setup() — makes fixtures directly callable."""
+        return self.setup()
+
 
 def fixture(func: Callable | None = None, *, scope: str = "test") -> Fixture:
     """Decorator to create a reusable test fixture.

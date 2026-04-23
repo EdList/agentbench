@@ -33,6 +33,8 @@ class AgentStep:
     def exposed_data(self) -> str:
         """Return all text data exposed in this step (for PII checks)."""
         parts = []
+        if self.reasoning:
+            parts.append(self.reasoning)
         if self.response:
             parts.append(self.response)
         if self.tool_output is not None:
@@ -182,7 +184,7 @@ class AgentTest:
                 "Set self.adapter or use agentbench init to scaffold tests."
             )
 
-        # Configure failure injection
+        # Configure failure injection (copy to prevent mutation across runs)
         self._failure_injections.clear()
         if inject_tool_failure:
             if isinstance(inject_tool_failure, str):
@@ -192,7 +194,14 @@ class AgentTest:
                     )
                 )
             else:
-                self._failure_injections.append(inject_tool_failure)
+                self._failure_injections.append(
+                    ToolFailureInjection(
+                        tool_name=inject_tool_failure.tool_name,
+                        fail_times=inject_tool_failure.fail_times,
+                        error_message=inject_tool_failure.error_message,
+                        error_type=inject_tool_failure.error_type,
+                    )
+                )
 
         # Configure latency injection
         self._latency_injections.clear()
