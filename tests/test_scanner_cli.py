@@ -1,0 +1,272 @@
+"""Tests for the agentbench scan CLI command."""
+
+from __future__ import annotations
+
+import textwrap
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from agentbench.cli.main import (
+    _load_agent_from_module,
+    _load_agent_from_url,
+    app,
+)
+
+runner = CliRunner()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _write_test_file(tmp_path: Path, agent_name: str = "stub-agent") -> Path:
+    """Write a minimal test file with an AgentTest subclass + RawAPIAdapter."""
+    test_file = tmp_path / "test_stub.py"
+    test_file.write_text(
+        textwrap.dedent(f"""\
+        from agentbench.core.test import AgentTest
+        from agentbench.adapters.raw_api import RawAPIAdapter
+
+        def _agent_fn(prompt, context=None):
+            return {{"response": "I can't help with that", "steps": []}}
+
+        class StubTest(AgentTest):
+            agent = "{agent_name}"
+            adapter = RawAPIAdapter(func=_agent_fn)
+    """)
+    )
+    return test_file
+
+
+# ===================================================================
+# _load_agent_from_module
+# ===================================================================
+
+
+class TestLoadAgentFromModule:
+    def test_valid_module_var(self):
+        """Load json:decoder — built-in module, always available."""
+        agent = _load_agent_from_module("json:decoder")
+        assert agent is not None
+
+    def test_no_colon_returns_none(self):
+        assert _load_agent_from_module("json") is None
+
+    def test_bad_module_returns_none(self):
+        assert _load_agent_from_module("nonexistent_module_xyz:var") is None
+
+    def test_bad_attribute_returns_none(self):
+        assert _load_agent_from_module("json:totally_fake_attr") is None
+
+
+# ===================================================================
+# _load_agent_from_url
+# ===================================================================
+
+
+class TestLoadAgentFromUrl:
+    def test_returns_callable(self):
+        agent = _load_agent_from_url("https://example.com/api")
+        assert callable(agent)
+
+
+# ===================================================================
+# CLI scan command — integration tests
+# ===================================================================
+
+
+class TestScanCommand:
+    def test_scan_with_file_path(self, tmp_path):
+        """End-to-end: scan a Python test file and generate output."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "auto_test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--no-run",
+            ],
+        )
+
+        # Command should succeed
+        assert result.exit_code == 0, result.output
+        # Output file should exist
+        assert output_file.exists()
+        # Generated code should be valid Python
+        code = output_file.read_text()
+        compile(code, "<test>", "exec")
+
+    def test_scan_with_categories(self, tmp_path):
+        """Only probe specified categories."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "cat_test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--categories",
+                "safety",
+                "--no-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert output_file.exists()
+
+    def test_scan_output_contains_imports(self, tmp_path):
+        """Generated file imports from agentbench."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "imports_test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--no-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        code = output_file.read_text()
+        assert "from agentbench import AgentTest, expect" in code
+
+    def test_scan_output_contains_class(self, tmp_path):
+        """Generated file has a class extending AgentTest."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "class_test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--no-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        code = output_file.read_text()
+        assert "AutoGeneratedTests(AgentTest)" in code
+
+    def test_scan_shows_summary(self, tmp_path):
+        """CLI output includes summary."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "summary_test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--no-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Scan Summary" in result.output
+
+    def test_scan_nonexistent_path_exits(self, tmp_path):
+        """Scanning a nonexistent file/module should fail gracefully."""
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                "totally_nonexistent_file.py",
+                "--no-run",
+            ],
+        )
+        assert result.exit_code == 1
+
+    def test_scan_with_directory(self, tmp_path):
+        """Scan a directory containing test files."""
+        _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "dir_test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(tmp_path),
+                "--output",
+                str(output_file),
+                "--no-run",
+            ],
+        )
+
+        # Should work if an adapter is found
+        assert result.exit_code == 0, result.output
+        assert output_file.exists()
+
+    def test_scan_creates_parent_dirs(self, tmp_path):
+        """Output path with nonexistent parent dirs should be created."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "deep" / "nested" / "dir" / "test.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--no-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert output_file.exists()
+
+    def test_scan_multiple_categories(self, tmp_path):
+        """Scan with multiple comma-separated categories."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "multi_cat.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--categories",
+                "safety,capability",
+                "--no-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+
+    def test_scan_invalid_category(self, tmp_path):
+        """Invalid category should cause an error."""
+        test_file = _write_test_file(tmp_path)
+        output_file = tmp_path / "output" / "bad_cat.py"
+
+        result = runner.invoke(
+            app,
+            [
+                "scan",
+                str(test_file),
+                "--output",
+                str(output_file),
+                "--categories",
+                "nonexistent_category",
+                "--no-run",
+            ],
+        )
+
+        # Should exit with error
+        assert result.exit_code != 0 or "Error" in result.output or "error" in result.output.lower()

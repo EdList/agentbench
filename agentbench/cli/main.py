@@ -550,8 +550,7 @@ def adversarial_generate(
         Panel(
             "🛡️ Adversarial Test Generation",
             subtitle=(
-                f"Strategies: {', '.join(strategy_names)}"
-                f" | Count: {count} | Intensity: {intensity}"
+                f"Strategies: {', '.join(strategy_names)} | Count: {count} | Intensity: {intensity}"
             ),
         )
     )
@@ -645,6 +644,174 @@ def _write_adversarial_file(
             lines.append("")
 
     output_path.write_text("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# Scan sub-command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def scan(
+    path: str = typer.Argument(..., help="Python file, HTTP endpoint, or module:var path to agent"),
+    output: str = typer.Option(
+        "tests/auto_test.py", "--output", "-o", help="Output file for generated tests"
+    ),
+    categories: str | None = typer.Option(
+        None,
+        "--categories",
+        "-k",
+        help="Comma-separated categories: safety,capability,consistency,error_handling",
+    ),
+    no_run: bool = typer.Option(
+        False, "--no-run", help="Skip running generated tests after writing"
+    ),
+) -> None:
+    """Scan an agent and auto-generate behavioral tests."""
+    from agentbench.scanner.analyzer import BehaviorAnalyzer
+    from agentbench.scanner.generator import TestGenerator
+    from agentbench.scanner.prober import AgentProber
+
+    console.print(
+        Panel("🔍 AgentBench Scanner", subtitle="Auto-detect agent behaviors and generate tests")
+    )
+
+    # --- Step 1: Load agent ---
+    console.print("\n[bold]Step 1:[/bold] Loading agent…")
+    agent = None
+    agent_path = Path(path)
+
+    if agent_path.exists():
+        # Try to discover agent from file/directory
+        agent = _find_adapter_in_path(agent_path)
+        if agent is None:
+            # Try importing as module:var
+            console.print("[dim]No adapter discovered from path, trying module import…[/dim]")
+            agent = _load_agent_from_module(path)
+    elif ":" in path:
+        agent = _load_agent_from_module(path)
+    elif path.startswith("http://") or path.startswith("https://"):
+        # HTTP endpoint — create a callable wrapper
+        agent = _load_agent_from_url(path)
+    else:
+        agent = _load_agent_from_module(path)
+
+    if agent is None:
+        console.print(f"[red]Could not load agent from: {path}[/red]")
+        console.print("[dim]Provide a Python file, module:var, or HTTP endpoint.[/dim]")
+        raise typer.Exit(1)
+
+    console.print(f"  [green]✓[/green] Agent loaded: {type(agent).__name__}")
+
+    # --- Step 2: Probe ---
+    console.print("\n[bold]Step 2:[/bold] Probing agent…")
+    category_list = [c.strip() for c in categories.split(",")] if categories else None
+
+    # Build a callable agent_fn from the loaded agent
+    if hasattr(agent, "run"):
+
+        def _agent_fn(prompt: str) -> str:
+            trajectory = agent.run(prompt)
+            return trajectory.final_response or ""
+    elif callable(agent):
+
+        def _agent_fn(prompt: str) -> str:
+            result = agent(prompt)
+            return result if isinstance(result, str) else str(result)
+    else:
+
+        def _agent_fn(prompt: str) -> str:
+            return ""
+
+    prober = AgentProber(_agent_fn, categories=category_list)
+    session = prober.probe_all()
+    console.print(
+        f"  [green]✓[/green] Sent {len(session.results)} probe(s) in {session.duration:.2f}s"
+    )
+
+    # --- Step 3: Analyze ---
+    console.print("\n[bold]Step 3:[/bold] Analyzing behaviors…")
+    analyzer = BehaviorAnalyzer()
+    behaviors = analyzer.analyze(session)
+    console.print(f"  [green]✓[/green] Detected {len(behaviors)} behavior(s)")
+
+    if not behaviors:
+        console.print("[yellow]No behaviors detected. Try different categories.[/yellow]")
+        raise typer.Exit(0)
+
+    # --- Step 4: Generate ---
+    console.print("\n[bold]Step 4:[/bold] Generating test file…")
+    generator = TestGenerator()
+    code = generator.generate(behaviors)
+    console.print(f"  [green]✓[/green] Generated {len(behaviors)} test method(s)")
+
+    # --- Step 5: Write file ---
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(code)
+    console.print(f"  [green]✓[/green] Written to: {output_path}")
+
+    # --- Summary ---
+    console.print(Panel("📊 Scan Summary"))
+    console.print(f"  Probes sent:     {len(session.results)}")
+    console.print(f"  Behaviors found: {len(behaviors)}")
+    by_category: dict[str, int] = {}
+    for b in behaviors:
+        by_category[b.category] = by_category.get(b.category, 0) + 1
+    for cat, count in sorted(by_category.items()):
+        console.print(f"    • {cat}: {count}")
+    console.print(f"  Output file:     {output_path}")
+
+    # --- Optionally run ---
+    if not no_run:
+        console.print("\n[bold]Step 5:[/bold] Running generated tests…")
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["python", "-m", "pytest", str(output_path), "-v"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            console.print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout)
+        except Exception as exc:
+            console.print(f"[yellow]Could not run tests: {exc}[/yellow]")
+    else:
+        console.print(
+            f"\n[dim]Skipping test run (--no-run). Run manually with: pytest {output_path}[/dim]"
+        )
+
+
+def _load_agent_from_module(path: str) -> Any:
+    """Load an agent from a module:var path like 'my_module:agent_func'."""
+    if ":" not in path:
+        return None
+    module_path, var_name = path.rsplit(":", 1)
+    try:
+        import importlib
+
+        module = importlib.import_module(module_path)
+        return getattr(module, var_name, None)
+    except Exception:
+        return None
+
+
+def _load_agent_from_url(url: str) -> Any:
+    """Create a callable agent wrapper for an HTTP endpoint."""
+    import json
+    import urllib.request
+
+    def _call(prompt: str, context: dict | None = None) -> str:
+        payload = json.dumps({"prompt": prompt, "context": context or {}}).encode()
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return data.get("response", data.get("output", str(data)))
+
+    return _call
 
 
 if __name__ == "__main__":
