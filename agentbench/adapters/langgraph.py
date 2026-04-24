@@ -248,6 +248,8 @@ class LangGraphAdapter(AgentAdapter):
         if isinstance(result, dict):
             # Process each key as a potential node output
             for key, value in result.items():
+                if trajectory.step_count >= max_steps:
+                    break
                 if key == "messages":
                     # Process messages specially
                     self._process_messages(

@@ -243,7 +243,7 @@ class TestRunner:
             try:
                 with ThreadPoolExecutor(max_workers=self._parallel) as executor:
                     futures = {}
-                    for method_name, display_name, param_info in test_items:
+                    for idx, (method_name, display_name, param_info) in enumerate(test_items):
                         instance = suite_class()
                         future = executor.submit(
                             self._run_single_test,
@@ -251,11 +251,14 @@ class TestRunner:
                             display_name, param_info,
                             suite_name
                         )
-                        futures[future] = display_name
+                        futures[future] = idx
 
+                    results_by_index: dict[int, TestResult] = {}
                     for future in as_completed(futures):
                         result = future.result()
-                        suite_result.results.append(result)
+                        results_by_index[futures[future]] = result
+                    for idx in sorted(results_by_index):
+                        suite_result.results.append(results_by_index[idx])
             finally:
                 # teardown_class hook
                 self._run_class_hook(class_instance, "teardown_class")

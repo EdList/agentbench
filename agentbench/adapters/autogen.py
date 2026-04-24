@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -253,7 +254,6 @@ class AutoGenAdapter(AgentAdapter):
             function_call = msg.get("function_call")
             if function_call and isinstance(function_call, dict):
                 tool_name = function_call.get("name", "unknown")
-                import json
 
                 try:
                     tool_input = json.loads(function_call.get("arguments", "{}"))
@@ -299,7 +299,6 @@ class AutoGenAdapter(AgentAdapter):
                         break
                     if isinstance(tc, dict):
                         tc_name = tc.get("function", {}).get("name", "unknown")
-                        import json
 
                         try:
                             tc_args = json.loads(

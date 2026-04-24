@@ -374,11 +374,12 @@ class TestRawAPIAdapterShouldInjectFailure:
     def test_matching_tool_decrements_counter(self):
         adapter = RawAPIAdapter(func=lambda p, c: {})
         inj = ToolFailureInjection(tool_name="search", fail_times=2, error_message="fail")
-        assert adapter._should_inject_failure("search", [inj]) == "fail"
-        assert inj.fail_times == 1  # decremented
-        assert adapter._should_inject_failure("search", [inj]) == "fail"
-        assert inj.fail_times == 0
-        assert adapter._should_inject_failure("search", [inj]) is None  # exhausted
+        injections = [inj]
+        assert adapter._should_inject_failure("search", injections) == "fail"
+        assert injections[0].fail_times == 1  # decremented via replace
+        assert adapter._should_inject_failure("search", injections) == "fail"
+        assert injections[0].fail_times == 0
+        assert adapter._should_inject_failure("search", injections) is None  # exhausted
 
     def test_non_matching_tool_returns_none(self):
         adapter = RawAPIAdapter(func=lambda p, c: {})

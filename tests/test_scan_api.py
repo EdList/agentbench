@@ -30,6 +30,11 @@ def client():
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _auth_headers() -> dict[str, str]:
+    """Return headers with a valid API key for authentication."""
+    return {"X-API-Key": "test-api-key"}
+
+
 def _make_scan_response(
     overall_score: float = 85.0,
     overall_grade: str = "B",
@@ -94,6 +99,7 @@ class TestSubmitScan:
         resp = client.post(
             "/api/v1/scans",
             json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -118,6 +124,7 @@ class TestSubmitScan:
                 "agent_url": "https://example.com/agent",
                 "categories": ["safety"],
             },
+            headers=_auth_headers(),
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -132,6 +139,7 @@ class TestSubmitScan:
         resp = client.post(
             "/api/v1/scans",
             json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
         )
         data = resp.json()
         for ds in data["domain_scores"]:
@@ -143,7 +151,11 @@ class TestSubmitScan:
 
     def test_submit_scan_missing_url(self, client):
         """Missing agent_url returns 422."""
-        resp = client.post("/api/v1/scans", json={})
+        resp = client.post(
+            "/api/v1/scans",
+            json={},
+            headers=_auth_headers(),
+        )
         assert resp.status_code == 422
 
     @patch("agentbench.server.routes.scans._run_scan")
@@ -154,6 +166,7 @@ class TestSubmitScan:
         resp = client.post(
             "/api/v1/scans",
             json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
         )
         assert resp.status_code == 200
 
@@ -168,6 +181,7 @@ class TestSubmitScan:
         resp = client.post(
             "/api/v1/scans",
             json={"agent_url": "https://bad-url.example.com/agent"},
+            headers=_auth_headers(),
         )
         assert resp.status_code == 502
 
@@ -182,6 +196,7 @@ class TestSubmitScan:
                 "agent_url": "https://example.com/agent",
                 "categories": ["safety", "capability"],
             },
+            headers=_auth_headers(),
         )
         mock_run.assert_called_once_with(
             "https://example.com/agent",
@@ -196,6 +211,7 @@ class TestSubmitScan:
         client.post(
             "/api/v1/scans",
             json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
         )
         mock_run.assert_called_once_with(
             "https://example.com/agent",
@@ -218,6 +234,7 @@ class TestGetScan:
         post_resp = client.post(
             "/api/v1/scans",
             json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
         )
         assert post_resp.status_code == 200
 
@@ -228,14 +245,20 @@ class TestGetScan:
         scan_id = list(scans_mod._scan_store.keys())[0]
 
         # Retrieve
-        get_resp = client.get(f"/api/v1/scans/{scan_id}")
+        get_resp = client.get(
+            f"/api/v1/scans/{scan_id}",
+            headers=_auth_headers(),
+        )
         assert get_resp.status_code == 200
         data = get_resp.json()
         assert data["overall_score"] == post_resp.json()["overall_score"]
 
     def test_get_scan_not_found(self, client):
         """Non-existent scan_id returns 404."""
-        resp = client.get("/api/v1/scans/nonexistent-id")
+        resp = client.get(
+            "/api/v1/scans/nonexistent-id",
+            headers=_auth_headers(),
+        )
         assert resp.status_code == 404
 
 
@@ -247,7 +270,7 @@ class TestGetScan:
 class TestListScans:
     def test_list_scans_empty(self, client):
         """No scans → empty list."""
-        resp = client.get("/api/v1/scans")
+        resp = client.get("/api/v1/scans", headers=_auth_headers())
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -261,9 +284,10 @@ class TestListScans:
             client.post(
                 "/api/v1/scans",
                 json={"agent_url": "https://example.com/agent"},
+                headers=_auth_headers(),
             )
 
-        resp = client.get("/api/v1/scans")
+        resp = client.get("/api/v1/scans", headers=_auth_headers())
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 3
@@ -276,9 +300,10 @@ class TestListScans:
         client.post(
             "/api/v1/scans",
             json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
         )
 
-        resp = client.get("/api/v1/scans")
+        resp = client.get("/api/v1/scans", headers=_auth_headers())
         data = resp.json()
         assert len(data) == 1
         entry = data[0]
@@ -298,19 +323,20 @@ class TestListScans:
             client.post(
                 "/api/v1/scans",
                 json={"agent_url": "https://example.com/agent"},
+                headers=_auth_headers(),
             )
 
         # Get first 2
-        resp = client.get("/api/v1/scans?limit=2&offset=0")
+        resp = client.get("/api/v1/scans?limit=2&offset=0", headers=_auth_headers())
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
         # Get next 2
-        resp = client.get("/api/v1/scans?limit=2&offset=2")
+        resp = client.get("/api/v1/scans?limit=2&offset=2", headers=_auth_headers())
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
         # Get last 1
-        resp = client.get("/api/v1/scans?limit=2&offset=4")
+        resp = client.get("/api/v1/scans?limit=2&offset=4", headers=_auth_headers())
         assert resp.status_code == 200
         assert len(resp.json()) == 1

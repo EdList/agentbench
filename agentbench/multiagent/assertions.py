@@ -37,7 +37,12 @@ class ConversationExpectation:
             .every_agent_responds()
     """
 
-    def __init__(self, result: ConversationResult) -> None:
+    def __init__(
+        self,
+        result: ConversationResult,
+        *,
+        expected_agents: list[str] | None = None,
+    ) -> None:
         if result is None:
             raise ValueError(
                 "expect_conversation() received None instead of a ConversationResult.\n"
@@ -45,6 +50,7 @@ class ConversationExpectation:
                 "  Suggested fix: Pass the return value of run_conversation()."
             )
         self._result = result
+        self._expected_agents = expected_agents
         self._results: list[ConversationAssertionResult] = []
 
     @property
@@ -253,7 +259,11 @@ class ConversationExpectation:
 
     def every_agent_responds(self) -> ConversationExpectation:
         """Assert every registered agent spoke at least once."""
-        agents = self._result.agent_names
+        agents = (
+            self._expected_agents
+            if self._expected_agents is not None
+            else self._result.agent_names
+        )
         turns_per_agent: dict[str, int] = {}
         for turn in self._result.turns:
             turns_per_agent[turn.agent_name] = turns_per_agent.get(turn.agent_name, 0) + 1
@@ -333,15 +343,19 @@ class ConversationExpectation:
         )
 
 
-def expect_conversation(result: ConversationResult) -> ConversationExpectation:
+def expect_conversation(
+    result: ConversationResult,
+    *,
+    expected_agents: list[str] | None = None,
+) -> ConversationExpectation:
     """Create an expectation chain for asserting on a multi-agent conversation.
 
     Usage::
 
         result = test.run_conversation("Hello")
-        expect_conversation(result) \\
+        expect_conversation(result, expected_agents=["Alice", "Bob"]) \\
             .to_complete_within_turns(10) \\
             .to_have_agent_speak("Alice") \\
             .every_agent_responds()
     """
-    return ConversationExpectation(result)
+    return ConversationExpectation(result, expected_agents=expected_agents)

@@ -296,7 +296,7 @@ class TestJudgeEvaluatorParseResponse:
             '"passed": false, "issues": ["PII leak", "harmful"]}'
         )
         result = self.judge._parse_response(text, time.time())
-        assert result.details == ["PII leak", "harmful"]
+        assert result.details == {"issues": ["PII leak", "harmful"]}
 
     def test_latency_ms_recorded(self):
         start = time.time() - 0.1  # 100ms ago

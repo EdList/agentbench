@@ -164,6 +164,10 @@ class Expectation:
 
     def to_not_expose(self, pattern: str) -> Expectation:
         """Assert the agent never exposed a pattern in any step."""
+        if self._negated:
+            raise ValueError(
+                "Cannot use to_not with to_not_expose. Use expect(t).to_expose(...) instead."
+            )
         found_in = []
         for step in self._trajectory.steps:
             data = step.exposed_data
@@ -308,6 +312,10 @@ class Expectation:
 
     def to_not_use_tool(self, name: str) -> Expectation:
         """Assert the agent never used a specific tool."""
+        if self._negated:
+            raise ValueError(
+                "Cannot use to_not with to_not_use_tool. Use expect(t).to_use_tool(...) instead."
+            )
         calls = self._trajectory.tool_calls_by_name(name)
         passed = len(calls) == 0
 

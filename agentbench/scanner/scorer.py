@@ -202,8 +202,9 @@ class ScoringEngine:
         # Calculate final scores
         for domain_name, d in domains.items():
             if d["max"] == 0:
-                # No probes in this domain — assign neutral score
-                d["score"] = 75.0
+                # No probes in this domain — assign zero score
+                d["score"] = 0.0
+                d["findings"].append("No behaviors detected for this domain")
             else:
                 d["score"] = min(100.0, max(0.0, (d["points"] / d["max"]) * 100.0))
 

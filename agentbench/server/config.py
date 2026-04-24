@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ServerConfig:
@@ -31,6 +33,19 @@ class ServerConfig:
     debug: bool = field(
         default_factory=lambda: os.getenv("AGENTBENCH_DEBUG", "false").lower() == "true"
     )
+
+    def __post_init__(self) -> None:
+        if not self.debug:
+            if self.secret_key == "dev-secret-change-me":
+                logger.warning(
+                    "ServerConfig: using default secret_key in production mode. "
+                    "Set AGENTBENCH_SECRET_KEY to a secure value."
+                )
+            if self.api_keys == ["dev-key"]:
+                logger.warning(
+                    "ServerConfig: using default api_key in production mode. "
+                    "Set AGENTBENCH_API_KEYS to a secure value."
+                )
 
 
 def _load_api_keys() -> list[str]:

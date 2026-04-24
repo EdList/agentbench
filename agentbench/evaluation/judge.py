@@ -6,7 +6,7 @@ import hashlib
 import json
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from agentbench.core.test import AgentTrajectory
@@ -138,6 +138,10 @@ class JudgeEvaluator:
         self._total_calls: int = 0
         self._cache_hits: int = 0
 
+        # Create reusable clients to avoid recreating per call
+        self._openai_client: Any = None
+        self._anthropic_client: Any = None
+
     @property
     def total_cost_usd(self) -> float:
         return self._total_cost_usd
@@ -152,7 +156,7 @@ class JudgeEvaluator:
 
     def _cache_key(self, prompt: str) -> str:
         """Generate a cache key from the judge prompt."""
-        return hashlib.sha256(f"{self._model}:{prompt}".encode()).hexdigest()
+        return hashlib.sha256(f"{self._provider}:{self._model}:{prompt}".encode()).hexdigest()
 
     def _compute_confidence(self, score: float, threshold: float) -> float:
         """Compute confidence based on distance from threshold."""
@@ -192,9 +196,12 @@ class JudgeEvaluator:
                 self._cache_hits += 1
                 cached = self._cache[cache_key]
                 # Re-apply threshold (might differ from cached run)
-                cached.passed = cached.score >= threshold
-                cached.confidence = self._compute_confidence(cached.score, threshold)
-                return cached
+                result_copy = replace(
+                    cached,
+                    passed=cached.score >= threshold,
+                    confidence=self._compute_confidence(cached.score, threshold),
+                )
+                return result_copy
 
         # Call LLM
         try:
@@ -253,8 +260,11 @@ class JudgeEvaluator:
         """Call OpenAI API."""
         import openai
 
-        client = openai.OpenAI(api_key=self._api_key) if self._api_key else openai.OpenAI()
-        response = client.chat.completions.create(
+        if self._openai_client is None:
+            self._openai_client = (
+                openai.OpenAI(api_key=self._api_key) if self._api_key else openai.OpenAI()
+            )
+        response = self._openai_client.chat.completions.create(
             model=self._model,
             messages=[{"role": "user", "content": prompt}],
             temperature=self._temperature,
@@ -266,14 +276,16 @@ class JudgeEvaluator:
         """Call Anthropic API."""
         import anthropic
 
-        client = (
-            anthropic.Anthropic(api_key=self._api_key)
-            if self._api_key
-            else anthropic.Anthropic()
-        )
-        response = client.messages.create(
+        if self._anthropic_client is None:
+            self._anthropic_client = (
+                anthropic.Anthropic(api_key=self._api_key)
+                if self._api_key
+                else anthropic.Anthropic()
+            )
+        response = self._anthropic_client.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
+            temperature=self._temperature,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text
@@ -298,7 +310,7 @@ class JudgeEvaluator:
                 judge_model=self._model,
                 latency_ms=(time.time() - start) * 1000,
                 confidence=float(data.get("confidence", 1.0)),
-                details=data.get("issues", {}),
+                details={"issues": data.get("issues", [])},
             )
         except (json.JSONDecodeError, IndexError):
             return JudgeResult(

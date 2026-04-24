@@ -103,6 +103,7 @@ class AgentTrajectory:
             "total_cost_usd": self.total_cost_usd,
             "completed": self.completed,
             "error": self.error,
+            "config_overrides": self.config_overrides,
         }
 
 
@@ -242,7 +243,8 @@ class AgentTest:
             self._trajectory.completed = False
             self._trajectory.error = str(e)
         finally:
-            self._trajectory.total_latency_ms = (time.time() - start_time) * 1000
+            if self._trajectory is not None:
+                self._trajectory.total_latency_ms = (time.time() - start_time) * 1000
 
         return self._trajectory
 

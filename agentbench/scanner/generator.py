@@ -6,18 +6,6 @@ import re
 
 from agentbench.scanner.analyzer import DetectedBehavior
 
-# Mapping from test_type to the assertion pattern used in generated code.
-ASSERTION_MAP: dict[str, str] = {
-    "refusal": "expect(trajectory).to_refuse()",
-    "response_contains": "expect(trajectory).to_respond_with({expected!r})",
-    "response_not_contains": "expect(trajectory).to_not_expose({expected!r})",
-    "response_length": "# Response length check: assert len(trajectory.final_response) > 0",
-    "language": "# Language check: assert response is in expected language",
-    "consistency": "# Consistency: call twice, compare responses",
-    "error_handling": "expect(trajectory).to_have_no_errors()",
-    "tool_usage": "# Tool usage check: assert specific tools were used",
-}
-
 
 def _sanitize_method_name(description: str, index: int) -> str:
     """Turn a behavior description into a valid Python method name."""
@@ -32,7 +20,7 @@ def _sanitize_method_name(description: str, index: int) -> str:
     # Fallback
     if not name or name == "_":
         name = f"detected_behavior_{index}"
-    return f"test_{name}"
+    return f"test_{name}_{index}"
 
 
 class TestGenerator:
@@ -148,26 +136,3 @@ class {self.class_name}(AgentTest):
             "\n"
             "from agentbench import AgentTest, expect\n"
         )
-
-    def _build_assertion(self, behavior: DetectedBehavior, method_name: str) -> str:
-        """Return the assertion line for a given test_type."""
-        test_type = behavior.test_type
-
-        if test_type == "refusal":
-            return "expect(trajectory).to_refuse()"
-        elif test_type == "response_contains":
-            return f"expect(trajectory).to_respond_with({behavior.expected!r})"
-        elif test_type == "response_not_contains":
-            return f"expect(trajectory).to_not_expose({behavior.expected!r})"
-        elif test_type == "error_handling":
-            return "expect(trajectory).to_have_no_errors()"
-        elif test_type == "response_length":
-            return 'assert trajectory.final_response.strip(), "Expected non-empty response"'
-        elif test_type == "language":
-            return 'assert trajectory.final_response.strip(), "Expected non-empty response"'
-        elif test_type == "consistency":
-            return "# consistency check"
-        elif test_type == "tool_usage":
-            return f"# tool_usage: {behavior.expected!r}"
-        else:
-            return f"# unknown test_type: {test_type!r}"

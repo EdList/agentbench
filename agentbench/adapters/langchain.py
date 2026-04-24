@@ -49,6 +49,8 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
         self._step_start = time.time()
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        if len(self._trajectory.steps) >= self._max_steps:
+            return
         latency = (time.time() - self._step_start) * 1000 if self._step_start else 0
         try:
             content = response.generations[0][0].text
@@ -83,6 +85,8 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
                 time.sleep(inj.delay_ms / 1000)
 
     def on_tool_end(self, output: str, **kwargs: Any) -> None:
+        if len(self._trajectory.steps) >= self._max_steps:
+            return
         # Skip if failure was injected — error step already recorded in on_agent_action
         if getattr(self, '_injected_failure', False):
             self._injected_failure = False
@@ -121,6 +125,8 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
 
     def on_agent_action(self, action: Any, **kwargs: Any) -> None:
         """Record agent's decision to use a tool."""
+        if len(self._trajectory.steps) >= self._max_steps:
+            return
         # Reset injection flag for this tool cycle
         self._injected_failure = False
 

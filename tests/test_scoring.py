@@ -355,9 +355,9 @@ class TestEdgeCases:
     def test_empty_behaviors(self):
         engine = ScoringEngine()
         report = engine.score([])
-        # No behaviors → neutral scores
+        # No behaviors → zero scores with findings
         assert report.behaviors_tested == 0
-        assert report.overall_score > 0  # defaults to 75 per domain
+        assert report.overall_score == 0.0  # No behaviors → score 0
 
     def test_single_behavior(self):
         engine = ScoringEngine()

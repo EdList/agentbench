@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import ipaddress
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from agentbench.scanner.analyzer import BehaviorAnalyzer
 from agentbench.scanner.prober import ALL_CATEGORIES, AgentProber
 from agentbench.scanner.scorer import ScoringEngine
+from agentbench.server.auth import require_auth
 from agentbench.server.schemas import (
     DomainScoreResponse,
     ScanRequest,
@@ -24,6 +27,50 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 # ---------------------------------------------------------------------------
 
 _scan_store: dict[str, dict] = {}
+
+
+# ---------------------------------------------------------------------------
+# SSRF protection
+# ---------------------------------------------------------------------------
+
+def _validate_agent_url(url: str) -> None:
+    """Block private/internal URLs to prevent SSRF attacks."""
+    parsed = urlparse(url)
+
+    # Only allow http and https schemes
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid URL scheme '{parsed.scheme}'. Only http and https are allowed.",
+        )
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL must contain a valid hostname.",
+        )
+
+    # Block well-known internal hostnames
+    blocked_hostnames = {"localhost", "metadata.google.internal"}
+    if hostname.lower() in blocked_hostnames:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Hostname '{hostname}' is not allowed.",
+        )
+
+    # Resolve and block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        # Not an IP address (e.g. a domain name) — allow through
+        return
+
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Private/internal IP address '{hostname}' is not allowed.",
+        )
 
 
 def _run_scan(agent_url: str, categories: list[str] | None) -> ScanResponse:
@@ -92,12 +139,16 @@ def _run_scan(agent_url: str, categories: list[str] | None) -> ScanResponse:
     response_model=ScanResponse,
     status_code=status.HTTP_200_OK,
 )
-def submit_scan(body: ScanRequest) -> ScanResponse:
+def submit_scan(
+    body: ScanRequest,
+    principal: str = Depends(require_auth),
+) -> ScanResponse:
     """Scan an agent and return the full report immediately.
 
     The scan runs synchronously (38 probes, no LLM) and typically completes
     in under a minute.
     """
+    _validate_agent_url(body.agent_url)
     scan_id = str(uuid.uuid4())
     try:
         report = _run_scan(body.agent_url, body.categories)
@@ -122,7 +173,10 @@ def submit_scan(body: ScanRequest) -> ScanResponse:
     "/{scan_id}",
     response_model=ScanResponse,
 )
-def get_scan(scan_id: str) -> ScanResponse:
+def get_scan(
+    scan_id: str,
+    principal: str = Depends(require_auth),
+) -> ScanResponse:
     """Retrieve a previously-run scan report by ID."""
     entry = _scan_store.get(scan_id)
     if entry is None:
@@ -137,6 +191,7 @@ def get_scan(scan_id: str) -> ScanResponse:
 def list_scans(
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
+    principal: str = Depends(require_auth),
 ) -> list[ScanSummaryResponse]:
     """List recent scans, ordered by time descending."""
     # Sort by timestamp descending

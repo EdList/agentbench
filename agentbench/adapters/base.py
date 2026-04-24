@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import Any
 
 from agentbench.core.test import (
@@ -98,6 +99,8 @@ class AgentAdapter(ABC):
             return None
         for injection in failure_injections:
             if injection.tool_name == tool_name and injection.fail_times > 0:
-                injection.fail_times -= 1
+                updated = replace(injection, fail_times=injection.fail_times - 1)
+                idx = failure_injections.index(injection)
+                failure_injections[idx] = updated
                 return injection.error_message
         return None

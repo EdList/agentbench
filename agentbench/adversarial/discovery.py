@@ -144,7 +144,7 @@ class AdversarialTestGenerator:
             if not attr_name.startswith("test_"):
                 continue
             method = getattr(self._base_class, attr_name, None)
-            if method is None or not callable:
+            if method is None or not callable(method):
                 continue
 
             # Try to extract string literals from the source

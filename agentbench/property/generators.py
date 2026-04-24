@@ -131,6 +131,10 @@ class _GeneratorMixin:
         if self._map_fn is not None:
             value = self._map_fn(value)
         if self._chain_gen is not None:
+            # Intentional: chain() starts fresh from the chained generator,
+            # discarding the current value. This allows composing generators
+            # where one generator's configuration determines what the next
+            # produces (e.g., generating a count, then that many items).
             value = self._chain_gen.generate(rng=rng)
         return value
 
@@ -188,35 +192,38 @@ class AgentInput(_GeneratorMixin):
     def generate(self, *, rng: random.Random | None = None) -> str:
         """Produce a single random input string."""
         r = rng or self._rng
-        nouns = _DOMAIN_NOUNS.get(self.domain, _DOMAIN_NOUNS["general"])
-        kind = r.choice(self.kinds)
+        for _attempt in range(11):
+            nouns = _DOMAIN_NOUNS.get(self.domain, _DOMAIN_NOUNS["general"])
+            kind = r.choice(self.kinds)
 
-        if kind == "question":
-            template = r.choice(_QUESTION_TEMPLATES)
-        elif kind == "command":
-            template = r.choice(_COMMAND_TEMPLATES)
-        else:
-            template = r.choice(_MULTI_TURN_TEMPLATES)
+            if kind == "question":
+                template = r.choice(_QUESTION_TEMPLATES)
+            elif kind == "command":
+                template = r.choice(_COMMAND_TEMPLATES)
+            else:
+                template = r.choice(_MULTI_TURN_TEMPLATES)
 
-        text = template.format(
-            noun=r.choice(nouns),
-            adj=r.choice(_ADJS),
-            cmd=r.choice(_COMMAND_TEMPLATES).format(
-                noun=r.choice(nouns), adj=r.choice(_ADJS)
-            ),
-        )
+            text = template.format(
+                noun=r.choice(nouns),
+                adj=r.choice(_ADJS),
+                cmd=r.choice(_COMMAND_TEMPLATES).format(
+                    noun=r.choice(nouns), adj=r.choice(_ADJS)
+                ),
+            )
 
-        # Ensure min/max length constraints
-        while len(text) < self.min_length:
-            text += " " + r.choice(nouns)
-        if len(text) > self.max_length:
-            text = text[: self.max_length].rstrip()
+            # Ensure min/max length constraints
+            while len(text) < self.min_length:
+                text += " " + r.choice(nouns)
+            if len(text) > self.max_length:
+                text = text[: self.max_length].rstrip()
 
-        text = self._apply(text, r)
-        if not self._check_filter(text):
-            # Retry once with a different template
-            return self.generate(rng=r)
-        return text
+            text = self._apply(text, r)
+            if not self._check_filter(text):
+                if _attempt >= 10:
+                    raise ValueError("Filter rejected all values after 10 attempts")
+                continue
+            return text
+        raise ValueError("Filter rejected all values after 10 attempts")
 
     def generate_many(self, n: int, *, rng: random.Random | None = None) -> list[str]:
         """Generate *n* distinct inputs."""
@@ -308,16 +315,20 @@ class ToolCallGen(_GeneratorMixin):
     def generate(self, *, rng: random.Random | None = None) -> list[ToolCall]:
         """Produce a random list of tool calls."""
         r = rng or self._rng
-        n = r.randint(self.min_calls, self.max_calls)
-        calls: list[ToolCall] = []
-        for _ in range(n):
-            tool = r.choice(self.available_tools)
-            args = self._random_args(r)
-            calls.append(ToolCall(tool_name=tool, arguments=args))
-        result = self._apply(calls, r)
-        if not self._check_filter(result):
-            return self.generate(rng=r)
-        return result
+        for _attempt in range(11):
+            n = r.randint(self.min_calls, self.max_calls)
+            calls: list[ToolCall] = []
+            for _ in range(n):
+                tool = r.choice(self.available_tools)
+                args = self._random_args(r)
+                calls.append(ToolCall(tool_name=tool, arguments=args))
+            result = self._apply(calls, r)
+            if not self._check_filter(result):
+                if _attempt >= 10:
+                    raise ValueError("Filter rejected all values after 10 attempts")
+                continue
+            return result
+        raise ValueError("Filter rejected all values after 10 attempts")
 
     def generate_many(
         self, n: int, *, rng: random.Random | None = None
@@ -409,22 +420,26 @@ class ConversationGen(_GeneratorMixin):
     def generate(self, *, rng: random.Random | None = None) -> list[ConversationTurn]:
         """Produce a random conversation."""
         r = rng or self._rng
-        n_turns = r.randint(self.min_turns, self.max_turns)
-        turns: list[ConversationTurn] = []
-        for i in range(n_turns):
-            if i == 0:
-                role = "system"
-            elif i % 2 == 1:
-                role = "user"
-            else:
-                role = "assistant"
-            content = self._input_gen.generate(rng=r)
-            turns.append(ConversationTurn(role=role, content=content))
+        for _attempt in range(11):
+            n_turns = r.randint(self.min_turns, self.max_turns)
+            turns: list[ConversationTurn] = []
+            for i in range(n_turns):
+                if i == 0:
+                    role = "system"
+                elif i % 2 == 1:
+                    role = "user"
+                else:
+                    role = "assistant"
+                content = self._input_gen.generate(rng=r)
+                turns.append(ConversationTurn(role=role, content=content))
 
-        result = self._apply(turns, r)
-        if not self._check_filter(result):
-            return self.generate(rng=r)
-        return result
+            result = self._apply(turns, r)
+            if not self._check_filter(result):
+                if _attempt >= 10:
+                    raise ValueError("Filter rejected all values after 10 attempts")
+                continue
+            return result
+        raise ValueError("Filter rejected all values after 10 attempts")
 
     def generate_many(
         self, n: int, *, rng: random.Random | None = None
@@ -493,42 +508,46 @@ class TrajectoryGen(_GeneratorMixin):
         from agentbench.core.test import AgentStep, AgentTrajectory
 
         r = rng or self._rng
-        n_steps = r.randint(self.min_steps, self.max_steps)
-        prompt = self._input_gen.generate(rng=r)
+        for _attempt in range(11):
+            n_steps = r.randint(self.min_steps, self.max_steps)
+            prompt = self._input_gen.generate(rng=r)
 
-        traj = AgentTrajectory(
-            run_id=str(uuid.uuid4()),
-            input_prompt=prompt,
-            completed=r.choice([True, True, True, False]),  # 75% complete
-        )
-
-        actions = ["tool_call", "llm_response", "tool_call", "llm_response", "error"]
-        for i in range(n_steps):
-            action = r.choice(actions)
-            step = AgentStep(
-                step_number=i + 1,
-                action=action,
-                tool_name=r.choice(self.available_tools) if action == "tool_call" else None,
-                tool_input={"arg": "val"} if action == "tool_call" else None,
-                tool_output="ok" if action == "tool_call" else None,
-                reasoning="thinking..." if action == "llm_response" else None,
-                response=self._input_gen.generate(rng=r) if action == "llm_response" else None,
-                error="something failed" if action == "error" else None,
-                latency_ms=r.uniform(10, 500),
+            traj = AgentTrajectory(
+                run_id=str(uuid.uuid4()),
+                input_prompt=prompt,
+                completed=r.choice([True, True, True, False]),  # 75% complete
             )
-            traj.steps.append(step)
 
-        if traj.steps:
-            last = traj.steps[-1]
-            if last.response:
-                traj.final_response = last.response
-            elif traj.completed:
-                traj.final_response = self._input_gen.generate(rng=r)
+            actions = ["tool_call", "llm_response", "tool_call", "llm_response", "error"]
+            for i in range(n_steps):
+                action = r.choice(actions)
+                step = AgentStep(
+                    step_number=i + 1,
+                    action=action,
+                    tool_name=r.choice(self.available_tools) if action == "tool_call" else None,
+                    tool_input={"arg": "val"} if action == "tool_call" else None,
+                    tool_output="ok" if action == "tool_call" else None,
+                    reasoning="thinking..." if action == "llm_response" else None,
+                    response=self._input_gen.generate(rng=r) if action == "llm_response" else None,
+                    error="something failed" if action == "error" else None,
+                    latency_ms=r.uniform(10, 500),
+                )
+                traj.steps.append(step)
 
-        result = self._apply(traj, r)
-        if not self._check_filter(result):
-            return self.generate(rng=r)
-        return result
+            if traj.steps:
+                last = traj.steps[-1]
+                if last.response:
+                    traj.final_response = last.response
+                elif traj.completed:
+                    traj.final_response = self._input_gen.generate(rng=r)
+
+            result = self._apply(traj, r)
+            if not self._check_filter(result):
+                if _attempt >= 10:
+                    raise ValueError("Filter rejected all values after 10 attempts")
+                continue
+            return result
+        raise ValueError("Filter rejected all values after 10 attempts")
 
     def generate_many(self, n: int, *, rng: random.Random | None = None) -> list[Any]:
         r = rng or self._rng

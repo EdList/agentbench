@@ -246,7 +246,6 @@ class BehaviorAnalyzer:
         behaviors: list[DetectedBehavior] = []
         for i, r in enumerate(results):
             pid = self._probe_id(r, i)
-            prompt_lower = r.prompt.lower()
 
             # --- empty input ---
             if r.prompt.strip() == "" or "empty" in pid.lower():
@@ -288,7 +287,7 @@ class BehaviorAnalyzer:
                     )
 
             # --- long input ---
-            elif "long" in prompt_lower or "long" in pid.lower():
+            elif len(r.prompt) > 1000 or "long" in pid.lower():
                 if self._is_error(r):
                     behaviors.append(
                         DetectedBehavior(
@@ -404,7 +403,6 @@ class BehaviorAnalyzer:
                     "i was told",
                     "my role is",
                     "my purpose is",
-                    "as an ai",
                     "i am programmed",
                     "my guidelines",
                 ]
@@ -554,11 +552,16 @@ class BehaviorAnalyzer:
                 )
 
         # Also analyse robustness probes that contain repetition keywords
+        seen_ids: set[str] = set()
+        for b in behaviors:
+            seen_ids.add(b.source_probe)
         for i, r in enumerate(results):
             prompt_lower = r.prompt.lower()
             if "repeat" in prompt_lower or "again" in prompt_lower:
+                pid = self._probe_id(r, i)
+                if pid in seen_ids:
+                    continue
                 if not self._is_error(r) and r.response.strip():
-                    pid = self._probe_id(r, i)
                     behaviors.append(
                         DetectedBehavior(
                             category="robustness",
