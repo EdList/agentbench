@@ -46,7 +46,10 @@ class DiffResult:
         from io import StringIO
         console = Console(file=StringIO(), force_terminal=True, width=100)
 
-        console.print(f"\n[bold]Trajectory Diff: {self.golden_name} vs {self.current_name}[/bold]\n")
+        console.print(
+            f"\n[bold]Trajectory Diff: {self.golden_name} "
+            f"vs {self.current_name}[/bold]\n"
+        )
 
         if not self.step_diffs:
             console.print("[green]✓ Trajectories match perfectly[/green]")
@@ -58,7 +61,10 @@ class DiffResult:
         summary_table.add_column("Count", justify="right")
         for severity in ["critical", "warning", "info", "match"]:
             count = self.summary.get(severity, 0)
-            style = {"critical": "red", "warning": "yellow", "info": "blue", "match": "green"}[severity]
+            style = {
+                "critical": "red", "warning": "yellow",
+                "info": "blue", "match": "green"
+            }[severity]
             summary_table.add_row(severity, str(count), style=style)
         console.print(summary_table)
 
@@ -68,9 +74,15 @@ class DiffResult:
             if diff.severity == "match":
                 continue
             style = {"critical": "red", "warning": "yellow", "info": "blue"}[diff.severity]
+            icon = (
+                '🔴' if diff.severity == 'critical'
+                else '🟡' if diff.severity == 'warning'
+                else 'ℹ️'
+            )
             console.print(
-                f"  [{style}]{'🔴' if diff.severity == 'critical' else '🟡' if diff.severity == 'warning' else 'ℹ️'} "
-                f"Step {diff.step_number} — {diff.field}: {diff.message}[/{style}]"
+                f"  [{style}]{icon} "
+                f"Step {diff.step_number} — {diff.field}: "
+                f"{diff.message}[/{style}]"
             )
 
         return console.file.getvalue()
@@ -94,7 +106,13 @@ class TrajectoryStore:
 
     def save(self, trajectory_data: dict[str, Any], name: str | None = None) -> Path:
         """Save a trajectory to disk."""
-        name = name or trajectory_data.get("name", f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+        name = (
+            name
+            or trajectory_data.get(
+                "name",
+                f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            )
+        )
         name = self._sanitize_name(name)
         path = self._base_dir / f"{name}.json"
         # Verify path hasn't escaped base_dir
@@ -168,7 +186,7 @@ class TrajectoryDiff:
                 result.step_diffs.append(StepDiff(
                     step_number=i, severity="warning", field="extra_step",
                     golden_value=None, current_value=current_step,
-                    message=f"Extra step in current run",
+                    message="Extra step in current run",
                 ))
                 continue
 
@@ -176,7 +194,7 @@ class TrajectoryDiff:
                 result.step_diffs.append(StepDiff(
                     step_number=i, severity="warning", field="missing_step",
                     golden_value=golden_step, current_value=None,
-                    message=f"Step missing in current run",
+                    message="Step missing in current run",
                 ))
                 continue
 
@@ -192,7 +210,7 @@ class TrajectoryDiff:
                 field="final_response",
                 golden_value=golden_response[:100],
                 current_value=current_response[:100],
-                message=f"Final response differs",
+                message="Final response differs",
             ))
 
         # Build summary
@@ -224,7 +242,11 @@ class TrajectoryDiff:
                 result.step_diffs.append(StepDiff(
                     step_number=index, severity="critical", field="tool_name",
                     golden_value=golden.get("tool_name"), current_value=current.get("tool_name"),
-                    message=f"Different tool: {golden.get('tool_name')} → {current.get('tool_name')}",
+                    message=(
+                        f"Different tool: "
+                        f"{golden.get('tool_name')} → "
+                        f"{current.get('tool_name')}"
+                    ),
                 ))
             elif golden.get("tool_input") != current.get("tool_input"):
                 result.step_diffs.append(StepDiff(
@@ -236,7 +258,7 @@ class TrajectoryDiff:
                 result.step_diffs.append(StepDiff(
                     step_number=index, severity="match", field="tool_call",
                     golden_value=golden.get("tool_name"), current_value=current.get("tool_name"),
-                    message=f"Tool call matches",
+                    message="Tool call matches",
                 ))
 
         # Check for errors
@@ -254,5 +276,5 @@ class TrajectoryDiff:
             result.step_diffs.append(StepDiff(
                 step_number=index, severity="info", field="response",
                 golden_value=golden_resp[:80], current_value=current_resp[:80],
-                message=f"Response content differs",
+                message="Response content differs",
             ))

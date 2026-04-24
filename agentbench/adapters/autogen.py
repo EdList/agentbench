@@ -245,7 +245,7 @@ class AutoGenAdapter(AgentAdapter):
                 msg = {"content": str(msg)}
 
             content = msg.get("content", "")
-            role = msg.get("role", "")
+            _role = msg.get("role", "")
             name = msg.get("name", "")
             step_start = time.time()
 

@@ -1,11 +1,11 @@
 """Core module — test base class, runner, assertions, sandbox, config."""
 
-from agentbench.core.test import AgentTest, AgentTrajectory, AgentStep
-from agentbench.core.assertions import expect, Expectation
-from agentbench.core.runner import TestRunner, TestResult, TestSuiteResult
+from agentbench.core.assertions import Expectation, expect
 from agentbench.core.config import AgentBenchConfig, SandboxConfig
+from agentbench.core.fixtures import Fixture, fixture
 from agentbench.core.parametrize import parametrize
-from agentbench.core.fixtures import fixture, Fixture
+from agentbench.core.runner import TestResult, TestRunner, TestSuiteResult
+from agentbench.core.test import AgentStep, AgentTest, AgentTrajectory
 
 __all__ = [
     "AgentTest",

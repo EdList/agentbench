@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import (
     Column,
@@ -16,7 +14,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import DeclarativeBase, relationship, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
 from agentbench.server.config import settings
 
@@ -74,7 +72,9 @@ class Run(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     test_suite_id = Column(String, ForeignKey("test_suites.id"), nullable=True)
-    status = Column(String(50), default="pending", server_default="pending")  # pending, running, completed, failed
+    status = Column(
+        String(50), default="pending", server_default="pending"
+    )  # pending, running, completed, failed
     total_tests = Column(Integer, default=0, server_default="0")
     passed = Column(Integer, default=0, server_default="0")
     failed = Column(Integer, default=0, server_default="0")
@@ -121,7 +121,7 @@ class Trajectory(Base):
 from sqlalchemy import create_engine as _create_engine  # noqa: E402
 
 _engine = None
-_SessionLocal: Optional[sessionmaker] = None
+_SessionLocal: sessionmaker | None = None
 
 
 def get_engine():

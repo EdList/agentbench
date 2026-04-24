@@ -382,11 +382,11 @@ class LangGraphAdapter(AgentAdapter):
                     if isinstance(tc, dict):
                         tc_name = tc.get("name", "unknown")
                         tc_args = tc.get("args", {})
-                        tc_id = tc.get("id", "")
+                        _tc_id = tc.get("id", "")
                     else:
                         tc_name = getattr(tc, "name", "unknown")
                         tc_args = getattr(tc, "args", {})
-                        tc_id = getattr(tc, "id", "")
+                        _tc_id = getattr(tc, "id", "")
 
                     # Check failure injection
                     fail_msg = self._should_inject_failure(tc_name, failure_injections)
@@ -395,7 +395,10 @@ class LangGraphAdapter(AgentAdapter):
                             trajectory,
                             action="error",
                             tool_name=tc_name,
-                            tool_input=tc_args if isinstance(tc_args, dict) else {"input": str(tc_args)},
+                            tool_input=(
+                                tc_args if isinstance(tc_args, dict)
+                                else {"input": str(tc_args)}
+                            ),
                             error=fail_msg,
                             latency_ms=(time.time() - step_start) * 1000,
                         )
@@ -410,7 +413,10 @@ class LangGraphAdapter(AgentAdapter):
                         trajectory,
                         action="tool_call",
                         tool_name=tc_name,
-                        tool_input=tc_args if isinstance(tc_args, dict) else {"input": str(tc_args)},
+                        tool_input=(
+                            tc_args if isinstance(tc_args, dict)
+                            else {"input": str(tc_args)}
+                        ),
                         latency_ms=(time.time() - step_start) * 1000,
                     )
 

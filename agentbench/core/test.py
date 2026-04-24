@@ -5,10 +5,9 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from agentbench.core.assertions import Expectation, StepAssertion
     from agentbench.adapters.base import AgentAdapter
 
 from agentbench.core.config import AgentBenchConfig
@@ -220,8 +219,16 @@ class AgentTest:
         # Execute through adapter
         start_time = time.time()
         try:
-            effective_max_steps = max_steps if max_steps is not None else self._get_config().max_steps
-            effective_timeout = timeout_seconds if timeout_seconds is not None else self._get_config().timeout_seconds
+            effective_max_steps = (
+                max_steps
+                if max_steps is not None
+                else self._get_config().max_steps
+            )
+            effective_timeout = (
+                timeout_seconds
+                if timeout_seconds is not None
+                else self._get_config().timeout_seconds
+            )
             self._trajectory = self.adapter.run(
                 prompt=prompt,
                 trajectory=self._trajectory,

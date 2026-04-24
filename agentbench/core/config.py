@@ -89,8 +89,13 @@ class AgentBenchConfig:
             if key in data:
                 value = data[key]
                 if not isinstance(value, expected_types[key]):
+                    type_name = (
+                        expected_types[key].__name__
+                        if isinstance(expected_types[key], type)
+                        else 'number'
+                    )
                     raise TypeError(
-                        f"Config '{key}' expected {expected_types[key].__name__ if isinstance(expected_types[key], type) else 'number'}, "
+                        f"Config '{key}' expected {type_name}, "
                         f"got {type(value).__name__}"
                     )
                 setattr(config, key, value)

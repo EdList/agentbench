@@ -5,16 +5,16 @@ This is a one-off benchmark script, not a unit test. Run with:
     python tests/benchmark.py
 """
 
-import time
-import sys
 import os
+import sys
+import time
 
 # Ensure the project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentbench.core.test import AgentTest
-from agentbench.core.runner import TestRunner
 from agentbench.adapters.raw_api import RawAPIAdapter
+from agentbench.core.runner import TestRunner
+from agentbench.core.test import AgentTest
 
 
 def _fast_adapter():
@@ -52,18 +52,19 @@ def main():
             def test_n(self, q):
                 result = self.run(q)
                 # Minimal assertions
+                assert result is not None
             test_n.__name__ = f"test_{idx:03d}"
             return test_n
         setattr(BenchmarkSuite, f"test_{i:03d}", make_test(i))
 
     # Run the benchmark
     runner = TestRunner(config={"verbose": False})
-    print(f"\nRunning 1000 tests (100 methods × 10 params)...")
+    print("\nRunning 1000 tests (100 methods × 10 params)...")
     start = time.time()
     result = runner.run_suite(BenchmarkSuite)
     elapsed = time.time() - start
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total tests:  {result.total}")
     print(f"  Passed:       {result.passed}")
     print(f"  Failed:       {result.failed}")

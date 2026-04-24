@@ -14,14 +14,18 @@ from agentbench.storage.trajectory import (
     TrajectoryStore,
 )
 
-
 # ─── Helpers ───
 
 SAMPLE_TRAJECTORY = {
     "name": "test-run",
     "response": "Final answer",
     "steps": [
-        {"action": "tool_call", "tool_name": "search", "tool_input": {"q": "test"}, "tool_output": "results"},
+        {
+            "action": "tool_call",
+            "tool_name": "search",
+            "tool_input": {"q": "test"},
+            "tool_output": "results",
+        },
         {"action": "llm_response", "response": "Found it"},
     ],
 }
@@ -32,7 +36,7 @@ SAMPLE_TRAJECTORY = {
 class TestTrajectoryStoreInit:
     def test_creates_base_dir(self, tmp_path):
         base = tmp_path / "my_trajs"
-        store = TrajectoryStore(base_dir=base)
+        _store = TrajectoryStore(base_dir=base)
         assert base.exists()
 
     def test_default_base_dir(self):
@@ -41,7 +45,7 @@ class TestTrajectoryStoreInit:
 
     def test_accepts_string_path(self, tmp_path):
         base = str(tmp_path / "str_path")
-        store = TrajectoryStore(base_dir=base)
+        _store = TrajectoryStore(base_dir=base)
         assert Path(base).exists()
 
 
@@ -196,7 +200,12 @@ class TestTrajectoryDiffCompare:
     def test_identical_trajectories(self):
         golden = self._make_traj(
             steps=[
-                {"action": "tool_call", "tool_name": "search", "tool_input": {"q": "x"}, "tool_output": "r"},
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {"q": "x"},
+                    "tool_output": "r",
+                },
                 {"action": "llm_response", "response": "Found"},
             ],
             response="Found",
@@ -204,7 +213,12 @@ class TestTrajectoryDiffCompare:
         )
         current = self._make_traj(
             steps=[
-                {"action": "tool_call", "tool_name": "search", "tool_input": {"q": "x"}, "tool_output": "r"},
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {"q": "x"},
+                    "tool_output": "r",
+                },
                 {"action": "llm_response", "response": "Found"},
             ],
             response="Found",
@@ -220,10 +234,20 @@ class TestTrajectoryDiffCompare:
 
     def test_different_tool_names_is_critical(self):
         golden = self._make_traj(
-            steps=[{"action": "tool_call", "tool_name": "search", "tool_input": {}, "tool_output": "r"}],
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_input": {},
+                "tool_output": "r",
+            }],
         )
         current = self._make_traj(
-            steps=[{"action": "tool_call", "tool_name": "database", "tool_input": {}, "tool_output": "r"}],
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "database",
+                "tool_input": {},
+                "tool_output": "r",
+            }],
         )
 
         diff = TrajectoryDiff()
@@ -261,10 +285,20 @@ class TestTrajectoryDiffCompare:
 
     def test_different_tool_input_is_warning(self):
         golden = self._make_traj(
-            steps=[{"action": "tool_call", "tool_name": "search", "tool_input": {"q": "old"}, "tool_output": "r"}],
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_input": {"q": "old"},
+                "tool_output": "r",
+            }],
         )
         current = self._make_traj(
-            steps=[{"action": "tool_call", "tool_name": "search", "tool_input": {"q": "new"}, "tool_output": "r"}],
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_input": {"q": "new"},
+                "tool_output": "r",
+            }],
         )
 
         diff = TrajectoryDiff()
@@ -278,7 +312,12 @@ class TestTrajectoryDiffCompare:
             steps=[{"action": "tool_call", "tool_name": "search", "tool_output": "ok"}],
         )
         current = self._make_traj(
-            steps=[{"action": "tool_call", "tool_name": "search", "tool_output": "ok", "error": "crashed"}],
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_output": "ok",
+                "error": "crashed",
+            }],
         )
 
         diff = TrajectoryDiff()
@@ -347,11 +386,21 @@ class TestTrajectoryDiffCompare:
     def test_summary_counts(self):
         golden = {
             "name": "g",
-            "steps": [{"action": "tool_call", "tool_name": "a", "tool_input": {"x": 1}, "tool_output": "r"}],
+            "steps": [{
+                "action": "tool_call",
+                "tool_name": "a",
+                "tool_input": {"x": 1},
+                "tool_output": "r",
+            }],
         }
         current = {
             "name": "c",
-            "steps": [{"action": "tool_call", "tool_name": "a", "tool_input": {"x": 2}, "tool_output": "r"}],
+            "steps": [{
+                "action": "tool_call",
+                "tool_name": "a",
+                "tool_input": {"x": 2},
+                "tool_output": "r",
+            }],
         }
 
         diff = TrajectoryDiff()

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Health
@@ -33,14 +32,14 @@ class TokenResponse(BaseModel):
 class RunCreateRequest(BaseModel):
     """Submit a new test run."""
 
-    name: Optional[str] = Field(None, description="Human-readable name for this run")
-    test_suite_code: Optional[str] = Field(
+    name: str | None = Field(None, description="Human-readable name for this run")
+    test_suite_code: str | None = Field(
         None, description="Inline Python code for the test suite"
     )
-    test_suite_path: Optional[str] = Field(
+    test_suite_path: str | None = Field(
         None, description="Path to test suite on the server filesystem"
     )
-    config: Optional[dict[str, Any]] = Field(
+    config: dict[str, Any] | None = Field(
         default_factory=dict, description="Run configuration overrides"
     )
 
@@ -50,8 +49,8 @@ class RunResultEntry(BaseModel):
     passed: int = 0
     failed: int = 0
     duration_ms: float = 0.0
-    error: Optional[str] = None
-    assertions: Optional[list[dict[str, Any]]] = None
+    error: str | None = None
+    assertions: list[dict[str, Any]] | None = None
 
 
 class RunResponse(BaseModel):
@@ -61,9 +60,9 @@ class RunResponse(BaseModel):
     passed: int = 0
     failed: int = 0
     duration_ms: float = 0.0
-    created_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    results: Optional[list[RunResultEntry]] = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+    results: list[RunResultEntry] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -82,18 +81,18 @@ class TrajectoryUploadRequest(BaseModel):
 
     name: str = Field(..., description="Name for the trajectory")
     data: dict[str, Any] = Field(..., description="Full trajectory JSON blob")
-    prompt: Optional[str] = Field(None, description="Original prompt")
-    tags: Optional[list[str]] = Field(default_factory=list, description="Tags")
+    prompt: str | None = Field(None, description="Original prompt")
+    tags: list[str] | None = Field(default_factory=list, description="Tags")
 
 
 class TrajectoryResponse(BaseModel):
     id: str
     name: str
     step_count: int = 0
-    prompt: Optional[str] = None
-    tags: Optional[list[str]] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    prompt: str | None = None
+    tags: list[str] | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

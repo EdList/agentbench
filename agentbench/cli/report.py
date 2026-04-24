@@ -40,7 +40,8 @@ def _render_html(data: dict) -> str:
 <title>AgentBench Report</title>
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
           background: #f8fafc; color: #1e293b; line-height: 1.6; padding: 2rem; }}
   .container {{ max-width: 960px; margin: 0 auto; }}
   header {{ background: {status_color}; color: #fff; border-radius: 12px; padding: 2rem;
@@ -58,7 +59,8 @@ def _render_html(data: dict) -> str:
                    border-bottom: 1px solid #e2e8f0; user-select: none; }}
   .suite-header:hover {{ background: #f1f5f9; }}
   .suite-header h2 {{ font-size: 1.1rem; }}
-  .suite-badge {{ font-size: .8rem; padding: .25rem .75rem; border-radius: 9999px; font-weight: 600; }}
+  .suite-badge {{ font-size: .8rem; padding: .25rem .75rem; border-radius: 9999px;
+                  font-weight: 600; }}
   .badge-pass {{ background: #dcfce7; color: #166534; }}
   .badge-fail {{ background: #fee2e2; color: #991b1b; }}
   .suite-body {{ padding: 0; }}
@@ -83,7 +85,8 @@ def _render_html(data: dict) -> str:
 <div class="container">
   <header>
     <h1>🧪 AgentBench Report</h1>
-    <p class="subtitle">{html.escape(status_text)} &middot; Generated {html.escape(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}</p>
+    <p class="subtitle">{html.escape(status_text)} &middot;
+    Generated {html.escape(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}</p>
     <div class="stats">
       <div class="stat"><span>{passed}</span>Passed</div>
       <div class="stat"><span>{failed}</span>Failed</div>

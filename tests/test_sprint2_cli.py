@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import textwrap
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from agentbench.cli.main import app
-from agentbench.cli.report import generate_html_report, _render_html
+from agentbench.cli.report import _render_html, generate_html_report
 
 runner = CliRunner()
 
@@ -74,7 +73,11 @@ def sample_json_report(tmp_path):
                         "duration_ms": 100.0,
                         "error": None,
                         "assertions": [
-                            {"passed": True, "message": "within 5 steps", "type": "to_complete_within"},
+                            {
+                                "passed": True,
+                                "message": "within 5 steps",
+                                "type": "to_complete_within",
+                            },
                         ],
                     },
                     {
@@ -306,7 +309,6 @@ class TestWatchCommand:
 
     def test_watchdog_import_error_message(self, tmp_path, monkeypatch):
         """Verify graceful error when watchdog is not installed."""
-        import importlib
         # Patch the watchdog import to fail
         import sys
         watchdog_mod = sys.modules.pop("watchdog", None)
@@ -330,7 +332,7 @@ class TestRunReportPipeline:
     def test_run_generates_valid_json_for_report(self, sample_suite, tmp_path):
         """Run with --report, then generate HTML from that report."""
         json_report = tmp_path / "results.json"
-        result = runner.invoke(app, ["run", str(sample_suite), "--report", str(json_report)])
+        _result = runner.invoke(app, ["run", str(sample_suite), "--report", str(json_report)])
         # exit code is 0 if all pass
         assert json_report.exists()
 

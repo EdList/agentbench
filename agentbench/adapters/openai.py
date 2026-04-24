@@ -403,7 +403,7 @@ class OpenAIAdapter(AgentAdapter):
                 continue
             seen_step_ids.add(step.id)
 
-            step_type = getattr(step, "type", None) or getattr(step, "step_details", None)
+            _step_type = getattr(step, "type", None) or getattr(step, "step_details", None)
 
             # Determine the actual type from step_details if available
             step_details = getattr(step, "step_details", None)
@@ -419,7 +419,7 @@ class OpenAIAdapter(AgentAdapter):
                         message_id = getattr(msg_info, "message_id", None)
 
                     content = self._fetch_message_content(thread, message_id) if message_id else ""
-                    latency = getattr(step, "completed_at", 0) and getattr(step, "started_at", 0)
+                    _latency = getattr(step, "completed_at", 0) and getattr(step, "started_at", 0)
                     step_latency = (
                         ((step.completed_at - step.started_at) * 1000)
                         if step.started_at and step.completed_at

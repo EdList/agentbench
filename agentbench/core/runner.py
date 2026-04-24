@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
-import signal
 import threading
 import time
 import traceback
@@ -14,9 +13,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agentbench.core.assertions import (
+    AssertionResult,
+    _clear_active_test,
+    _set_active_test,
+)
+from agentbench.core.fixtures import FixtureRegistry
 from agentbench.core.test import AgentTest, AgentTrajectory
-from agentbench.core.assertions import Expectation, AssertionResult, _set_active_test, _clear_active_test
-from agentbench.core.fixtures import Fixture, FixtureRegistry
 
 
 @dataclass
@@ -177,7 +180,9 @@ class TestRunner:
             logging.warning("Could not load %s: %s", path, e)
         return suites
 
-    def _discover_test_methods(self, suite_class: type[AgentTest]) -> list[tuple[str, str, dict | None]]:
+    def _discover_test_methods(
+        self, suite_class: type[AgentTest]
+    ) -> list[tuple[str, str, dict | None]]:
         """Discover test methods and their parametrize metadata.
 
         Returns:
@@ -209,7 +214,10 @@ class TestRunner:
                 arg_name = parametrize_meta["arg_name"]
                 for value in parametrize_meta["arg_values"]:
                     display_name = f"{method_name}[{value}]"
-                    expanded.append((method_name, display_name, {"arg_name": arg_name, "value": value}))
+                    param = {"arg_name": arg_name, "value": value}
+                    expanded.append(
+                        (method_name, display_name, param)
+                    )
             else:
                 expanded.append((method_name, method_name, None))
 
@@ -238,7 +246,10 @@ class TestRunner:
                     for method_name, display_name, param_info in test_items:
                         instance = suite_class()
                         future = executor.submit(
-                            self._run_single_test, instance, method_name, display_name, param_info, suite_name
+                            self._run_single_test,
+                            instance, method_name,
+                            display_name, param_info,
+                            suite_name
                         )
                         futures[future] = display_name
 
@@ -261,7 +272,11 @@ class TestRunner:
                 for method_name, display_name, param_info in test_items:
                     # Create a fresh instance for each test to prevent state leakage
                     instance = suite_class()
-                    result = self._run_single_test(instance, method_name, display_name, param_info, suite_name)
+                    result = self._run_single_test(
+                        instance, method_name,
+                        display_name, param_info,
+                        suite_name
+                    )
                     suite_result.results.append(result)
             finally:
                 # teardown_class hook
@@ -303,7 +318,11 @@ class TestRunner:
 
         def _execute():
             try:
-                self._execute_test_body(instance, method_name, display_name, param_info, suite_name, result)
+                self._execute_test_body(
+                    instance, method_name,
+                    display_name, param_info,
+                    suite_name, result
+                )
             except Exception as exc:
                 test_error[0] = f"{type(exc).__name__}: {exc}"
                 traceback.print_exc()
@@ -321,8 +340,10 @@ class TestRunner:
                 f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
                 f"  What went wrong: The test did not finish within the allowed time.\n"
                 f"  Expected: Test completes within {timeout_seconds}s.\n"
-                f"  What happened: Test is still running after {timeout_seconds}s (possible infinite loop or agent hang).\n"
-                f"  Suggested fix: Increase 'timeout_seconds' in config, optimize the agent, or check for infinite loops."
+                f"  What happened: Test is still running after "
+                f"{timeout_seconds}s (possible infinite loop or agent hang).\n"
+                f"  Suggested fix: Increase 'timeout_seconds' in "
+                f"config, optimize the agent, or check for infinite loops."
             )
 
         # If the test itself recorded an error (not timeout)
@@ -412,7 +433,8 @@ class TestRunner:
                 f"  What went wrong: The agent or test raised an unhandled exception.\n"
                 f"  Expected: Test should complete without exceptions.\n"
                 f"  What happened: {exc_type} was raised: {exc_msg}\n"
-                f"  Suggested fix: Check the agent adapter configuration and ensure the agent function handles edge cases."
+                f"  Suggested fix: Check the agent adapter configuration "
+                f"and ensure the agent function handles edge cases."
             )
             traceback.print_exc()
         finally:
@@ -427,7 +449,10 @@ class TestRunner:
 
             _clear_active_test()
 
-    def _validate_trajectory(self, trajectory: AgentTrajectory, test_name: str, result: TestResult) -> None:
+    def _validate_trajectory(
+        self, trajectory: AgentTrajectory,
+        test_name: str, result: TestResult
+    ) -> None:
         """Validate trajectory data and add warnings for malformed/edge-case data."""
         # Check for empty trajectory
         if trajectory.step_count == 0 and not trajectory.final_response:
@@ -440,26 +465,29 @@ class TestRunner:
             result.assertions.append(AssertionResult(
                 passed=True,  # Not a failure, but informational
                 message=(
-                    f"Agent completed but returned empty final response.\n"
-                    f"  What happened: Agent marked as completed but final_response is empty.\n"
-                    f"  Suggested fix: Ensure the agent returns a meaningful final response."
+                    "Agent completed but returned empty final response.\n"
+                    "  What happened: Agent marked as completed but final_response is empty.\n"
+                    "  Suggested fix: Ensure the agent returns a meaningful final response."
                 ),
                 assertion_type="trajectory_validation",
             ))
 
         # Check for infinite loop detection (max steps)
-        from agentbench.core.config import AgentBenchConfig
         max_steps = self._max_steps
         if trajectory.step_count >= max_steps:
             from agentbench.core.assertions import AssertionResult
             result.assertions.append(AssertionResult(
                 passed=False,
                 message=(
-                    f"MAX STEPS EXCEEDED: Agent used {trajectory.step_count} steps (limit: {max_steps}).\n"
+                    f"MAX STEPS EXCEEDED: Agent used "
+                    f"{trajectory.step_count} steps "
+                    f"(limit: {max_steps}).\n"
                     f"  What went wrong: The agent may be in an infinite loop.\n"
                     f"  Expected: Agent should complete within {max_steps} steps.\n"
-                    f"  What happened: Agent reached the step limit — possible infinite loop.\n"
-                    f"  Suggested fix: Increase max_steps in config or optimize the agent's decision loop."
+                    f"  What happened: Agent reached the step limit — "
+                    f"possible infinite loop.\n"
+                    f"  Suggested fix: Increase max_steps in config or "
+                    f"optimize the agent's decision loop."
                 ),
                 assertion_type="max_steps",
                 details={"steps": trajectory.step_count, "max_steps": max_steps},
@@ -474,9 +502,11 @@ class TestRunner:
                     message=(
                         f"MALFORMED TRAJECTORY: Step {i} has unknown action '{step.action}'.\n"
                         f"  What went wrong: Step data contains an unrecognized action type.\n"
-                        f"  Expected: Action should be one of: tool_call, llm_response, error, retry.\n"
+                        f"  Expected: Action should be one of: "
+                        f"tool_call, llm_response, error, retry.\n"
                         f"  What happened: Got '{step.action}'.\n"
-                        f"  Suggested fix: Check the agent adapter to ensure it records valid action types."
+                        f"  Suggested fix: Check the agent adapter to "
+                        f"ensure it records valid action types."
                     ),
                     assertion_type="trajectory_validation",
                 ))

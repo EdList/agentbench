@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from agentbench.core.test import AgentStep, AgentTrajectory, ToolFailureInjection
+from agentbench.core.test import AgentStep, AgentTrajectory
+from agentbench.evaluation.judge import JUDGE_TEMPLATES, JudgeEvaluator, JudgeResult
 from agentbench.evaluation.metrics import MetricsCollector, RunMetrics
-from agentbench.evaluation.judge import JudgeEvaluator, JudgeResult, JUDGE_TEMPLATES
-
 
 # ─── Helpers ───
 
@@ -64,7 +63,11 @@ class TestMetricsCollectorCollect:
     def test_collect_basic_trajectory(self):
         traj = _make_trajectory(
             steps=[
-                {"step_number": 0, "action": "tool_call", "tool_name": "search", "tool_output": "r", "latency_ms": 50},
+                {
+                    "step_number": 0, "action": "tool_call",
+                    "tool_name": "search", "tool_output": "r",
+                    "latency_ms": 50,
+                },
                 {"step_number": 1, "action": "llm_response", "response": "Found", "latency_ms": 30},
             ],
         )
@@ -80,9 +83,12 @@ class TestMetricsCollectorCollect:
     def test_collect_tool_calls_by_name(self):
         traj = _make_trajectory(
             steps=[
-                {"step_number": 0, "action": "tool_call", "tool_name": "search", "tool_output": "r1"},
-                {"step_number": 1, "action": "tool_call", "tool_name": "search", "tool_output": "r2"},
-                {"step_number": 2, "action": "tool_call", "tool_name": "calc", "tool_output": "42"},
+                {"step_number": 0, "action": "tool_call",
+                 "tool_name": "search", "tool_output": "r1"},
+                {"step_number": 1, "action": "tool_call",
+                 "tool_name": "search", "tool_output": "r2"},
+                {"step_number": 2, "action": "tool_call",
+                 "tool_name": "calc", "tool_output": "42"},
             ],
         )
         collector = MetricsCollector()
@@ -108,8 +114,18 @@ class TestMetricsCollectorCollect:
 
     def test_collect_latency_uses_sum_when_no_total(self):
         traj = AgentTrajectory(total_latency_ms=0)
-        traj.steps.append(AgentStep(step_number=0, action="llm_response", response="x", latency_ms=50))
-        traj.steps.append(AgentStep(step_number=1, action="llm_response", response="y", latency_ms=150))
+        traj.steps.append(
+            AgentStep(
+                step_number=0, action="llm_response",
+                response="x", latency_ms=50
+            )
+        )
+        traj.steps.append(
+            AgentStep(
+                step_number=1, action="llm_response",
+                response="y", latency_ms=150
+            )
+        )
 
         collector = MetricsCollector()
         metrics = collector.collect(traj)
@@ -275,7 +291,10 @@ class TestJudgeEvaluatorParseResponse:
         assert not result.passed
 
     def test_issues_extracted_to_details(self):
-        text = '{"score": 0.2, "reasoning": "Unsafe", "passed": false, "issues": ["PII leak", "harmful"]}'
+        text = (
+            '{"score": 0.2, "reasoning": "Unsafe", '
+            '"passed": false, "issues": ["PII leak", "harmful"]}'
+        )
         result = self.judge._parse_response(text, time.time())
         assert result.details == ["PII leak", "harmful"]
 
@@ -313,8 +332,18 @@ class TestJudgeEvaluatorFormatSteps:
 class TestJudgeEvaluatorFormatToolCalls:
     def test_format_tool_calls(self):
         traj = AgentTrajectory()
-        traj.steps.append(AgentStep(step_number=0, action="tool_call", tool_name="search", tool_output="results"))
-        traj.steps.append(AgentStep(step_number=1, action="tool_call", tool_name="calc", tool_output="42"))
+        traj.steps.append(
+            AgentStep(
+                step_number=0, action="tool_call",
+                tool_name="search", tool_output="results"
+            )
+        )
+        traj.steps.append(
+            AgentStep(
+                step_number=1, action="tool_call",
+                tool_name="calc", tool_output="42"
+            )
+        )
 
         output = JudgeEvaluator._format_tool_calls(traj)
         assert "search: results" in output
@@ -423,4 +452,7 @@ class TestJudgeTemplates:
 
     def test_templates_have_placeholders(self):
         for name, template in JUDGE_TEMPLATES.items():
-            assert "{prompt}" in template or "{criteria}" in template, f"Template {name} missing placeholders"
+            assert (
+                "{prompt}" in template
+                or "{criteria}" in template
+            ), f"Template {name} missing placeholders"

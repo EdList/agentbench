@@ -6,7 +6,6 @@ import importlib
 import inspect
 import json
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -56,13 +55,15 @@ def run(
     path: str = typer.Argument(".", help="Path to test suite or directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config YAML"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show step-by-step output"),
-    filter_pattern: str | None = typer.Option(None, "--filter", "-f", help="Filter tests by name pattern"),
+    filter_pattern: str | None = typer.Option(
+        None, "--filter", "-f", help="Filter tests by name pattern"
+    ),
     parallel: int = typer.Option(1, "--parallel", "-p", help="Number of parallel workers"),
     report: str | None = typer.Option(None, "--report", "-r", help="Output file for report (JSON)"),
 ) -> None:
     """Run agent test suites."""
-    from agentbench.core.runner import TestRunner
     from agentbench.core.config import AgentBenchConfig
+    from agentbench.core.runner import TestRunner
 
     # Load config
     bench_config = AgentBenchConfig.from_yaml(config) if config else AgentBenchConfig()
@@ -85,7 +86,10 @@ def run(
 
     # Warn if no tests found
     if result.total_tests == 0:
-        console.print("[yellow]⚠ No tests found.[/yellow] Check your path and test file names (test_*.py).")
+        console.print(
+            "[yellow]⚠ No tests found.[/yellow] "
+            "Check your path and test file names (test_*.py)."
+        )
         raise typer.Exit(1)
 
     # Display results
@@ -167,7 +171,10 @@ def record(
                     break
 
     if test_instance is None:
-        console.print("[red]Could not find an agent adapter. Provide a path to your test directory.[/red]")
+        console.print(
+            "[red]Could not find an agent adapter. "
+            "Provide a path to your test directory.[/red]"
+        )
         console.print("[dim]Usage: agentbench record ./tests \"Your prompt\"[/dim]")
         raise typer.Exit(1)
 
@@ -195,8 +202,10 @@ def record(
 @app.command()
 def diff(
     golden: str = typer.Argument(..., help="Path to golden trajectory JSON"),
-    current: str | None = typer.Option(None, "--current", "-c",
-                                        help="Path to current trajectory (runs agent if not provided)"),
+    current: str | None = typer.Option(
+        None, "--current", "-c",
+        help="Path to current trajectory (runs agent if not provided)"
+    ),
     agent_path: str = typer.Option(".", "--agent", "-a",
                                     help="Path to agent test directory (for auto re-run)"),
 ) -> None:
@@ -222,12 +231,18 @@ def diff(
         # Auto re-run: find the adapter and execute with the same prompt
         prompt = golden_data.get("prompt", golden_data.get("input_prompt", ""))
         if not prompt:
-            console.print("[red]Golden trajectory has no recorded prompt. Provide --current path.[/red]")
+            console.print(
+                "[red]Golden trajectory has no recorded prompt. "
+                "Provide --current path.[/red]"
+            )
             raise typer.Exit(1)
 
         test_instance = _find_adapter_in_path(Path(agent_path))
         if test_instance is None:
-            console.print(f"[red]No agent adapter found in {agent_path}. Provide --current path.[/red]")
+            console.print(
+                f"[red]No agent adapter found in {agent_path}. "
+                f"Provide --current path.[/red]"
+            )
             raise typer.Exit(1)
 
         console.print(f"[dim]Re-running agent with prompt: {prompt!r}[/dim]")
@@ -249,8 +264,10 @@ def diff(
 @app.command()
 def init(
     name: str = typer.Argument("agent-tests", help="Name for the test project"),
-    framework: str = typer.Option("raw_api", "--framework", "-f",
-                                   help="Agent framework: raw_api, langchain, openai, crewai, autogen, langgraph"),
+    framework: str = typer.Option(
+        "raw_api", "--framework", "-f",
+        help="Agent framework: raw_api, langchain, openai, crewai, autogen, langgraph"
+    ),
     path: str | None = typer.Option(None, "--path", "-p", help="Output directory"),
 ) -> None:
     """Scaffold a new AgentBench test project."""
@@ -260,26 +277,33 @@ def init(
     scaffold_project(output_path, name, framework)
     console.print(f"[green]✓[/green] Created test project: {output_path}")
     console.print(f"\n  cd {output_path}")
-    console.print(f"  agentbench run")
+    console.print("  agentbench run")
 
 
 @app.command()
 def watch(
     path: str = typer.Argument(".", help="Path to test suite or directory"),
-    filter_pattern: str | None = typer.Option(None, "--filter", "-f", help="Filter tests by name pattern"),
-    config: str | None = typer.Option(None, "--config", "-c", help="Path to config YAML"),
+    filter_pattern: str | None = typer.Option(
+        None, "--filter", "-f", help="Filter tests by name pattern"
+    ),
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to config YAML"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show step-by-step output"),
 ) -> None:
     """Watch test files for changes and re-run automatically."""
     try:
+        from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileSystemEventHandler
         from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
     except ImportError:
-        console.print("[red]watchdog is required for watch mode. Install with: pip install agentbench[watch][/red]")
+        console.print(
+            "[red]watchdog is required for watch mode. "
+            "Install with: pip install agentbench[watch][/red]"
+        )
         raise typer.Exit(1)
 
-    from agentbench.core.runner import TestRunner
     from agentbench.core.config import AgentBenchConfig
+    from agentbench.core.runner import TestRunner
 
     target = Path(path).resolve()
     if not target.exists():
@@ -368,7 +392,9 @@ def report(
 @app.command(name="list")
 def list_tests(
     path: str = typer.Argument(".", help="Path to test directory or file"),
-    filter_pattern: str | None = typer.Option(None, "--filter", "-f", help="Filter by name pattern"),
+    filter_pattern: str | None = typer.Option(
+        None, "--filter", "-f", help="Filter by name pattern"
+    ),
 ) -> None:
     """Discover and list all test suites and methods without running them."""
     from agentbench.core.runner import TestRunner
@@ -407,7 +433,10 @@ def list_tests(
         total_methods += len(test_methods)
 
         suite_icon = "📦"
-        console.print(f"\n{suite_icon} [bold]{suite_class.__name__}[/bold]  [dim]({len(test_methods)} tests)[/dim]")
+        console.print(
+            f"\n{suite_icon} [bold]{suite_class.__name__}[/bold]  "
+            f"[dim]({len(test_methods)} tests)[/dim]"
+        )
 
         for method_name in test_methods:
             method = getattr(temp_instance, method_name)
@@ -415,7 +444,10 @@ def list_tests(
             doc_text = f"  [dim]— {doc}[/dim]" if doc else ""
             console.print(f"  ○ {method_name}{doc_text}")
 
-    console.print(f"\n[bold]Summary:[/bold] {total_suites} suite(s), {total_methods} test method(s)")
+    console.print(
+        f"\n[bold]Summary:[/bold] "
+        f"{total_suites} suite(s), {total_methods} test method(s)"
+    )
 
 
 @app.command()
@@ -428,7 +460,10 @@ def serve(
     try:
         import uvicorn  # noqa: F401
     except ImportError:
-        console.print("[red]Server dependencies not installed. Install with: pip install agentbench[server][/red]")
+        console.print(
+            "[red]Server dependencies not installed. "
+            "Install with: pip install agentbench[server][/red]"
+        )
         raise typer.Exit(1)
 
     from agentbench.server.models import create_tables

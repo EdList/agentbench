@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
 from agentbench.server.config import settings
@@ -18,7 +17,7 @@ from agentbench.server.config import settings
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def verify_api_key(api_key: Optional[str] = Security(_api_key_header)) -> str:
+def verify_api_key(api_key: str | None = Security(_api_key_header)) -> str:
     """FastAPI dependency that validates the ``X-API-Key`` header.
 
     Returns the validated key string on success.  Raises 401 otherwise.
@@ -40,10 +39,10 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 def create_access_token(
     subject: str,
-    expires_delta: Optional[_dt.timedelta] = None,
+    expires_delta: _dt.timedelta | None = None,
 ) -> str:
     """Create a signed JWT for *subject* (typically a user id or API key)."""
-    now = _dt.datetime.now(_dt.timezone.utc)
+    now = _dt.datetime.now(_dt.UTC)
     expire = now + (expires_delta or _dt.timedelta(hours=24))
     payload = {"sub": subject, "iat": now, "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
@@ -55,7 +54,7 @@ def decode_access_token(token: str) -> dict:
 
 
 def require_token(
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),
 ) -> dict:
     """FastAPI dependency that requires a valid Bearer JWT.
 
@@ -81,8 +80,8 @@ def require_token(
 # ---------------------------------------------------------------------------
 
 def require_auth(
-    api_key: Optional[str] = Security(_api_key_header),
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(_bearer_scheme),
+    api_key: str | None = Security(_api_key_header),
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),
 ) -> str:
     """FastAPI dependency that accepts either an API key or a Bearer JWT.
 

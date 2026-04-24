@@ -1,12 +1,12 @@
 """Tests for AgentBench core — test engine, assertions, runner."""
 
 import pytest
-from agentbench.core.test import AgentTest, AgentTrajectory, AgentStep, ToolFailureInjection
-from agentbench.core.assertions import expect, Expectation, AssertionResult
-from agentbench.core.runner import TestRunner
-from agentbench.core.fixtures import fixture, Fixture, FixtureRegistry
-from agentbench.adapters.raw_api import RawAPIAdapter
 
+from agentbench.adapters.raw_api import RawAPIAdapter
+from agentbench.core.assertions import AssertionResult, expect
+from agentbench.core.fixtures import Fixture, FixtureRegistry, fixture
+from agentbench.core.runner import TestRunner
+from agentbench.core.test import AgentStep, AgentTest, AgentTrajectory
 
 # ─── Helpers ───
 
@@ -43,20 +43,33 @@ class TestExpectations:
         assert not result.all_passed
 
     def test_to_complete_within(self):
-        steps = [{"step_number": i, "action": "llm_response", "response": f"step {i}"} for i in range(5)]
+        steps = [
+            {
+                "step_number": i, "action": "llm_response",
+                "response": f"step {i}"
+            }
+            for i in range(5)
+        ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
         assert result.all_passed
 
     def test_to_complete_within_fails(self):
-        steps = [{"step_number": i, "action": "llm_response", "response": f"step {i}"} for i in range(15)]
+        steps = [
+            {
+                "step_number": i, "action": "llm_response",
+                "response": f"step {i}"
+            }
+            for i in range(15)
+        ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
         assert not result.all_passed
 
     def test_to_use_tool(self):
         steps = [
-            {"step_number": 0, "action": "tool_call", "tool_name": "search", "tool_output": "results"},
+            {"step_number": 0, "action": "tool_call", "tool_name": "search",
+             "tool_output": "results"},
             {"step_number": 1, "action": "llm_response", "response": "Found it"},
         ]
         traj = make_trajectory(steps=steps)
@@ -113,7 +126,8 @@ class TestExpectations:
         steps = [
             {"step_number": 0, "action": "tool_call", "tool_name": "search", "error": "timeout"},
             {"step_number": 1, "action": "retry", "response": "retrying"},
-            {"step_number": 2, "action": "tool_call", "tool_name": "search", "tool_output": "results"},
+            {"step_number": 2, "action": "tool_call",
+             "tool_name": "search", "tool_output": "results"},
             {"step_number": 3, "action": "llm_response", "response": "Done"},
         ]
         traj = make_trajectory(steps=steps, completed=True)
@@ -158,7 +172,8 @@ class TestExpectations:
 
     def test_chained_expectations(self):
         steps = [
-            {"step_number": 0, "action": "tool_call", "tool_name": "search", "tool_output": "results"},
+            {"step_number": 0, "action": "tool_call",
+             "tool_name": "search", "tool_output": "results"},
             {"step_number": 1, "action": "llm_response", "response": "Found it"},
         ]
         traj = make_trajectory(steps=steps, completed=True, final_response="Found it")
@@ -294,7 +309,6 @@ class TestAgentTimeout:
 
     def test_timeout_is_respected(self):
         """A test that hangs beyond the timeout should be marked as failed."""
-        import threading
 
         def hanging_agent(prompt: str, context=None):
             import time
@@ -494,7 +508,8 @@ class TestMalformedTrajectory:
 # ─── Improved Error Messages ───
 
 class TestImprovedErrorMessages:
-    """Verify all failure messages include: what went wrong, expected, what happened, suggested fix."""
+    """Verify all failure messages include: what went wrong, expected,
+    what happened, suggested fix."""
 
     def test_to_complete_failure_message(self):
         traj = make_trajectory(completed=False, error="Timeout exceeded")
@@ -506,7 +521,11 @@ class TestImprovedErrorMessages:
         assert "Suggested fix" in msg
 
     def test_to_complete_within_failure_message(self):
-        steps = [{"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(15)]
+        steps = [
+            {"step_number": i, "action": "llm_response",
+             "response": f"s{i}"}
+            for i in range(15)
+        ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
         msg = result.results[0].message
@@ -810,8 +829,13 @@ class TestMaxStepsEnforcement:
     """Tests for max steps enforcement and infinite loop detection."""
 
     def test_to_complete_within_non_completed(self):
-        """Non-completed trajectory should fail step limit check with clear message."""
-        steps = [{"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(3)]
+        """Non-completed trajectory should fail step limit check
+        with clear message."""
+        steps = [
+            {"step_number": i, "action": "llm_response",
+             "response": f"s{i}"}
+            for i in range(3)
+        ]
         traj = make_trajectory(steps=steps, completed=False, error="Agent stalled")
         result = expect(traj).to_complete_within(steps=10)
         assert not result.all_passed
@@ -820,14 +844,22 @@ class TestMaxStepsEnforcement:
 
     def test_step_limit_exact_boundary(self):
         """Agent using exactly the step limit should pass."""
-        steps = [{"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(10)]
+        steps = [
+            {"step_number": i, "action": "llm_response",
+             "response": f"s{i}"}
+            for i in range(10)
+        ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
         assert result.all_passed
 
     def test_step_limit_one_over_fails(self):
         """Agent using one more step than limit should fail."""
-        steps = [{"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(11)]
+        steps = [
+            {"step_number": i, "action": "llm_response",
+             "response": f"s{i}"}
+            for i in range(11)
+        ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
         assert not result.all_passed

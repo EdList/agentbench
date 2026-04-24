@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import json
 import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agentbench.adapters.base import AgentAdapter
-from agentbench.adapters.raw_api import RawAPIAdapter
 from agentbench.adapters.langchain import LangChainAdapter, _TrajectoryCallback
+from agentbench.adapters.raw_api import RawAPIAdapter
 from agentbench.core.test import (
-    AgentStep,
     AgentTrajectory,
     ToolFailureInjection,
     ToolLatencyInjection,
 )
-
 
 # ─── Helpers ───
 
@@ -150,7 +147,7 @@ class TestRawAPIAdapterFunctionMode:
             return {"response": "ok"}
 
         adapter = RawAPIAdapter(func=agent)
-        traj = adapter.run("Hi", _empty_trajectory(), context={"key": "val"})
+        _traj = adapter.run("Hi", _empty_trajectory(), context={"key": "val"})
         assert received_context == {"key": "val"}
 
 
@@ -168,7 +165,12 @@ class TestRawAPIAdapterFailureInjection:
             }
 
         adapter = RawAPIAdapter(func=agent)
-        failures = [ToolFailureInjection(tool_name="search", fail_times=1, error_message="Injected fail")]
+        failures = [
+            ToolFailureInjection(
+                tool_name="search", fail_times=1,
+                error_message="Injected fail"
+            )
+        ]
         traj = adapter.run("Search", _empty_trajectory(), failure_injections=failures)
 
         # The tool_call step should be replaced with an error
@@ -315,7 +317,7 @@ class TestRawAPIAdapterHTTPMode:
         failures = [ToolFailureInjection(tool_name="db", fail_times=2, error_message="timeout")]
         latencies = [ToolLatencyInjection(tool_name="search", delay_ms=500)]
 
-        traj = adapter.run(
+        _traj = adapter.run(
             "Test", _empty_trajectory(),
             failure_injections=failures,
             latency_injections=latencies,
@@ -437,8 +439,13 @@ class TestLangChainAdapterInit:
     def test_tools_fallback_on_error(self):
         executor = MagicMock()
         executor.tools = property(lambda self: (_ for _ in ()).throw(RuntimeError("no tools")))
-        # When tools raises, get_available_tools catches Exception and returns []
-        type(executor).tools = property(lambda self: (_ for _ in ()).throw(RuntimeError("no tools")))
+        # When tools raises, get_available_tools catches Exception
+        # and returns []
+        type(executor).tools = property(
+            lambda self: (
+                _ for _ in ()
+            ).throw(RuntimeError("no tools"))
+        )
         adapter = LangChainAdapter(executor)
         assert adapter.get_available_tools() == []
 
@@ -543,7 +550,12 @@ class TestTrajectoryCallback:
 
     def test_failure_injection_in_on_agent_action(self):
         traj = AgentTrajectory()
-        failures = [ToolFailureInjection(tool_name="search", fail_times=1, error_message="Injected!")]
+        failures = [
+            ToolFailureInjection(
+                tool_name="search", fail_times=1,
+                error_message="Injected!"
+            )
+        ]
         cb = _TrajectoryCallback(
             trajectory=traj,
             failure_injections=failures,
@@ -563,7 +575,7 @@ class TestTrajectoryCallback:
 
     def test_failure_injection_skips_on_tool_end(self):
         """When failure is injected, on_tool_end should be skipped.
-        
+
         Note: on_tool_start resets the _injected_failure flag, so we
         call on_tool_end directly after on_agent_action without an
         intervening on_tool_start to verify the skip behavior.

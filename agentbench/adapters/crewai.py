@@ -126,7 +126,10 @@ class CrewAIAdapter(AgentAdapter):
             result = self._crew.kickoff(input=prompt)
 
             # Parse the crew result into trajectory steps
-            self._parse_crew_result(result, trajectory, start, failure_injections, latency_injections)
+            self._parse_crew_result(
+                result, trajectory, start,
+                failure_injections, latency_injections,
+            )
 
             trajectory.completed = True
             trajectory.total_latency_ms = (time.time() - start) * 1000
@@ -204,9 +207,9 @@ class CrewAIAdapter(AgentAdapter):
                 # Try to extract richer information
                 agent_name = getattr(task_result, "agent", None) or ""
                 description = getattr(task_result, "description", None) or ""
-                tool_name = None
-                tool_input = None
-                tool_output = None
+                _tool_name = None
+                _tool_input = None
+                _tool_output = None
                 response = task_str
 
                 # Check if this task involved tool usage

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
-from datetime import datetime
-from typing import Any, Generator
-from unittest.mock import MagicMock, patch
+from collections.abc import Generator
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,7 +41,7 @@ def db_session(db_engine) -> Generator[Session, None, None]:
     """Provide a transactional DB session that rolls back after each test."""
     connection = db_engine.connect()
     transaction = connection.begin()
-    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=connection)
+    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=connection)  # noqa: N806
     session = TestSession()
     yield session
     session.close()
@@ -222,7 +220,11 @@ class TestTrajectories:
                 "name": "golden-run-1",
                 "data": {
                     "steps": [
-                        {"action": "tool_call", "tool_name": "search", "tool_input": {"q": "hello"}},
+                        {
+                            "action": "tool_call",
+                            "tool_name": "search",
+                            "tool_input": {"q": "hello"},
+                        },
                         {"action": "response", "response": "Hello!"},
                     ],
                 },

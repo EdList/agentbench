@@ -1,15 +1,14 @@
 """Tests for Sprint 2 core features — parametric tests, parallel execution, fixtures/hooks."""
 
-import time
 import threading
-import pytest
-from agentbench.core.test import AgentTest, AgentTrajectory, AgentStep
-from agentbench.core.assertions import expect
-from agentbench.core.runner import TestRunner, TestResult, TestSuiteResult, RunResult
-from agentbench.core.parametrize import parametrize
-from agentbench.core.fixtures import fixture, Fixture
-from agentbench.adapters.raw_api import RawAPIAdapter
+import time
 
+from agentbench.adapters.raw_api import RawAPIAdapter
+from agentbench.core.assertions import expect
+from agentbench.core.fixtures import Fixture, fixture
+from agentbench.core.parametrize import parametrize
+from agentbench.core.runner import TestRunner
+from agentbench.core.test import AgentTest
 
 # ─── Helpers ───
 
@@ -649,7 +648,11 @@ class TestAllFeaturesCombined:
         def multi_adapter():
             def agent(prompt: str, context=None):
                 steps = [
-                    {"action": "tool_call", "tool_name": "search", "tool_output": f"result for {prompt}"},
+                    {
+                        "action": "tool_call",
+                        "tool_name": "search",
+                        "tool_output": f"result for {prompt}",
+                    },
                     {"action": "llm_response", "response": f"Found: {prompt}"},
                 ]
                 return {"response": f"Result for {prompt}", "steps": steps}

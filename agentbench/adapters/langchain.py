@@ -6,7 +6,12 @@ import time
 from typing import Any
 
 from agentbench.adapters.base import AgentAdapter
-from agentbench.core.test import AgentStep, AgentTrajectory, ToolFailureInjection, ToolLatencyInjection
+from agentbench.core.test import (
+    AgentStep,
+    AgentTrajectory,
+    ToolFailureInjection,
+    ToolLatencyInjection,
+)
 
 # Try to import BaseCallbackHandler for proper LangChain integration.
 # If not installed, we use a plain class as fallback.
@@ -84,7 +89,10 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
             return
 
         latency = (time.time() - self._step_start) * 1000 if self._step_start else 0
-        tool_name = getattr(self, '_current_tool_name', None) or kwargs.get("serialized", {}).get("name", "unknown")
+        tool_name = (
+            getattr(self, '_current_tool_name', None)
+            or kwargs.get("serialized", {}).get("name", "unknown")
+        )
         tool_input = getattr(self, '_current_tool_input', None)
 
         step = AgentStep(
@@ -136,7 +144,10 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
                 step_number=len(self._trajectory.steps),
                 action="error",
                 tool_name=tool_name,
-                tool_input=tool_input if isinstance(tool_input, dict) else {"input": str(tool_input)},
+                tool_input=(
+                    tool_input if isinstance(tool_input, dict)
+                    else {"input": str(tool_input)}
+                ),
                 error=error_msg,
             )
             self._trajectory.steps.append(step)

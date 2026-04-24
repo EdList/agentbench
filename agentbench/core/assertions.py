@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -54,7 +54,8 @@ class StepAssertion:
                 f"  What went wrong: Step action or tool name does not match.\n"
                 f"  Expected: action='tool_call', tool_name='{name}'.\n"
                 f"  What happened: action='{actual_action}', tool_name='{actual_tool}'.\n"
-                f"  Suggested fix: Ensure the agent calls tool '{name}' at this step, or check step index."
+                f"  Suggested fix: Ensure the agent calls tool "
+                f"'{name}' at this step, or check step index."
             )
 
         self._results.append(AssertionResult(
@@ -77,8 +78,10 @@ class StepAssertion:
                 f"Step {self._step_index}: response does not contain '{text}'.\n"
                 f"  What went wrong: Expected text was not found in the step response.\n"
                 f"  Expected: Response containing '{text}'.\n"
-                f"  What happened: Response was: \"{response[:200]}{'...' if len(response) > 200 else ''}\".\n"
-                f"  Suggested fix: Check the agent's output at this step, or adjust the expected text."
+                f"  What happened: Response was: "
+                f"\"{response[:200]}{'...' if len(response) > 200 else ''}\".\n"
+                f"  Suggested fix: Check the agent's output at this step, "
+                f"or adjust the expected text."
             )
 
         self._results.append(AssertionResult(
@@ -102,7 +105,8 @@ class StepAssertion:
                 f"  What went wrong: This step recorded an error.\n"
                 f"  Expected: No error (error should be None).\n"
                 f"  What happened: Error = '{error}'.\n"
-                f"  Suggested fix: Investigate why this step failed — check agent logic, tool availability, or network issues."
+                f"  Suggested fix: Investigate why this step failed — "
+                f"check agent logic, tool availability, or network issues."
             )
 
         self._results.append(AssertionResult(
@@ -226,8 +230,11 @@ class Expectation:
                 f"Agent did not complete within step limit.\n"
                 f"  What went wrong: Agent did not finish — it may have crashed or hung.\n"
                 f"  Expected: completed=True within {steps} steps.\n"
-                f"  What happened: completed={self._trajectory.completed}, {actual} steps taken, error={repr(self._trajectory.error)}.\n"
-                f"  Suggested fix: Check agent error logs, increase step limit, or debug agent logic."
+                f"  What happened: completed="
+                f"{self._trajectory.completed}, {actual} steps taken, "
+                f"error={repr(self._trajectory.error)}.\n"
+                f"  Suggested fix: Check agent error logs, "
+                f"increase step limit, or debug agent logic."
             )
         else:
             msg = (
@@ -235,7 +242,8 @@ class Expectation:
                 f"  What went wrong: Too many steps were needed.\n"
                 f"  Expected: ≤ {steps} steps.\n"
                 f"  What happened: {actual} steps were used.\n"
-                f"  Suggested fix: Optimize the agent to use fewer steps, or increase the step limit."
+                f"  Suggested fix: Optimize the agent to use fewer "
+                f"steps, or increase the step limit."
             )
 
         self._add_result(
@@ -264,7 +272,9 @@ class Expectation:
                     f"  What went wrong: Tool call count does not match expected.\n"
                     f"  Expected: {times} call(s) to '{name}'.\n"
                     f"  What happened: {call_count} call(s) to '{name}'.\n"
-                    f"  Suggested fix: Review the agent logic to call '{name}' exactly {times} time(s), or adjust the expected count."
+                    f"  Suggested fix: Review the agent logic to call "
+                    f"'{name}' exactly {times} time(s), or adjust "
+                    f"the expected count."
                 )
             self._add_result(
                 passed=passed,
@@ -284,7 +294,8 @@ class Expectation:
                     f"  What went wrong: Expected at least one call to '{name}', but got zero.\n"
                     f"  Expected: ≥ 1 call to '{name}'.\n"
                     f"  What happened: 0 calls to '{name}'.\n"
-                    f"  Suggested fix: Ensure the agent has access to '{name}' and the test scenario requires its use."
+                    f"  Suggested fix: Ensure the agent has access to "
+                    f"'{name}' and the test scenario requires its use."
                 )
             self._add_result(
                 passed=passed,
@@ -308,7 +319,8 @@ class Expectation:
                 f"  What went wrong: Tool '{name}' was called but should not have been.\n"
                 f"  Expected: 0 calls to '{name}'.\n"
                 f"  What happened: {len(calls)} call(s) to '{name}'.\n"
-                f"  Suggested fix: Remove '{name}' from agent's available tools or adjust agent logic to avoid it."
+                f"  Suggested fix: Remove '{name}' from agent's "
+                f"available tools or adjust agent logic to avoid it."
             )
 
         self._add_result(
@@ -359,12 +371,18 @@ class Expectation:
         if passed:
             message = f"Agent retried {retry_count} time(s) (max: {max_attempts}) and completed"
         else:
+            retry_reason = (
+                'Agent did not complete after retries.'
+                if not self._trajectory.completed
+                else 'Too many retries.'
+            )
             message = (
                 f"Agent retry check failed.\n"
-                f"  What went wrong: {'Agent did not complete after retries.' if not self._trajectory.completed else 'Too many retries.'}\n"
+                f"  What went wrong: {retry_reason}\n"
                 f"  Expected: ≤ {max_attempts} retries and agent completes.\n"
                 f"  What happened: {retry_count} retries, completed={self._trajectory.completed}.\n"
-                f"  Suggested fix: Improve agent's error handling to reduce retries, or increase max_attempts."
+                f"  Suggested fix: Improve agent's error handling "
+                f"to reduce retries, or increase max_attempts."
             )
 
         self._add_result(
@@ -395,7 +413,8 @@ class Expectation:
                 f"Agent did not follow expected workflow.\n"
                 f"  What went wrong: {e}\n"
                 f"  Expected workflow: {' → '.join(steps)}\n"
-                f"  What happened: Tool call sequence was: {' → '.join(actual_tools) if actual_tools else '(none)'}\n"
+                f"  What happened: Tool call sequence was: "
+                f"{' → '.join(actual_tools) if actual_tools else '(none)'}\n"
                 f"  Suggested fix: Ensure the agent calls tools in the required order."
             )
 
@@ -424,7 +443,8 @@ class Expectation:
                 f"  What went wrong: One or more steps recorded errors.\n"
                 f"  Expected: No errors (all steps should have error=None).\n"
                 f"  What happened: {error_detail}\n"
-                f"  Suggested fix: Investigate each error — check tool availability, network connectivity, or agent logic."
+                f"  Suggested fix: Investigate each error — check tool "
+                f"availability, network connectivity, or agent logic."
             )
 
         self._add_result(
@@ -440,8 +460,11 @@ class Expectation:
         if index < 0 or index >= len(self._trajectory.steps):
             raise IndexError(
                 f"Step index {index} is out of range.\n"
-                f"  What went wrong: Requested step {index}, but trajectory has {self._trajectory.step_count} steps (indices 0-{self._trajectory.step_count - 1}).\n"
-                f"  Suggested fix: Use a valid step index (0 to {max(0, self._trajectory.step_count - 1)})."
+                f"  What went wrong: Requested step {index}, but "
+                f"trajectory has {self._trajectory.step_count} steps "
+                f"(indices 0-{self._trajectory.step_count - 1}).\n"
+                f"  Suggested fix: Use a valid step index "
+                f"(0 to {max(0, self._trajectory.step_count - 1)})."
             )
         return StepAssertion(index, self._trajectory)
 
@@ -449,7 +472,6 @@ class Expectation:
 # Thread-local storage for tracking which AgentTest instance is active.
 # This lets expect() register itself with the running test so the runner
 # can collect assertion results.
-import threading
 
 _active_test: threading.local = threading.local()
 
@@ -480,7 +502,8 @@ def expect(trajectory: AgentTrajectory) -> Expectation:
     if trajectory is None:
         raise ValueError(
             "expect() received None instead of a trajectory.\n"
-            "  What went wrong: The agent did not return a trajectory (likely crashed or was not configured).\n"
+            "  What went wrong: The agent did not return a trajectory "
+            "(likely crashed or was not configured).\n"
             "  Expected: A valid AgentTrajectory object.\n"
             "  What happened: Got None.\n"
             "  Suggested fix: Ensure self.run() returns a trajectory — check adapter configuration."

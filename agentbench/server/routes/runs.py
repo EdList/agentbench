@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
-from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from agentbench.server.auth import require_auth
-from agentbench.server.models import Run, RunResult, get_db
+from agentbench.server.models import Run, get_db
 from agentbench.server.schemas import (
     ErrorResponse,
     RunCreateRequest,
@@ -136,7 +134,7 @@ def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found.")
 
-    results: Optional[list[RunResultEntry]] = None
+    results: list[RunResultEntry] | None = None
     if run.results:
         results = [
             RunResultEntry(

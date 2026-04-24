@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -68,7 +69,10 @@ class RawAPIAdapter(AgentAdapter):
         context: dict[str, Any] | None = None,
     ) -> AgentTrajectory:
         if self._func:
-            return self._run_function(prompt, trajectory, context, failure_injections, latency_injections)
+            return self._run_function(
+                prompt, trajectory, context,
+                failure_injections, latency_injections,
+            )
         return self._run_http(
             prompt, trajectory, failure_injections, latency_injections,
             max_steps, timeout_seconds, context,
@@ -172,8 +176,8 @@ class RawAPIAdapter(AgentAdapter):
                     for f in (failure_injections or [])
                 ],
                 "inject_latency": [
-                    {"tool": l.tool_name, "delay_ms": l.delay_ms}
-                    for l in (latency_injections or [])
+                    {"tool": li.tool_name, "delay_ms": li.delay_ms}
+                    for li in (latency_injections or [])
                 ],
             }
 

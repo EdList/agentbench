@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
-import pytest
-
-from agentbench.cli.scaffold import scaffold_project, TEMPLATES
 from agentbench.cli.main import _find_adapter_in_path
+from agentbench.cli.scaffold import TEMPLATES, scaffold_project
 from agentbench.core.test import AgentTest
-from agentbench.adapters.raw_api import RawAPIAdapter
-
 
 # ─── scaffold_project ───
 

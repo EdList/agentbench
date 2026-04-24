@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 TEMPLATES: dict[str, dict[str, str]] = {
     "raw_api": {
         "test_agent.py": '''"""Agent behavioral tests — edit this to test your agent."""
