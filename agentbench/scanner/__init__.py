@@ -2,6 +2,7 @@
 
 from agentbench.scanner.analyzer import BehaviorAnalyzer, DetectedBehavior
 from agentbench.scanner.generator import TestGenerator
+from agentbench.scanner.llm_analyzer import LLMAnalysisResult, LLMAnalyzer
 from agentbench.scanner.prober import (
     ALL_CATEGORIES,
     AgentProber,
@@ -16,6 +17,8 @@ __all__ = [
     "BehaviorAnalyzer",
     "DetectedBehavior",
     "DomainScore",
+    "LLMAnalyzer",
+    "LLMAnalysisResult",
     "ProbeResult",
     "ProbeSession",
     "ScanReport",

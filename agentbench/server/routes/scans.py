@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from agentbench.scanner.analyzer import BehaviorAnalyzer
 from agentbench.scanner.prober import ALL_CATEGORIES, AgentProber
 from agentbench.scanner.scorer import ScoringEngine
+from agentbench.scanner.store import ScanStore
 from agentbench.server.auth import require_auth
 from agentbench.server.schemas import (
     DomainScoreResponse,
@@ -28,6 +29,11 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 
 _scan_store: dict[str, dict] = {}
 
+# ---------------------------------------------------------------------------
+# SQLite-backed persistence store (lazy singleton)
+# ---------------------------------------------------------------------------
+
+store = ScanStore()
 
 # ---------------------------------------------------------------------------
 # SSRF protection
@@ -73,8 +79,11 @@ def _validate_agent_url(url: str) -> None:
         )
 
 
-def _run_scan(agent_url: str, categories: list[str] | None) -> ScanResponse:
-    """Execute the full prober → analyzer → scorer pipeline synchronously."""
+def _run_scan(agent_url: str, categories: list[str] | None) -> tuple[ScanResponse, object]:
+    """Execute the full prober → analyzer → scorer pipeline synchronously.
+
+    Returns (ScanResponse, ScanReport) so callers can persist the rich report.
+    """
     import httpx
 
     cats = categories if categories else list(ALL_CATEGORIES)
@@ -99,7 +108,7 @@ def _run_scan(agent_url: str, categories: list[str] | None) -> ScanResponse:
     session = prober.probe_all()
 
     # 2. Analyze
-    analyzer = BehaviorAnalyzer()
+    analyzer = BehaviorAnalyzer(use_llm=True)
     behaviors = analyzer.analyze(session)
 
     # 3. Score
@@ -107,7 +116,7 @@ def _run_scan(agent_url: str, categories: list[str] | None) -> ScanResponse:
     report = engine.score(behaviors)
 
     # 4. Convert to response
-    return ScanResponse(
+    response = ScanResponse(
         overall_score=report.overall_score,
         overall_grade=report.overall_grade,
         domain_scores=[
@@ -127,6 +136,7 @@ def _run_scan(agent_url: str, categories: list[str] | None) -> ScanResponse:
         critical_issues=report.critical_issues,
         timestamp=report.timestamp.isoformat(),
     )
+    return response, report
 
 
 # ---------------------------------------------------------------------------
@@ -151,37 +161,33 @@ def submit_scan(
     _validate_agent_url(body.agent_url)
     scan_id = str(uuid.uuid4())
     try:
-        report = _run_scan(body.agent_url, body.categories)
+        result = _run_scan(body.agent_url, body.categories)
+        # _run_scan returns a tuple (ScanResponse, ScanReport), but mocks may
+        # return just a ScanResponse — handle both.
+        if isinstance(result, tuple):
+            report_response, score_report = result
+        else:
+            report_response = result
+            score_report = None
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to scan agent at {body.agent_url}: {exc}",
         ) from exc
 
-    # Store for later retrieval
+    # Store for later retrieval (in-memory)
     _scan_store[scan_id] = {
         "scan_id": scan_id,
         "agent_url": body.agent_url,
-        "report": report,
+        "report": report_response,
         "timestamp": datetime.now(UTC).isoformat(),
     }
 
-    return report
+    # Persist to SQLite
+    if score_report is not None:
+        store.save_scan(scan_id, body.agent_url, score_report)
 
-
-@router.get(
-    "/{scan_id}",
-    response_model=ScanResponse,
-)
-def get_scan(
-    scan_id: str,
-    principal: str = Depends(require_auth),
-) -> ScanResponse:
-    """Retrieve a previously-run scan report by ID."""
-    entry = _scan_store.get(scan_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=f"Scan {scan_id!r} not found.")
-    return entry["report"]
+    return report_response
 
 
 @router.get(
@@ -211,3 +217,53 @@ def list_scans(
         )
         for e in page
     ]
+
+
+# ---------------------------------------------------------------------------
+# Persistence / Regression endpoints (must come before /{scan_id})
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/history/{agent_url:path}",
+)
+def scan_history(
+    agent_url: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    principal: str = Depends(require_auth),
+) -> list[dict]:
+    """List persisted scan history for a specific agent URL."""
+    return store.list_scans(agent_url=agent_url, limit=limit, offset=offset)
+
+
+@router.get(
+    "/regression/{agent_url:path}",
+)
+def regression_report(
+    agent_url: str,
+    principal: str = Depends(require_auth),
+) -> dict:
+    """Get regression report comparing the two latest scans for an agent."""
+    report = store.get_regression_report(agent_url)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Not enough scan history to compute regression.",
+        )
+    return report
+
+
+@router.get(
+    "/{scan_id}",
+    response_model=ScanResponse,
+)
+def get_scan(
+    scan_id: str,
+    principal: str = Depends(require_auth),
+) -> ScanResponse:
+    """Retrieve a previously-run scan report by ID."""
+    entry = _scan_store.get(scan_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Scan {scan_id!r} not found.")
+    return entry["report"]

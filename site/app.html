@@ -154,6 +154,40 @@ header .container{display:flex;align-items:center;justify-content:space-between}
 #error h2{font-size:1.4rem;margin-bottom:8px;color:var(--red)}
 #error p{color:var(--text-dim);max-width:420px;margin:0 auto 28px}
 
+/* ── History / Regression ── */
+.history-section{
+  max-width:720px;margin:32px auto 0;
+}
+.history-section h3{font-size:1.1rem;font-weight:600;margin-bottom:16px;color:var(--text-dim)}
+.history-timeline{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.history-entry{
+  display:flex;align-items:center;gap:14px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 20px;
+}
+.history-entry .he-score{font-size:1.3rem;font-weight:800;min-width:48px;text-align:center}
+.history-entry .he-info{flex:1}
+.history-entry .he-date{font-size:.82rem;color:var(--text-muted)}
+.history-entry .he-grade{font-size:.85rem;font-weight:600;margin-left:4px}
+.he-trend{font-size:1.1rem;font-weight:700;min-width:28px;text-align:center}
+.he-trend.up{color:var(--green)}.he-trend.down{color:var(--red)}.he-trend.flat{color:var(--text-muted)}
+
+.regression-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:24px;margin-top:16px;
+}
+.regression-card h4{font-size:1rem;font-weight:600;margin-bottom:14px}
+.regression-card .rc-overall{font-size:.95rem;margin-bottom:12px;padding:10px 14px;border-radius:8px}
+.regression-card .rc-overall.improved{background:rgba(34,197,94,.08);color:var(--green)}
+.regression-card .rc-overall.regressed{background:rgba(239,68,68,.08);color:var(--red)}
+.regression-card .rc-overall.stable{background:rgba(136,136,136,.08);color:var(--text-dim)}
+.rc-domains{display:flex;flex-direction:column;gap:8px}
+.rc-domain{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;font-size:.9rem}
+.rc-domain.regression{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);color:#fca5a5}
+.rc-domain.improvement{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);color:#86efac}
+.rc-domain .rc-name{flex:1;font-weight:500}
+.rc-domain .rc-delta{font-weight:700}
+
 /* ── Responsive ── */
 @media(max-width:640px){
   .domains-grid{grid-template-columns:1fr}
@@ -269,6 +303,13 @@ header .container{display:flex;align-items:center;justify-content:space-between}
     <div class="actions">
       <button class="btn btn-outline" onclick="resetApp()">Scan Another</button>
       <button class="btn btn-primary" onclick="downloadReport()">Download Report</button>
+      <button class="btn btn-outline" id="btnRegression" onclick="showRegression()" style="display:none">View Regression Report</button>
+    </div>
+
+    <div class="history-section" id="historySection" style="display:none">
+      <h3>Scan History</h3>
+      <div class="history-timeline" id="historyTimeline"></div>
+      <div id="regressionContainer"></div>
     </div>
   </div>
 </section>
@@ -289,6 +330,7 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
   ? 'http://localhost:8000' : '';
 
 let lastReport = null;
+let currentAgentUrl = '';
 
 // ── Helpers ──
 function show(id) {
@@ -352,6 +394,7 @@ async function startScan() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     lastReport = data;
+    currentAgentUrl = url;
 
     clearInterval(stepTimer);
     clearInterval(pctTimer);
@@ -439,6 +482,9 @@ function showResults(data) {
       card.querySelector('.bar').style.width = d.score + '%';
     }, 200 + i * 150);
   });
+
+  // Load scan history from persistence
+  loadHistory(currentAgentUrl);
 }
 
 function animateNumber(elId, from, to, duration) {
@@ -470,6 +516,92 @@ function downloadReport() {
   URL.revokeObjectURL(a.href);
 }
 
+// ── History & Regression ──
+let lastAgentUrl = '';
+
+async function loadHistory(agentUrl) {
+  lastAgentUrl = agentUrl;
+  const section = document.getElementById('historySection');
+  const timeline = document.getElementById('historyTimeline');
+  const btnReg = document.getElementById('btnRegression');
+  try {
+    const res = await fetch(API_BASE + '/api/v1/scans/history/' + encodeURIComponent(agentUrl), {
+      headers: { 'X-API-Key': 'demo' }
+    });
+    if (!res.ok) return;
+    const scans = await res.json();
+    if (!scans.length) return;
+    section.style.display = '';
+    btnReg.style.display = '';
+    timeline.innerHTML = '';
+    let prevScore = null;
+    scans.forEach((s, i) => {
+      const trend = prevScore === null ? '' :
+        s.overall_score > prevScore + 5 ? '<span class="he-trend up">↑</span>' :
+        s.overall_score < prevScore - 5 ? '<span class="he-trend down">↓</span>' :
+        '<span class="he-trend flat">→</span>';
+      const color = gradeColor(s.grade);
+      const date = new Date(s.created_at).toLocaleDateString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      timeline.innerHTML += `<div class="history-entry">
+        ${trend}
+        <div class="he-score" style="color:${color}">${Math.round(s.overall_score)}</div>
+        <div class="he-info">
+          <span class="he-grade" style="color:${color}">${s.grade}</span>
+          <div class="he-date">${date}</div>
+        </div>
+      </div>`;
+      prevScore = s.overall_score;
+    });
+  } catch(e) { /* silent */ }
+}
+
+async function showRegression() {
+  const container = document.getElementById('regressionContainer');
+  container.innerHTML = '<p style="color:var(--text-muted)">Loading regression report…</p>';
+  try {
+    const res = await fetch(API_BASE + '/api/v1/scans/regression/' + encodeURIComponent(lastAgentUrl), {
+      headers: { 'X-API-Key': 'demo' }
+    });
+    if (!res.ok) {
+      container.innerHTML = '<p style="color:var(--text-muted)">Not enough history for regression analysis.</p>';
+      return;
+    }
+    const data = await res.json();
+    const trendClass = data.overall_trend;
+    const trendLabel = data.overall_trend === 'improved' ? 'Improved' :
+                       data.overall_trend === 'regressed' ? 'Regressed' : 'Stable';
+    const deltaSign = data.overall_delta >= 0 ? '+' : '';
+    let html = `<div class="regression-card">
+      <h4>Regression Report</h4>
+      <div class="rc-overall ${trendClass}">
+        Overall: ${trendLabel} (${deltaSign}${data.overall_delta} points)
+      </div>
+      <div class="rc-domains">`;
+    (data.regressions || []).forEach(r => {
+      html += `<div class="rc-domain regression">
+        <span class="rc-name">▼ ${escHtml(r.domain)}</span>
+        <span>${r.previous_score} → ${r.current_score}</span>
+        <span class="rc-delta">${r.delta}</span>
+        <span style="font-size:.75rem;opacity:.7">${r.severity}</span>
+      </div>`;
+    });
+    (data.improvements || []).forEach(r => {
+      html += `<div class="rc-domain improvement">
+        <span class="rc-name">▲ ${escHtml(r.domain)}</span>
+        <span>${r.previous_score} → ${r.current_score}</span>
+        <span class="rc-delta">+${r.delta}</span>
+      </div>`;
+    });
+    if (!data.regressions?.length && !data.improvements?.length) {
+      html += `<div style="color:var(--text-muted);padding:8px 0">No significant changes detected.</div>`;
+    }
+    html += '</div></div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<p style="color:var(--red)">Failed to load regression report.</p>';
+  }
+}
+
 // ── Reset ──
 function resetApp() {
   show('landing');
@@ -479,6 +611,12 @@ function resetApp() {
   document.getElementById('scoreNum').textContent = '0';
   document.getElementById('scoreGrade').textContent = '—';
   lastReport = null;
+  currentAgentUrl = '';
+  // Reset history
+  document.getElementById('historySection').style.display = 'none';
+  document.getElementById('btnRegression').style.display = 'none';
+  document.getElementById('regressionContainer').innerHTML = '';
+  document.getElementById('historyTimeline').innerHTML = '';
 }
 
 // ── Enter key ──
