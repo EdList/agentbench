@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from agentbench.server.config import settings
 from agentbench.server.routes import runs, scans, trajectories
 from agentbench.server.schemas import HealthResponse
 
 __all__ = ["app", "create_app"]
+
+_SITE_DIR = Path(__file__).resolve().parent.parent.parent / "site"
 
 
 def create_app() -> FastAPI:
@@ -31,9 +36,18 @@ def create_app() -> FastAPI:
     )
 
     # Health check — not versioned
-    @application.get("/health", response_model=HealthResponse, tags=["health"])
+    @application.get(
+        "/health", response_model=HealthResponse, tags=["health"]
+    )
     def health_check() -> HealthResponse:
         return HealthResponse()
+
+    # Web UI — serve app.html at /
+    @application.get("/", tags=["ui"])
+    def serve_ui() -> FileResponse:
+        return FileResponse(
+            _SITE_DIR / "app.html", media_type="text/html"
+        )
 
     # Versioned API routes
     from fastapi import APIRouter
