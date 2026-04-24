@@ -8,13 +8,17 @@ from agentbench.scanner.prober import (
     ProbeResult,
     ProbeSession,
 )
+from agentbench.scanner.scorer import DomainScore, ScanReport, ScoringEngine
 
 __all__ = [
     "AgentProber",
     "ALL_CATEGORIES",
     "BehaviorAnalyzer",
     "DetectedBehavior",
+    "DomainScore",
     "ProbeResult",
     "ProbeSession",
+    "ScanReport",
+    "ScoringEngine",
     "TestGenerator",
 ]

@@ -124,3 +124,49 @@ class TrajectoryDiffResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+# ---------------------------------------------------------------------------
+# Scans
+# ---------------------------------------------------------------------------
+
+class ScanRequest(BaseModel):
+    """Submit a scan request against an agent endpoint."""
+
+    agent_url: str = Field(..., description="HTTP endpoint URL of the agent to scan")
+    categories: list[str] | None = Field(
+        default=None,
+        description="Probe categories to run (default: all)",
+    )
+
+
+class DomainScoreResponse(BaseModel):
+    name: str
+    score: float
+    grade: str
+    findings: list[str]
+    recommendations: list[str]
+
+
+class ScanResponse(BaseModel):
+    """Full scan report returned after scanning an agent."""
+
+    overall_score: float
+    overall_grade: str
+    domain_scores: list[DomainScoreResponse]
+    summary: str
+    behaviors_tested: int
+    behaviors_passed: int
+    behaviors_failed: int
+    critical_issues: list[str]
+    timestamp: str
+
+
+class ScanSummaryResponse(BaseModel):
+    """Lightweight summary for listing scans."""
+
+    scan_id: str
+    agent_url: str
+    overall_score: float
+    overall_grade: str
+    timestamp: str

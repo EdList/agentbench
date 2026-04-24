@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agentbench.server.config import settings
-from agentbench.server.routes import runs, trajectories
+from agentbench.server.routes import runs, scans, trajectories
 from agentbench.server.schemas import HealthResponse
 
 __all__ = ["app", "create_app"]
@@ -41,6 +41,7 @@ def create_app() -> FastAPI:
     v1 = APIRouter(prefix="/api/v1")
     v1.include_router(runs.router)
     v1.include_router(trajectories.router)
+    v1.include_router(scans.router)
     application.include_router(v1)
 
     return application
