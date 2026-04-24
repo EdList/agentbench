@@ -117,7 +117,7 @@ runs:
         if [ -f "${{ github.workspace }}/pyproject.toml" ] && \
            grep -q 'name = "agentbench"' "${{ github.workspace }}/pyproject.toml" 2>/dev/null; then
           echo "Detected AgentBench source checkout — installing in editable mode"
-          pip install -e "${{ github.workspace }}[dev]"
+          pip install -e "${{ github.workspace }}[dev,server]"
         else
           echo "Installing AgentBench from PyPI"
           pip install agentbench
