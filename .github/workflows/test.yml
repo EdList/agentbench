@@ -52,8 +52,8 @@ jobs:
         id: agentbench
         uses: ./ci/github-action
         with:
-          # Path to tests directory
-          path: "tests"
+          # Path to behavioral test suites (AgentTest subclasses)
+          path: "examples"
           # Config file (uncomment if you have an agentbench.yaml)
           # config: "agentbench.yaml"
           # Fail on any test failure (strictest mode)
