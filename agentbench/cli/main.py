@@ -72,23 +72,24 @@ def run(
     # Discover and run
     console.print(Panel("🧪 AgentBench", subtitle="Testing what your agent actually does"))
 
-    runner = TestRunner(config={
-        "verbose": verbose,
-        "filter": filter_pattern,
-        "parallel": parallel,
-        "max_steps": bench_config.max_steps,
-        "timeout_seconds": bench_config.timeout_seconds,
-        "max_retries": bench_config.max_retries,
-        "default_adapter": bench_config.default_adapter,
-        "bench_config": bench_config,
-    })
+    runner = TestRunner(
+        config={
+            "verbose": verbose,
+            "filter": filter_pattern,
+            "parallel": parallel,
+            "max_steps": bench_config.max_steps,
+            "timeout_seconds": bench_config.timeout_seconds,
+            "max_retries": bench_config.max_retries,
+            "default_adapter": bench_config.default_adapter,
+            "bench_config": bench_config,
+        }
+    )
     result = runner.run(Path(path))
 
     # Warn if no tests found
     if result.total_tests == 0:
         console.print(
-            "[yellow]⚠ No tests found.[/yellow] "
-            "Check your path and test file names (test_*.py)."
+            "[yellow]⚠ No tests found.[/yellow] Check your path and test file names (test_*.py)."
         )
         raise typer.Exit(1)
 
@@ -105,8 +106,10 @@ def run(
                         console.print(f"    {icon} {a.message}")
 
     # Summary
-    console.print(f"\n[bold]Total: {result.total_passed} passed, {result.total_failed} failed, "
-                  f"{result.total_tests} tests[/bold]")
+    console.print(
+        f"\n[bold]Total: {result.total_passed} passed, {result.total_failed} failed, "
+        f"{result.total_tests} tests[/bold]"
+    )
     console.print(f"Duration: {result.total_duration_ms / 1000:.1f}s")
 
     # Save report if requested
@@ -172,10 +175,9 @@ def record(
 
     if test_instance is None:
         console.print(
-            "[red]Could not find an agent adapter. "
-            "Provide a path to your test directory.[/red]"
+            "[red]Could not find an agent adapter. Provide a path to your test directory.[/red]"
         )
-        console.print("[dim]Usage: agentbench record ./tests \"Your prompt\"[/dim]")
+        console.print('[dim]Usage: agentbench record ./tests "Your prompt"[/dim]')
         raise typer.Exit(1)
 
     # Run the agent
@@ -203,11 +205,11 @@ def record(
 def diff(
     golden: str = typer.Argument(..., help="Path to golden trajectory JSON"),
     current: str | None = typer.Option(
-        None, "--current", "-c",
-        help="Path to current trajectory (runs agent if not provided)"
+        None, "--current", "-c", help="Path to current trajectory (runs agent if not provided)"
     ),
-    agent_path: str = typer.Option(".", "--agent", "-a",
-                                    help="Path to agent test directory (for auto re-run)"),
+    agent_path: str = typer.Option(
+        ".", "--agent", "-a", help="Path to agent test directory (for auto re-run)"
+    ),
 ) -> None:
     """Compare current agent run against a golden trajectory."""
     from agentbench.storage.trajectory import TrajectoryDiff
@@ -232,16 +234,14 @@ def diff(
         prompt = golden_data.get("prompt", golden_data.get("input_prompt", ""))
         if not prompt:
             console.print(
-                "[red]Golden trajectory has no recorded prompt. "
-                "Provide --current path.[/red]"
+                "[red]Golden trajectory has no recorded prompt. Provide --current path.[/red]"
             )
             raise typer.Exit(1)
 
         test_instance = _find_adapter_in_path(Path(agent_path))
         if test_instance is None:
             console.print(
-                f"[red]No agent adapter found in {agent_path}. "
-                f"Provide --current path.[/red]"
+                f"[red]No agent adapter found in {agent_path}. Provide --current path.[/red]"
             )
             raise typer.Exit(1)
 
@@ -265,8 +265,10 @@ def diff(
 def init(
     name: str = typer.Argument("agent-tests", help="Name for the test project"),
     framework: str = typer.Option(
-        "raw_api", "--framework", "-f",
-        help="Agent framework: raw_api, langchain, openai, crewai, autogen, langgraph"
+        "raw_api",
+        "--framework",
+        "-f",
+        help="Agent framework: raw_api, langchain, openai, crewai, autogen, langgraph",
     ),
     path: str | None = typer.Option(None, "--path", "-p", help="Output directory"),
 ) -> None:
@@ -286,9 +288,7 @@ def watch(
     filter_pattern: str | None = typer.Option(
         None, "--filter", "-f", help="Filter tests by name pattern"
     ),
-    config: str | None = typer.Option(
-        None, "--config", "-c", help="Path to config YAML"
-    ),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config YAML"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show step-by-step output"),
 ) -> None:
     """Watch test files for changes and re-run automatically."""
@@ -312,11 +312,13 @@ def watch(
 
     bench_config = AgentBenchConfig.from_yaml(config) if config else AgentBenchConfig()
 
-    runner = TestRunner(config={
-        "verbose": verbose,
-        "filter": filter_pattern,
-        "bench_config": bench_config,
-    })
+    runner = TestRunner(
+        config={
+            "verbose": verbose,
+            "filter": filter_pattern,
+            "bench_config": bench_config,
+        }
+    )
 
     def _run_tests() -> None:
         console.print(Panel("🧪 AgentBench [dim]watch mode[/dim]"))
@@ -364,6 +366,7 @@ def watch(
 
     try:
         import threading
+
         stop_event = threading.Event()
         stop_event.wait()
     except KeyboardInterrupt:
@@ -424,6 +427,7 @@ def list_tests(
         # Apply filter
         if filter_pattern:
             import re
+
             pattern = re.compile(filter_pattern, re.IGNORECASE)
             test_methods = [m for m in test_methods if pattern.search(m)]
 
@@ -445,8 +449,7 @@ def list_tests(
             console.print(f"  ○ {method_name}{doc_text}")
 
     console.print(
-        f"\n[bold]Summary:[/bold] "
-        f"{total_suites} suite(s), {total_methods} test method(s)"
+        f"\n[bold]Summary:[/bold] {total_suites} suite(s), {total_methods} test method(s)"
     )
 
 
@@ -473,12 +476,175 @@ def serve(
     console.print("[dim]Database tables ready.[/dim]")
 
     import uvicorn as _uvicorn
+
     _uvicorn.run(
         "agentbench.server.app:app",
         host=host,
         port=port,
         reload=reload,
     )
+
+
+# ---------------------------------------------------------------------------
+# Adversarial sub-command
+# ---------------------------------------------------------------------------
+
+adversarial_app = typer.Typer(
+    name="adversarial",
+    help="Generate adversarial test variants.",
+    no_args_is_help=True,
+)
+app.add_typer(adversarial_app, name="adversarial")
+
+
+@adversarial_app.command("generate")
+def adversarial_generate(
+    path: str = typer.Argument(..., help="Path to test file or directory"),
+    strategy: str = typer.Option(
+        "all",
+        "--strategy",
+        "-s",
+        help="Strategy to use: jailbreak, pii_leak, tool_confusion, context_overflow, or all",
+    ),
+    count: int = typer.Option(10, "--count", "-n", help="Number of variants per strategy"),
+    intensity: int = typer.Option(1, "--intensity", "-i", help="Intensity level (1-5)"),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Output file for generated tests"
+    ),
+    seed: int | None = typer.Option(None, "--seed", help="Random seed for reproducibility"),
+) -> None:
+    """Generate adversarial test files from a base test suite."""
+    from agentbench.adversarial.discovery import AdversarialTestGenerator
+    from agentbench.adversarial.strategies import (
+        STRATEGY_REGISTRY,
+        get_strategy,
+    )
+    from agentbench.core.runner import TestRunner
+
+    target = Path(path)
+    if not target.exists():
+        console.print(f"[red]Path not found: {path}[/red]")
+        raise typer.Exit(1)
+
+    # Discover test classes
+    runner = TestRunner()
+    suites = runner.discover_suites(target)
+
+    if not suites:
+        console.print(f"[yellow]No test suites found in {path}[/yellow]")
+        raise typer.Exit(1)
+
+    # Determine strategies
+    if strategy == "all":
+        strategy_names = list(STRATEGY_REGISTRY.keys())
+    else:
+        strategy_names = [s.strip() for s in strategy.split(",")]
+
+    for sname in strategy_names:
+        if sname not in STRATEGY_REGISTRY:
+            console.print(f"[red]Unknown strategy: {sname}[/red]")
+            console.print(f"Available: {', '.join(STRATEGY_REGISTRY.keys())}")
+            raise typer.Exit(1)
+
+    console.print(
+        Panel(
+            "🛡️ Adversarial Test Generation",
+            subtitle=(
+                f"Strategies: {', '.join(strategy_names)}"
+                f" | Count: {count} | Intensity: {intensity}"
+            ),
+        )
+    )
+
+    total_variants = 0
+
+    for suite_class in suites:
+        strategies = [
+            get_strategy(s, intensity=intensity, count=count, seed=seed) for s in strategy_names
+        ]
+
+        generator = AdversarialTestGenerator(
+            suite_class,
+            strategies=strategies,
+            seed=seed,
+        )
+        generated_class = generator.generate_class()
+
+        console.print(
+            f"\n📦 [bold]{suite_class.__name__}[/bold] → [green]{generated_class.__name__}[/green]"
+        )
+
+        # Count test methods
+        gen_methods = [
+            name
+            for name in dir(generated_class)
+            if name.startswith("test_") and callable(getattr(generated_class, name))
+        ]
+        total_variants += len(gen_methods)
+        console.print(f"  Generated {len(gen_methods)} adversarial test methods")
+
+        if output:
+            # Write the generated class to a file
+            output_path = Path(output)
+            _write_adversarial_file(output_path, suite_class, generated_class, strategy_names)
+
+    console.print(
+        f"\n[bold green]✓[/bold green] Generated {total_variants} adversarial variants total"
+    )
+
+    if output:
+        console.print(f"  Written to: {output}")
+
+
+@adversarial_app.command("list-strategies")
+def adversarial_list_strategies() -> None:
+    """List all available adversarial strategies."""
+    from agentbench.adversarial.strategies import list_strategies
+
+    strategies = list_strategies()
+    console.print(Panel("🛡️ Available Adversarial Strategies"))
+
+    for info in strategies:
+        console.print(f"  • [bold]{info['name']}[/bold]: {info['description']}")
+
+    console.print("\nUse with: [dim]agentbench adversarial generate <path> --strategy <name>[/dim]")
+
+
+def _write_adversarial_file(
+    output_path: Path,
+    base_class: type,
+    generated_class: type,
+    strategy_names: list[str],
+) -> None:
+    """Write a generated adversarial test class to a Python file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        '"""Auto-generated adversarial tests — DO NOT EDIT MANUALLY."""',
+        "",
+        "from agentbench.core.test import AgentTest",
+        "from agentbench.core.assertions import expect",
+        "",
+        "",
+        f"class {generated_class.__name__}({base_class.__name__}):",
+        f'    """Adversarial variants generated from {base_class.__name__}.',
+        f"    Strategies: {', '.join(strategy_names)}",
+        '    """',
+        "",
+        "    # Auto-generated test methods",
+    ]
+
+    for method_name in sorted(dir(generated_class)):
+        if method_name.startswith("test_") and callable(getattr(generated_class, method_name)):
+            method = getattr(generated_class, method_name)
+            doc = getattr(method, "__doc__", "") or ""
+            lines.append(f"    def {method_name}(self):")
+            if doc:
+                lines.append(f'        """{doc}"""')
+            lines.append("        pass  # adversarial placeholder — implement or use run()")
+            lines.append("")
+
+    output_path.write_text("\n".join(lines))
 
 
 if __name__ == "__main__":
