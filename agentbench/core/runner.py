@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import signal
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,11 +16,14 @@ from typing import Any
 
 from agentbench.core.test import AgentTest, AgentTrajectory
 from agentbench.core.assertions import Expectation, AssertionResult, _set_active_test, _clear_active_test
+from agentbench.core.fixtures import Fixture, FixtureRegistry
 
 
 @dataclass
 class TestResult:
     """Result of a single test method."""
+
+    __test__ = False  # Prevent pytest collection warning
 
     test_name: str
     suite_name: str
@@ -44,6 +49,8 @@ class TestResult:
 @dataclass
 class TestSuiteResult:
     """Result of an entire test suite run."""
+
+    __test__ = False  # Prevent pytest collection warning
 
     suite_name: str
     results: list[TestResult] = field(default_factory=list)
@@ -136,6 +143,10 @@ class TestRunner:
         self._verbose = self._config.get("verbose", False)
         self._filter = self._config.get("filter", None)
         self._parallel = max(1, self._config.get("parallel", 1))
+        self._default_timeout = self._config.get("timeout_seconds", 300.0)
+        self._max_steps = self._config.get("max_steps", 50)
+        # Fixture registry for scope management
+        self._fixture_registry = FixtureRegistry.get()
 
     def discover_suites(self, path: Path | str) -> list[type[AgentTest]]:
         """Discover AgentTest subclasses in the given path."""
@@ -237,6 +248,8 @@ class TestRunner:
             finally:
                 # teardown_class hook
                 self._run_class_hook(class_instance, "teardown_class")
+                # Teardown suite-scoped fixtures for this suite
+                self._fixture_registry.teardown_suite(suite_name)
         else:
             # Sequential execution
             class_instance = suite_class()
@@ -253,6 +266,8 @@ class TestRunner:
             finally:
                 # teardown_class hook
                 self._run_class_hook(class_instance, "teardown_class")
+                # Teardown suite-scoped fixtures for this suite
+                self._fixture_registry.teardown_suite(suite_name)
 
         suite_result.total_duration_ms = (time.time() - suite_start) * 1000
         return suite_result
@@ -279,6 +294,55 @@ class TestRunner:
         test_start = time.time()
         result = TestResult(test_name=display_name, suite_name=suite_name)
 
+        # Determine timeout for this test
+        timeout_seconds = self._config.get("timeout_seconds", self._default_timeout)
+
+        # Use a threading-based timeout mechanism
+        test_error: list[str | None] = [None]
+        test_done = threading.Event()
+
+        def _execute():
+            try:
+                self._execute_test_body(instance, method_name, display_name, param_info, suite_name, result)
+            except Exception as exc:
+                test_error[0] = f"{type(exc).__name__}: {exc}"
+                traceback.print_exc()
+            finally:
+                test_done.set()
+
+        worker = threading.Thread(target=_execute, daemon=True)
+        worker.start()
+
+        # Wait for test to complete or timeout
+        if not test_done.wait(timeout=timeout_seconds):
+            # Test timed out
+            result.passed = False
+            result.error = (
+                f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
+                f"  What went wrong: The test did not finish within the allowed time.\n"
+                f"  Expected: Test completes within {timeout_seconds}s.\n"
+                f"  What happened: Test is still running after {timeout_seconds}s (possible infinite loop or agent hang).\n"
+                f"  Suggested fix: Increase 'timeout_seconds' in config, optimize the agent, or check for infinite loops."
+            )
+
+        # If the test itself recorded an error (not timeout)
+        if test_error[0] is not None and result.error is None:
+            result.passed = False
+            result.error = test_error[0]
+
+        result.duration_ms = (time.time() - test_start) * 1000
+        return result
+
+    def _execute_test_body(
+        self,
+        instance: AgentTest,
+        method_name: str,
+        display_name: str,
+        param_info: dict | None,
+        suite_name: str,
+        result: TestResult,
+    ) -> None:
+        """Execute the actual test logic (called inside a thread)."""
         try:
             # Tell expect() which test instance to register with
             _set_active_test(instance)
@@ -309,6 +373,10 @@ class TestRunner:
             else:
                 method()
 
+            # Validate trajectory data
+            if instance.trajectory is not None:
+                self._validate_trajectory(instance.trajectory, display_name, result)
+
             # Collect trajectory
             if instance.trajectory:
                 result.trajectory = instance.trajectory
@@ -330,10 +398,22 @@ class TestRunner:
 
         except AssertionError as e:
             result.passed = False
-            result.error = str(e)
+            result.error = (
+                f"AssertionError in '{display_name}': {e}\n"
+                f"  What went wrong: An explicit assertion in the test method failed.\n"
+                f"  Suggested fix: Review the test logic and agent output to ensure they match."
+            )
         except Exception as e:
             result.passed = False
-            result.error = f"{type(e).__name__}: {e}"
+            exc_type = type(e).__name__
+            exc_msg = str(e)
+            result.error = (
+                f"AGENT CRASH in '{display_name}': {exc_type}: {exc_msg}\n"
+                f"  What went wrong: The agent or test raised an unhandled exception.\n"
+                f"  Expected: Test should complete without exceptions.\n"
+                f"  What happened: {exc_type} was raised: {exc_msg}\n"
+                f"  Suggested fix: Check the agent adapter configuration and ensure the agent function handles edge cases."
+            )
             traceback.print_exc()
         finally:
             # teardown hook (after each test) — always run
@@ -347,8 +427,59 @@ class TestRunner:
 
             _clear_active_test()
 
-        result.duration_ms = (time.time() - test_start) * 1000
-        return result
+    def _validate_trajectory(self, trajectory: AgentTrajectory, test_name: str, result: TestResult) -> None:
+        """Validate trajectory data and add warnings for malformed/edge-case data."""
+        # Check for empty trajectory
+        if trajectory.step_count == 0 and not trajectory.final_response:
+            # Don't fail — just note it as a warning in assertions
+            pass
+
+        # Check for None/empty final response
+        if trajectory.completed and not trajectory.final_response:
+            from agentbench.core.assertions import AssertionResult
+            result.assertions.append(AssertionResult(
+                passed=True,  # Not a failure, but informational
+                message=(
+                    f"Agent completed but returned empty final response.\n"
+                    f"  What happened: Agent marked as completed but final_response is empty.\n"
+                    f"  Suggested fix: Ensure the agent returns a meaningful final response."
+                ),
+                assertion_type="trajectory_validation",
+            ))
+
+        # Check for infinite loop detection (max steps)
+        from agentbench.core.config import AgentBenchConfig
+        max_steps = self._max_steps
+        if trajectory.step_count >= max_steps:
+            from agentbench.core.assertions import AssertionResult
+            result.assertions.append(AssertionResult(
+                passed=False,
+                message=(
+                    f"MAX STEPS EXCEEDED: Agent used {trajectory.step_count} steps (limit: {max_steps}).\n"
+                    f"  What went wrong: The agent may be in an infinite loop.\n"
+                    f"  Expected: Agent should complete within {max_steps} steps.\n"
+                    f"  What happened: Agent reached the step limit — possible infinite loop.\n"
+                    f"  Suggested fix: Increase max_steps in config or optimize the agent's decision loop."
+                ),
+                assertion_type="max_steps",
+                details={"steps": trajectory.step_count, "max_steps": max_steps},
+            ))
+
+        # Check for malformed steps
+        for i, step in enumerate(trajectory.steps):
+            if step.action not in ("tool_call", "llm_response", "error", "retry"):
+                from agentbench.core.assertions import AssertionResult
+                result.assertions.append(AssertionResult(
+                    passed=False,
+                    message=(
+                        f"MALFORMED TRAJECTORY: Step {i} has unknown action '{step.action}'.\n"
+                        f"  What went wrong: Step data contains an unrecognized action type.\n"
+                        f"  Expected: Action should be one of: tool_call, llm_response, error, retry.\n"
+                        f"  What happened: Got '{step.action}'.\n"
+                        f"  Suggested fix: Check the agent adapter to ensure it records valid action types."
+                    ),
+                    assertion_type="trajectory_validation",
+                ))
 
     def _run_test(self, instance: AgentTest, method_name: str, suite_name: str) -> TestResult:
         """Run a single test method and collect results (legacy, non-parametric).
@@ -360,6 +491,11 @@ class TestRunner:
     def run(self, path: Path | str) -> RunResult:
         """Discover and run all test suites in the given path."""
         run_start = time.time()
+
+        # Reset fixture registry for a fresh session
+        FixtureRegistry.reset()
+        self._fixture_registry = FixtureRegistry.get()
+
         suites = self.discover_suites(path)
 
         if not suites:
@@ -387,6 +523,9 @@ class TestRunner:
             for suite_class in suites:
                 suite_result = self.run_suite(suite_class)
                 run_result.suite_results.append(suite_result)
+
+        # Teardown session-scoped fixtures
+        self._fixture_registry.teardown_all()
 
         run_result.total_duration_ms = (time.time() - run_start) * 1000
         return run_result

@@ -2,7 +2,102 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Callable
+
+
+class FixtureRegistry:
+    """Singleton registry that manages fixture caching by scope.
+
+    Scope levels:
+      - ``'test'``    (default): fresh instance every time — never cached.
+      - ``'suite'``   : one instance per test class/suite, cached by suite name.
+      - ``'session'``  : one instance for the entire test run, cached globally.
+    """
+
+    _instance: FixtureRegistry | None = None
+    _lock = threading.Lock()
+
+    def __init__(self) -> None:
+        self._session_cache: dict[str, tuple[Any, Fixture | None]] = {}
+        self._suite_cache: dict[str, dict[str, tuple[Any, Fixture | None]]] = {}
+
+    @classmethod
+    def get(cls) -> FixtureRegistry:
+        """Return the global singleton (creates it lazily)."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the global singleton (useful between test runs / in tests)."""
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance.teardown_all()
+                cls._instance = None
+
+    # ── Public API ──
+
+    def get_fixture_value(
+        self,
+        fixture: Fixture,
+        suite_name: str | None = None,
+    ) -> Any:
+        """Return the fixture value, respecting its scope.
+
+        Args:
+            fixture: The Fixture object to resolve.
+            suite_name: The current suite name (required for suite-scoped fixtures).
+        """
+        key = fixture.__name__
+        scope = fixture.scope
+
+        if scope == "test":
+            # Fresh instance every time
+            return fixture.setup()
+
+        if scope == "session":
+            if key not in self._session_cache:
+                value = fixture.setup()
+                self._session_cache[key] = (value, fixture)
+            return self._session_cache[key][0]
+
+        if scope == "suite":
+            if suite_name is None:
+                suite_name = "__default__"
+            if suite_name not in self._suite_cache:
+                self._suite_cache[suite_name] = {}
+            suite = self._suite_cache[suite_name]
+            if key not in suite:
+                value = fixture.setup()
+                suite[key] = (value, fixture)
+            return suite[key][0]
+
+        # Unknown scope — fall back to fresh
+        return fixture.setup()
+
+    def teardown_suite(self, suite_name: str) -> None:
+        """Tear down all suite-scoped fixtures for the given suite."""
+        if suite_name in self._suite_cache:
+            for _key, (_value, fixture) in self._suite_cache[suite_name].items():
+                if fixture is not None:
+                    fixture.teardown()
+            del self._suite_cache[suite_name]
+
+    def teardown_all(self) -> None:
+        """Tear down all cached fixtures (session + all suites)."""
+        # Session fixtures
+        for _key, (_value, fixture) in self._session_cache.items():
+            if fixture is not None:
+                fixture.teardown()
+        self._session_cache.clear()
+
+        # All suite fixtures
+        for suite_name in list(self._suite_cache.keys()):
+            self.teardown_suite(suite_name)
 
 
 class Fixture:
@@ -27,6 +122,11 @@ class Fixture:
     """
 
     def __init__(self, func: Callable, *, scope: str = "test") -> None:
+        if scope not in ("test", "suite", "session"):
+            raise ValueError(
+                f"Invalid fixture scope '{scope}'. "
+                "Must be one of: 'test', 'suite', 'session'."
+            )
         self._func = func
         self._scope = scope
         self.__name__ = getattr(func, "__name__", "fixture")

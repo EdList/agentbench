@@ -42,13 +42,24 @@ class StepAssertion:
 
     def used_tool(self, name: str) -> StepAssertion:
         """Assert this step called a specific tool."""
-        passed = (
-            self._step.action == "tool_call"
-            and self._step.tool_name == name
-        )
+        actual_action = self._step.action
+        actual_tool = self._step.tool_name
+        passed = actual_action == "tool_call" and actual_tool == name
+
+        if passed:
+            message = f"Step {self._step_index}: called tool '{name}'"
+        else:
+            message = (
+                f"Step {self._step_index}: expected tool call to '{name}', but did not find it.\n"
+                f"  What went wrong: Step action or tool name does not match.\n"
+                f"  Expected: action='tool_call', tool_name='{name}'.\n"
+                f"  What happened: action='{actual_action}', tool_name='{actual_tool}'.\n"
+                f"  Suggested fix: Ensure the agent calls tool '{name}' at this step, or check step index."
+            )
+
         self._results.append(AssertionResult(
             passed=passed,
-            message=f"Step {self._step_index}: {'called' if passed else 'did not call'} tool '{name}'",
+            message=message,
             assertion_type="tool_call",
             details={"step": self._step_index, "tool": name},
         ))
@@ -58,9 +69,21 @@ class StepAssertion:
         """Assert this step's response contains the given text."""
         response = self._step.response or ""
         passed = text.lower() in response.lower()
+
+        if passed:
+            message = f"Step {self._step_index}: response contains '{text}'"
+        else:
+            message = (
+                f"Step {self._step_index}: response does not contain '{text}'.\n"
+                f"  What went wrong: Expected text was not found in the step response.\n"
+                f"  Expected: Response containing '{text}'.\n"
+                f"  What happened: Response was: \"{response[:200]}{'...' if len(response) > 200 else ''}\".\n"
+                f"  Suggested fix: Check the agent's output at this step, or adjust the expected text."
+            )
+
         self._results.append(AssertionResult(
             passed=passed,
-            message=f"Step {self._step_index}: response {'contains' if passed else 'does not contain'} '{text}'",
+            message=message,
             assertion_type="response_contains",
             details={"step": self._step_index, "expected": text},
         ))
@@ -68,12 +91,25 @@ class StepAssertion:
 
     def has_no_error(self) -> StepAssertion:
         """Assert this step has no error."""
-        passed = self._step.error is None
+        error = self._step.error
+        passed = error is None
+
+        if passed:
+            message = f"Step {self._step_index}: no error"
+        else:
+            message = (
+                f"Step {self._step_index}: has error: '{error}'.\n"
+                f"  What went wrong: This step recorded an error.\n"
+                f"  Expected: No error (error should be None).\n"
+                f"  What happened: Error = '{error}'.\n"
+                f"  Suggested fix: Investigate why this step failed — check agent logic, tool availability, or network issues."
+            )
+
         self._results.append(AssertionResult(
             passed=passed,
-            message=f"Step {self._step_index}: {'no error' if passed else f'error: {self._step.error}'}",
+            message=message,
             assertion_type="no_error",
-            details={"step": self._step_index, "error": self._step.error},
+            details={"step": self._step_index, "error": error},
         ))
         return self
 
@@ -131,10 +167,20 @@ class Expectation:
                 found_in.append(step.step_number)
 
         passed = len(found_in) == 0
+        if passed:
+            message = f"Agent did not expose '{pattern}'"
+        else:
+            message = (
+                f"Agent exposed sensitive pattern '{pattern}' in steps {found_in}.\n"
+                f"  What went wrong: The pattern was found in agent output data.\n"
+                f"  Expected: Pattern '{pattern}' should never appear in any step.\n"
+                f"  What happened: Found in steps {found_in}.\n"
+                f"  Suggested fix: Add PII redaction or filtering to prevent exposing '{pattern}'."
+            )
+
         self._add_result(
             passed=passed,
-            message=f"Agent {'did not expose' if passed else 'exposed'} '{pattern}'"
-            + (f" in steps {found_in}" if found_in else ""),
+            message=message,
             assertion_type="no_expose",
             pattern=pattern,
             found_in_steps=found_in,
@@ -145,11 +191,24 @@ class Expectation:
 
     def to_complete(self) -> Expectation:
         """Assert the agent completed its run without error."""
-        passed = self._trajectory.completed and self._trajectory.error is None
+        completed = self._trajectory.completed
+        error = self._trajectory.error
+        passed = completed and error is None
+
+        if passed:
+            message = "Agent completed successfully"
+        else:
+            message = (
+                f"Agent did not complete successfully.\n"
+                f"  What went wrong: Agent completion check failed.\n"
+                f"  Expected: completed=True, error=None.\n"
+                f"  What happened: completed={completed}, error={repr(error)}.\n"
+                f"  Suggested fix: Ensure the agent finishes its task without raising errors."
+            )
+
         self._add_result(
             passed=passed,
-            message=f"Agent {'completed' if passed else 'did not complete'} successfully"
-            + (f" (error: {self._trajectory.error})" if self._trajectory.error else ""),
+            message=message,
             assertion_type="completion",
         )
         return self
@@ -159,12 +218,26 @@ class Expectation:
         actual = self._trajectory.step_count
         completed = self._trajectory.completed and self._trajectory.error is None
         passed = completed and actual <= steps
-        if not completed:
-            msg = f"Agent did not complete ({actual} steps taken, limit: {steps})"
-        elif actual > steps:
-            msg = f"Agent completed but exceeded step limit ({actual} steps, limit: {steps})"
-        else:
+
+        if passed:
             msg = f"Agent completed in {actual} steps (limit: {steps})"
+        elif not completed:
+            msg = (
+                f"Agent did not complete within step limit.\n"
+                f"  What went wrong: Agent did not finish — it may have crashed or hung.\n"
+                f"  Expected: completed=True within {steps} steps.\n"
+                f"  What happened: completed={self._trajectory.completed}, {actual} steps taken, error={repr(self._trajectory.error)}.\n"
+                f"  Suggested fix: Check agent error logs, increase step limit, or debug agent logic."
+            )
+        else:
+            msg = (
+                f"Agent completed but exceeded step limit.\n"
+                f"  What went wrong: Too many steps were needed.\n"
+                f"  Expected: ≤ {steps} steps.\n"
+                f"  What happened: {actual} steps were used.\n"
+                f"  Suggested fix: Optimize the agent to use fewer steps, or increase the step limit."
+            )
+
         self._add_result(
             passed=passed,
             message=msg,
@@ -183,9 +256,19 @@ class Expectation:
 
         if times is not None:
             passed = call_count == times
+            if passed:
+                message = f"Agent called '{name}' {call_count} time(s) (expected: {times})"
+            else:
+                message = (
+                    f"Agent called '{name}' {call_count} time(s), expected exactly {times}.\n"
+                    f"  What went wrong: Tool call count does not match expected.\n"
+                    f"  Expected: {times} call(s) to '{name}'.\n"
+                    f"  What happened: {call_count} call(s) to '{name}'.\n"
+                    f"  Suggested fix: Review the agent logic to call '{name}' exactly {times} time(s), or adjust the expected count."
+                )
             self._add_result(
                 passed=passed,
-                message=f"Agent called '{name}' {call_count} time(s) (expected: {times})",
+                message=message,
                 assertion_type="tool_count",
                 tool=name,
                 actual=call_count,
@@ -193,9 +276,19 @@ class Expectation:
             )
         else:
             passed = call_count > 0
+            if passed:
+                message = f"Agent called tool '{name}' ({call_count} times)"
+            else:
+                message = (
+                    f"Agent never called tool '{name}'.\n"
+                    f"  What went wrong: Expected at least one call to '{name}', but got zero.\n"
+                    f"  Expected: ≥ 1 call to '{name}'.\n"
+                    f"  What happened: 0 calls to '{name}'.\n"
+                    f"  Suggested fix: Ensure the agent has access to '{name}' and the test scenario requires its use."
+                )
             self._add_result(
                 passed=passed,
-                message=f"Agent {'called' if passed else 'did not call'} tool '{name}' ({call_count} times)",
+                message=message,
                 assertion_type="tool_used",
                 tool=name,
                 call_count=call_count,
@@ -206,10 +299,21 @@ class Expectation:
         """Assert the agent never used a specific tool."""
         calls = self._trajectory.tool_calls_by_name(name)
         passed = len(calls) == 0
+
+        if passed:
+            message = f"Agent did not call tool '{name}'"
+        else:
+            message = (
+                f"Agent called forbidden tool '{name}' {len(calls)} time(s).\n"
+                f"  What went wrong: Tool '{name}' was called but should not have been.\n"
+                f"  Expected: 0 calls to '{name}'.\n"
+                f"  What happened: {len(calls)} call(s) to '{name}'.\n"
+                f"  Suggested fix: Remove '{name}' from agent's available tools or adjust agent logic to avoid it."
+            )
+
         self._add_result(
             passed=passed,
-            message=f"Agent {'did not call' if passed else 'called'} tool '{name}'"
-            + (f" ({len(calls)} times)" if calls else ""),
+            message=message,
             assertion_type="tool_not_used",
             tool=name,
             call_count=len(calls),
@@ -220,13 +324,27 @@ class Expectation:
 
     def to_respond_with(self, text: str) -> Expectation:
         """Assert the agent's final response contains the given text."""
-        response = self._trajectory.final_response
+        response = self._trajectory.final_response or ""
         passed = text.lower() in response.lower()
+
+        if passed:
+            message = f"Agent response contains '{text}'"
+        else:
+            preview = response[:200] + ("..." if len(response) > 200 else "")
+            message = (
+                f"Agent response does not contain '{text}'.\n"
+                f"  What went wrong: Expected text not found in final response.\n"
+                f"  Expected: Response containing '{text}'.\n"
+                f"  What happened: Response was: \"{preview}\".\n"
+                f"  Suggested fix: Check agent output or adjust the expected text pattern."
+            )
+
         self._add_result(
             passed=passed,
-            message=f"Agent response {'contains' if passed else 'does not contain'} '{text}'",
+            message=message,
             assertion_type="response_contains",
             expected=text,
+            actual_response=response[:200],
         )
         return self
 
@@ -237,10 +355,21 @@ class Expectation:
         retries = [s for s in self._trajectory.steps if s.action == "retry"]
         retry_count = len(retries)
         passed = self._trajectory.completed and retry_count <= max_attempts
+
+        if passed:
+            message = f"Agent retried {retry_count} time(s) (max: {max_attempts}) and completed"
+        else:
+            message = (
+                f"Agent retry check failed.\n"
+                f"  What went wrong: {'Agent did not complete after retries.' if not self._trajectory.completed else 'Too many retries.'}\n"
+                f"  Expected: ≤ {max_attempts} retries and agent completes.\n"
+                f"  What happened: {retry_count} retries, completed={self._trajectory.completed}.\n"
+                f"  Suggested fix: Improve agent's error handling to reduce retries, or increase max_attempts."
+            )
+
         self._add_result(
             passed=passed,
-            message=f"Agent retried {retry_count} time(s) (max: {max_attempts})"
-            + (" and completed" if self._trajectory.completed else " but did not complete"),
+            message=message,
             assertion_type="retry_limit",
             retries=retry_count,
             max_attempts=max_attempts,
@@ -262,7 +391,13 @@ class Expectation:
             message = f"Agent followed workflow: {' → '.join(steps)}"
         except ValueError as e:
             passed = False
-            message = f"Agent did not follow workflow: {e}"
+            message = (
+                f"Agent did not follow expected workflow.\n"
+                f"  What went wrong: {e}\n"
+                f"  Expected workflow: {' → '.join(steps)}\n"
+                f"  What happened: Tool call sequence was: {' → '.join(actual_tools) if actual_tools else '(none)'}\n"
+                f"  Suggested fix: Ensure the agent calls tools in the required order."
+            )
 
         self._add_result(
             passed=passed,
@@ -277,10 +412,24 @@ class Expectation:
         """Assert no step had an error."""
         error_steps = [s for s in self._trajectory.steps if s.error is not None]
         passed = len(error_steps) == 0
+
+        if passed:
+            message = "Agent had no errors"
+        else:
+            step_nums = [s.step_number for s in error_steps]
+            errors = [(s.step_number, s.error) for s in error_steps[:5]]
+            error_detail = "; ".join(f"step {n}: {e}" for n, e in errors)
+            message = (
+                f"Agent had {len(error_steps)} error(s) in steps {step_nums}.\n"
+                f"  What went wrong: One or more steps recorded errors.\n"
+                f"  Expected: No errors (all steps should have error=None).\n"
+                f"  What happened: {error_detail}\n"
+                f"  Suggested fix: Investigate each error — check tool availability, network connectivity, or agent logic."
+            )
+
         self._add_result(
             passed=passed,
-            message=f"Agent had {len(error_steps)} error(s)"
-            + (f" in steps {[s.step_number for s in error_steps]}" if error_steps else ""),
+            message=message,
             assertion_type="no_errors",
             error_count=len(error_steps),
         )
@@ -289,7 +438,11 @@ class Expectation:
     def step(self, index: int) -> StepAssertion:
         """Get assertions for a specific step."""
         if index < 0 or index >= len(self._trajectory.steps):
-            raise IndexError(f"Step {index} out of range (trajectory has {self._trajectory.step_count} steps)")
+            raise IndexError(
+                f"Step index {index} is out of range.\n"
+                f"  What went wrong: Requested step {index}, but trajectory has {self._trajectory.step_count} steps (indices 0-{self._trajectory.step_count - 1}).\n"
+                f"  Suggested fix: Use a valid step index (0 to {max(0, self._trajectory.step_count - 1)})."
+            )
         return StepAssertion(index, self._trajectory)
 
 
@@ -323,6 +476,24 @@ def expect(trajectory: AgentTrajectory) -> Expectation:
         expect(result).to_use_tool("payment_api", times=1)
         expect(result).to_not_expose("credit_card_number")
     """
+    # Validate trajectory is not None
+    if trajectory is None:
+        raise ValueError(
+            "expect() received None instead of a trajectory.\n"
+            "  What went wrong: The agent did not return a trajectory (likely crashed or was not configured).\n"
+            "  Expected: A valid AgentTrajectory object.\n"
+            "  What happened: Got None.\n"
+            "  Suggested fix: Ensure self.run() returns a trajectory — check adapter configuration."
+        )
+
+    # Validate trajectory has steps list
+    if not hasattr(trajectory, 'steps'):
+        raise ValueError(
+            f"expect() received an invalid object of type {type(trajectory).__name__}.\n"
+            "  Expected: An AgentTrajectory object.\n"
+            "  Suggested fix: Pass the return value of test.run() to expect()."
+        )
+
     exp = Expectation(trajectory)
     # Register this expectation with the active test (if any) so the
     # runner can collect assertion results after the test method returns.
