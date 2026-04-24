@@ -7,190 +7,138 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0a0a0a;--surface:#141414;--surface2:#1a1a1a;--border:#222;
-  --text:#e5e5e5;--text-dim:#888;--text-muted:#555;
-  --blue:#3b82f6;--green:#22c55e;--yellow:#eab308;--orange:#f97316;--red:#ef4444;
-  --radius:12px;
+  --bg:hsl(220 15% 4%);--surface:hsl(220 15% 7%);--surface-raised:hsl(220 15% 11%);
+  --border:hsl(220 15% 14%);--border-hover:hsl(220 15% 20%);
+  --text:hsl(220 15% 93%);--text-secondary:hsl(220 10% 65%);--text-muted:hsl(220 10% 45%);
+  --primary:hsl(220 91% 55%);--primary-hover:hsl(220 91% 60%);--primary-glow:hsl(220 91% 55%/.15);
+  --success:hsl(142 71% 45%);--success-bg:hsl(142 71% 45%/.1);
+  --warning:hsl(38 92% 50%);--warning-bg:hsl(38 92% 50%/.1);
+  --danger:hsl(0 84% 60%);--danger-bg:hsl(0 84% 60%/.1);
+  --radius:10px;--transition:200ms cubic-bezier(.4,0,.2,1);
 }
-html{font-size:16px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6;
-}
-a{color:var(--blue);text-decoration:none}
-
-/* ── Layout ── */
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+a{color:var(--primary);text-decoration:none}
+.skip-link{position:absolute;top:-100%;left:16px;background:var(--primary);color:#fff;padding:8px 16px;border-radius:var(--radius);z-index:100;font-weight:600}
+.skip-link:focus{top:8px}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .container{max-width:960px;margin:0 auto;padding:0 24px}
-header{padding:20px 0;border-bottom:1px solid var(--border)}
-header .container{display:flex;align-items:center;justify-content:space-between}
-.logo{font-size:1.25rem;font-weight:700;letter-spacing:-.5px;color:var(--text)}
-.logo span{color:var(--blue)}
-
-/* ── States ── */
-.state{display:none;animation:fadeIn .4s ease}
+nav{padding:16px 0;border-bottom:1px solid var(--border)}
+nav .container{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:1.25rem;font-weight:700;letter-spacing:-.5px}
+.logo span{color:var(--primary)}
+.state{display:none;animation:fadeUp .4s ease}
 .state.active{display:block}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-/* ── Landing ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 #landing{padding:80px 0 60px;text-align:center}
 #landing h1{font-size:clamp(2rem,5vw,3.25rem);font-weight:800;letter-spacing:-1px;margin-bottom:12px}
-#landing p.subtitle{font-size:1.15rem;color:var(--text-dim);max-width:500px;margin:0 auto 40px}
-
-.input-group{
-  display:flex;gap:12px;max-width:560px;margin:0 auto 48px;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:6px;transition:border-color .2s;
-}
-.input-group:focus-within{border-color:var(--blue)}
-.input-group input{
-  flex:1;border:none;background:transparent;color:var(--text);font-size:1rem;
-  padding:12px 16px;outline:none;min-width:0;
-}
+#landing .subtitle{font-size:1.15rem;color:var(--text-secondary);max-width:520px;margin:0 auto 40px}
+.input-group{display:flex;gap:12px;max-width:560px;margin:0 auto 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:6px;transition:border-color var(--transition)}
+.input-group:focus-within{border-color:var(--primary)}
+.input-group input{flex:1;border:none;background:transparent;color:var(--text);font-size:1rem;padding:12px 16px;outline:none;min-width:0}
 .input-group input::placeholder{color:var(--text-muted)}
-.btn-scan{
-  background:var(--blue);color:#fff;border:none;border-radius:8px;
-  padding:12px 32px;font-size:1rem;font-weight:600;cursor:pointer;
-  transition:background .2s,transform .1s;white-space:nowrap;
-}
-.btn-scan:hover{background:#2563eb}
+.url-error{color:var(--danger);font-size:.85rem;max-width:560px;margin:0 auto 40px;text-align:left;display:none}
+.url-error.show{display:block}
+.btn-scan{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:12px 32px;font-size:1rem;font-weight:600;cursor:pointer;transition:background var(--transition),transform 100ms;white-space:nowrap;min-height:44px;min-width:44px}
+.btn-scan:hover{background:var(--primary-hover)}
 .btn-scan:active{transform:scale(.97)}
 .btn-scan:disabled{opacity:.5;cursor:not-allowed}
-
-.trust-badges{display:flex;justify-content:center;gap:40px;flex-wrap:wrap}
-.badge{display:flex;flex-direction:column;align-items:center;gap:6px}
-.badge .icon{width:40px;height:40px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:1.1rem}
-.badge span{font-size:.8rem;color:var(--text-dim);font-weight:500}
-
-/* ── Scanning ── */
+.trust-badges{display:flex;justify-content:center;gap:40px;flex-wrap:wrap;margin-top:40px}
+.badge{display:flex;flex-direction:column;align-items:center;gap:8px}
+.badge .icon{width:44px;height:44px;border-radius:50%;background:var(--surface-raised);display:flex;align-items:center;justify-content:center;font-size:1.1rem}
+.badge span{font-size:.8rem;color:var(--text-secondary);font-weight:500}
 #scanning{padding:120px 0;text-align:center}
 .scan-ring{width:100px;height:100px;margin:0 auto 40px;position:relative}
 .scan-ring svg{animation:spin 2s linear infinite}
-.scan-ring .inner-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;color:var(--blue)}
+.scan-ring .inner-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;color:var(--primary)}
 @keyframes spin{to{transform:rotate(360deg)}}
-
 .step-list{text-align:left;max-width:400px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .step{display:flex;align-items:center;gap:14px;opacity:.25;transition:opacity .5s,color .5s}
-.step.active{opacity:1;color:var(--blue)}
-.step.done{opacity:.6;color:var(--green)}
+.step.active{opacity:1;color:var(--primary)}
+.step.done{opacity:.6;color:var(--success)}
 .step .dot{width:10px;height:10px;border-radius:50%;border:2px solid currentColor;flex-shrink:0;position:relative}
-.step.active .dot{border-color:var(--blue);box-shadow:0 0 8px var(--blue)}
-.step.active .dot::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--blue);animation:pulse 1.2s ease infinite;opacity:0}
-.step.done .dot{background:var(--green);border-color:var(--green)}
+.step.active .dot{border-color:var(--primary);box-shadow:0 0 8px var(--primary)}
+.step.active .dot::after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--primary);animation:pulse 1.2s ease infinite;opacity:0}
+.step.done .dot{background:var(--success);border-color:var(--success)}
 @keyframes pulse{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(1.8)}}
-
-/* ── Results ── */
+.btn-cancel{margin-top:32px;background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:10px 24px;border-radius:8px;font-size:.9rem;cursor:pointer;transition:background var(--transition);min-height:44px}
+.btn-cancel:hover{background:var(--surface)}
 #results{padding:48px 0 80px}
 .results-header{text-align:center;margin-bottom:48px}
-.results-header h2{font-size:1.4rem;font-weight:600;margin-bottom:4px;color:var(--text-dim)}
-
-/* Gauge */
+.results-header h2{font-size:1.4rem;font-weight:600;color:var(--text-secondary)}
 .gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:16px;margin-bottom:16px}
 .gauge{width:200px;height:200px;position:relative}
 .gauge svg{transform:rotate(-90deg)}
-.gauge .track{fill:none;stroke:var(--surface2);stroke-width:12}
-.gauge .fill{fill:none;stroke-width:12;stroke-linecap:round;transition:stroke-dashoffset 1.5s ease,stroke .3s}
-.gauge .center{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-}
+.gauge .track{fill:none;stroke:var(--surface-raised);stroke-width:12}
+.gauge .fill{fill:none;stroke-width:12;stroke-linecap:round;transition:stroke-dashoffset 1.2s ease,stroke .3s}
+.gauge .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .gauge .score-num{font-size:3rem;font-weight:800;letter-spacing:-2px;line-height:1}
-.gauge .score-grade{font-size:1.5rem;font-weight:700;margin-top:2px}
-.behaviors-row{display:flex;gap:24px;font-size:.9rem;color:var(--text-dim)}
+.gauge .score-grade{font-size:1.5rem;font-weight:700;margin-top:4px}
+.behaviors-row{display:flex;gap:24px;font-size:.9rem;color:var(--text-secondary)}
 .behaviors-row strong{color:var(--text)}
-
-/* Summary */
-.summary-box{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:24px;margin:0 auto 36px;max-width:720px;line-height:1.7;color:var(--text-dim);
-}
+.summary-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin:0 auto 36px;max-width:720px;line-height:1.7;color:var(--text-secondary)}
 .summary-box strong{color:var(--text)}
-
-/* Critical Issues */
 .critical-list{max-width:720px;margin:0 auto 40px;display:flex;flex-direction:column;gap:12px}
-.critical-issue{
-  background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:var(--radius);
-  padding:16px 20px;display:flex;align-items:flex-start;gap:12px;color:#fca5a5;font-weight:500;
-}
-.critical-issue svg{flex-shrink:0;margin-top:2px;color:var(--red)}
-
-/* Domain Cards */
-.domains-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;max-width:720px;margin:0 auto 40px}
-.domain-card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:24px;opacity:0;transform:translateY(12px);transition:opacity .5s ease,transform .5s ease;
-}
+.critical-issue{background:var(--danger-bg);border:1px solid hsl(0 84% 60%/.25);border-radius:var(--radius);padding:16px 20px;display:flex;align-items:flex-start;gap:12px;color:hsl(0 84% 80%);font-weight:500}
+.critical-issue svg{flex-shrink:0;margin-top:2px;color:var(--danger)}
+.domains-grid{display:grid;grid-template-columns:1fr;gap:20px;max-width:720px;margin:0 auto 40px}
+.domain-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;opacity:0;transform:translateY(12px);transition:opacity .5s ease,transform .5s ease,box-shadow var(--transition)}
 .domain-card.visible{opacity:1;transform:translateY(0)}
+.domain-card:hover{box-shadow:0 8px 24px hsl(220 15% 0/.3);transform:translateY(-4px)}
+.domain-card.visible:hover{transform:translateY(-4px)}
 .domain-card-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-.domain-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem}
+.domain-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem}
 .domain-card-header h3{font-size:1.05rem;font-weight:600;flex:1}
-.domain-grade{
-  font-size:1.5rem;font-weight:800;width:44px;height:44px;border-radius:10px;
-  display:flex;align-items:center;justify-content:center;
-}
-.domain-score-bar{height:4px;background:var(--surface2);border-radius:2px;margin-bottom:16px;overflow:hidden}
+.domain-grade{font-size:1.5rem;font-weight:800;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.domain-score-bar{height:4px;background:var(--surface-raised);border-radius:2px;margin-bottom:16px;overflow:hidden}
 .domain-score-bar .bar{height:100%;border-radius:2px;width:0;transition:width 1.2s ease}
 .domain-section{margin-bottom:12px}
 .domain-section h4{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px}
 .domain-section ul{list-style:none;display:flex;flex-direction:column;gap:4px}
-.domain-section li{font-size:.88rem;color:var(--text-dim);padding-left:16px;position:relative}
+.domain-section li{font-size:.88rem;color:var(--text-secondary);padding-left:16px;position:relative}
 .domain-section li::before{content:'›';position:absolute;left:0;color:var(--text-muted)}
-.domain-section li.recommendation{color:var(--text-dim)}
 .domain-section li.recommendation::before{content:'→';color:var(--text-muted)}
-
-/* Action buttons */
 .actions{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:8px}
-.btn{
-  border:none;border-radius:8px;padding:12px 28px;font-size:.95rem;font-weight:600;
-  cursor:pointer;transition:background .2s,transform .1s;
-}
+.btn{border:none;border-radius:8px;padding:12px 28px;font-size:.95rem;font-weight:600;cursor:pointer;transition:background var(--transition),transform 100ms;min-height:44px}
 .btn:active{transform:scale(.97)}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
 .btn-outline:hover{background:var(--surface)}
-.btn-primary{background:var(--blue);color:#fff}
-.btn-primary:hover{background:#2563eb}
-
-/* Error */
-#error{padding:120px 0;text-align:center}
-#error .error-icon{font-size:3rem;margin-bottom:20px}
-#error h2{font-size:1.4rem;margin-bottom:8px;color:var(--red)}
-#error p{color:var(--text-dim);max-width:420px;margin:0 auto 28px}
-
-/* ── History / Regression ── */
-.history-section{
-  max-width:720px;margin:32px auto 0;
-}
-.history-section h3{font-size:1.1rem;font-weight:600;margin-bottom:16px;color:var(--text-dim)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-hover)}
+.history-section{max-width:720px;margin:32px auto 0}
+.history-section h3{font-size:1.1rem;font-weight:600;margin-bottom:16px;color:var(--text-secondary)}
 .history-timeline{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
-.history-entry{
-  display:flex;align-items:center;gap:14px;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:14px 20px;
-}
+.history-entry{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;transition:border-color var(--transition);cursor:default}
+.history-entry:hover{border-color:var(--border-hover)}
 .history-entry .he-score{font-size:1.3rem;font-weight:800;min-width:48px;text-align:center}
 .history-entry .he-info{flex:1}
 .history-entry .he-date{font-size:.82rem;color:var(--text-muted)}
 .history-entry .he-grade{font-size:.85rem;font-weight:600;margin-left:4px}
 .he-trend{font-size:1.1rem;font-weight:700;min-width:28px;text-align:center}
-.he-trend.up{color:var(--green)}.he-trend.down{color:var(--red)}.he-trend.flat{color:var(--text-muted)}
-
-.regression-card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:24px;margin-top:16px;
-}
+.he-trend.up{color:var(--success)}.he-trend.down{color:var(--danger)}.he-trend.flat{color:var(--text-muted)}
+.regression-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:16px}
 .regression-card h4{font-size:1rem;font-weight:600;margin-bottom:14px}
 .regression-card .rc-overall{font-size:.95rem;margin-bottom:12px;padding:10px 14px;border-radius:8px}
-.regression-card .rc-overall.improved{background:rgba(34,197,94,.08);color:var(--green)}
-.regression-card .rc-overall.regressed{background:rgba(239,68,68,.08);color:var(--red)}
-.regression-card .rc-overall.stable{background:rgba(136,136,136,.08);color:var(--text-dim)}
+.regression-card .rc-overall.improved{background:var(--success-bg);color:var(--success)}
+.regression-card .rc-overall.regressed{background:var(--danger-bg);color:var(--danger)}
+.regression-card .rc-overall.stable{background:hsl(220 10% 45%/.1);color:var(--text-secondary)}
 .rc-domains{display:flex;flex-direction:column;gap:8px}
 .rc-domain{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;font-size:.9rem}
-.rc-domain.regression{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);color:#fca5a5}
-.rc-domain.improvement{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);color:#86efac}
+.rc-domain.regression{background:var(--danger-bg);border:1px solid hsl(0 84% 60%/.2);color:hsl(0 84% 80%)}
+.rc-domain.improvement{background:var(--success-bg);border:1px solid hsl(142 71% 45%/.2);color:hsl(142 71% 70%)}
 .rc-domain .rc-name{flex:1;font-weight:500}
 .rc-domain .rc-delta{font-weight:700}
-
-/* ── Responsive ── */
+#error{padding:120px 0;text-align:center}
+#error .error-icon{font-size:3rem;margin-bottom:20px}
+#error h2{font-size:1.4rem;margin-bottom:8px;color:var(--danger)}
+#error p{color:var(--text-secondary);max-width:420px;margin:0 auto 28px}
+footer{padding:32px 0;border-top:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:.8rem}
+footer a{color:var(--text-secondary)}
+footer a:hover{color:var(--text)}
+@media(min-width:768px){.domains-grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1024px){.container{max-width:1100px}}
 @media(max-width:640px){
-  .domains-grid{grid-template-columns:1fr}
   .input-group{flex-direction:column}
   .btn-scan{width:100%}
   .trust-badges{gap:24px}
@@ -203,87 +151,64 @@ header .container{display:flex;align-items:center;justify-content:space-between}
 </style>
 </head>
 <body>
-
-<header>
+<a href="#main" class="skip-link">Skip to content</a>
+<nav>
   <div class="container">
     <div class="logo">Agent<span>Bench</span></div>
   </div>
-</header>
+</nav>
+<main id="main">
 
-<!-- ═══════ LANDING ═══════ -->
-<section id="landing" class="state active">
+<!-- LANDING -->
+<section id="landing" class="state active" aria-label="Agent scanner input">
   <div class="container">
     <h1>Scan Your AI Agent</h1>
     <p class="subtitle">Run 38 behavioral probes against any AI agent. Get a full safety, reliability, capability &amp; robustness report in 60 seconds.</p>
-    <div class="input-group">
-      <input type="url" id="agentUrl" placeholder="https://your-agent.example.com" spellcheck="false" autocomplete="off">
-      <button class="btn-scan" id="scanBtn" onclick="startScan()">Scan</button>
+    <div class="input-group" role="search">
+      <input type="url" id="agentUrl" placeholder="https://your-agent.example.com" spellcheck="false" autocomplete="off" aria-label="Agent URL">
+      <button class="btn-scan" id="scanBtn" onclick="startScan()" aria-label="Start scan">Scan</button>
     </div>
+    <div class="url-error" id="urlError" role="alert"></div>
     <div class="trust-badges">
-      <div class="badge">
-        <div class="icon">🔬</div>
-        <span>38 behavioral probes</span>
-      </div>
-      <div class="badge">
-        <div class="icon">⚡</div>
-        <span>60-second scan</span>
-      </div>
-      <div class="badge">
-        <div class="icon">🔓</div>
-        <span>No signup required</span>
-      </div>
+      <div class="badge"><div class="icon" aria-hidden="true">🔬</div><span>38 behavioral probes</span></div>
+      <div class="badge"><div class="icon" aria-hidden="true">⚡</div><span>60-second scan</span></div>
+      <div class="badge"><div class="icon" aria-hidden="true">🔓</div><span>No signup required</span></div>
     </div>
   </div>
 </section>
 
-<!-- ═══════ SCANNING ═══════ -->
-<section id="scanning" class="state">
+<!-- SCANNING -->
+<section id="scanning" class="state" aria-label="Scan in progress">
   <div class="container">
     <div class="scan-ring">
-      <svg width="100" height="100" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="44" fill="none" stroke="#1a1a1a" stroke-width="6"/>
-        <circle cx="50" cy="50" r="44" fill="none" stroke="#3b82f6" stroke-width="6"
-                stroke-dasharray="80 200" stroke-linecap="round"/>
+      <svg width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="Scanning progress indicator">
+        <circle cx="50" cy="50" r="44" fill="none" stroke="hsl(220 15% 11%)" stroke-width="6"/>
+        <circle cx="50" cy="50" r="44" fill="none" stroke="hsl(220 91% 55%)" stroke-width="6" stroke-dasharray="80 200" stroke-linecap="round"/>
       </svg>
-      <div class="inner-text" id="scanPercent">0%</div>
+      <div class="inner-text" id="scanPercent" aria-live="polite">0%</div>
     </div>
     <div class="step-list">
-      <div class="step" id="step0">
-        <div class="dot"></div>
-        <span>Probing agent capabilities…</span>
-      </div>
-      <div class="step" id="step1">
-        <div class="dot"></div>
-        <span>Testing safety boundaries…</span>
-      </div>
-      <div class="step" id="step2">
-        <div class="dot"></div>
-        <span>Checking edge cases…</span>
-      </div>
-      <div class="step" id="step3">
-        <div class="dot"></div>
-        <span>Analyzing robustness…</span>
-      </div>
+      <div class="step" id="step0"><div class="dot"></div><span>Probing agent capabilities…</span></div>
+      <div class="step" id="step1"><div class="dot"></div><span>Testing safety boundaries…</span></div>
+      <div class="step" id="step2"><div class="dot"></div><span>Checking edge cases…</span></div>
+      <div class="step" id="step3"><div class="dot"></div><span>Analyzing robustness…</span></div>
     </div>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelScan()" style="display:none" aria-label="Cancel scan">Cancel</button>
   </div>
 </section>
 
-<!-- ═══════ RESULTS ═══════ -->
-<section id="results" class="state">
+<!-- RESULTS -->
+<section id="results" class="state" aria-label="Scan results">
   <div class="container">
-    <div class="results-header">
-      <h2>Agent Behavior Report</h2>
-    </div>
-
+    <div class="results-header"><h2>Agent Behavior Report</h2></div>
     <div class="gauge-wrap">
       <div class="gauge">
-        <svg width="200" height="200" viewBox="0 0 200 200">
+        <svg width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="Overall score gauge">
           <circle class="track" cx="100" cy="100" r="85"/>
-          <circle class="fill" id="gaugeFill" cx="100" cy="100" r="85"
-                  stroke-dasharray="534.07" stroke-dashoffset="534.07"/>
+          <circle class="fill" id="gaugeFill" cx="100" cy="100" r="85" stroke-dasharray="534.07" stroke-dashoffset="534.07"/>
         </svg>
         <div class="center">
-          <div class="score-num" id="scoreNum">0</div>
+          <div class="score-num" id="scoreNum" aria-live="polite">0</div>
           <div class="score-grade" id="scoreGrade">—</div>
         </div>
       </div>
@@ -293,19 +218,14 @@ header .container{display:flex;align-items:center;justify-content:space-between}
         <span><strong id="behFailed">0</strong> failed</span>
       </div>
     </div>
-
     <div class="summary-box" id="summaryBox"></div>
-
     <div class="critical-list" id="criticalList"></div>
-
     <div class="domains-grid" id="domainsGrid"></div>
-
     <div class="actions">
       <button class="btn btn-outline" onclick="resetApp()">Scan Another</button>
       <button class="btn btn-primary" onclick="downloadReport()">Download Report</button>
       <button class="btn btn-outline" id="btnRegression" onclick="showRegression()" style="display:none">View Regression Report</button>
     </div>
-
     <div class="history-section" id="historySection" style="display:none">
       <h3>Scan History</h3>
       <div class="history-timeline" id="historyTimeline"></div>
@@ -314,62 +234,77 @@ header .container{display:flex;align-items:center;justify-content:space-between}
   </div>
 </section>
 
-<!-- ═══════ ERROR ═══════ -->
-<section id="error" class="state">
+<!-- ERROR -->
+<section id="error" class="state" aria-label="Scan error">
   <div class="container">
-    <div class="error-icon">⚠️</div>
+    <div class="error-icon" aria-hidden="true">⚠️</div>
     <h2>Scan Failed</h2>
-    <p>Could not connect to agent. Make sure the URL is correct and the agent is running.</p>
+    <p id="errorMessage">Could not connect to agent. Make sure the URL is correct and the agent is running.</p>
     <button class="btn btn-outline" onclick="resetApp()">Try Again</button>
   </div>
 </section>
 
+</main>
+
+<footer>
+  <div class="container">
+    <a href="https://github.com/EdList/agentbench" target="_blank" rel="noopener">GitHub</a> · Built with AgentBench
+  </div>
+</footer>
 <script>
-// ── Config ──
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8000' : '';
-
 let lastReport = null;
 let currentAgentUrl = '';
+let abortController = null;
 
-// ── Helpers ──
 function show(id) {
   document.querySelectorAll('.state').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
-
-function gradeColor(grade) {
-  return {A:'#22c55e',B:'#3b82f6',C:'#eab308',D:'#f97316',F:'#ef4444'}[grade] || '#3b82f6';
+function gradeColor(g) {
+  return {A:'hsl(142 71% 45%)',B:'hsl(220 91% 55%)',C:'hsl(38 92% 50%)',D:'hsl(25 95% 55%)',F:'hsl(0 84% 60%)'}[g]||'hsl(220 91% 55%)';
 }
-
 function domainIcon(name) {
   const icons = {
-    Safety: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
-    Reliability: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
-    Capability: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
-    Robustness: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>`
+    Safety:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Shield"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+    Reliability:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Checkmark"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    Capability:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Lightning"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    Robustness:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Shield check"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>'
   };
   return icons[name] || icons.Capability;
 }
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function validateUrl(url) {
+  if (!url) return 'Please enter an agent URL.';
+  try { const u = new URL(url); if (!u.protocol.startsWith('http')) return 'URL must start with http:// or https://.'; return ''; }
+  catch { return 'Please enter a valid URL (e.g. https://your-agent.example.com).'; }
+}
 
-// ── Scan Flow ──
 async function startScan() {
   const url = document.getElementById('agentUrl').value.trim();
-  if (!url) { document.getElementById('agentUrl').focus(); return; }
-
+  const err = validateUrl(url);
+  if (err) {
+    const el = document.getElementById('urlError');
+    el.textContent = err; el.classList.add('show');
+    document.getElementById('agentUrl').focus();
+    return;
+  }
+  document.getElementById('urlError').classList.remove('show');
   show('scanning');
   const btn = document.getElementById('scanBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
   btn.disabled = true;
+  cancelBtn.style.display = '';
+  abortController = new AbortController();
 
-  // Animate steps
-  const steps = [0,1,2,3];
-  const stepEls = steps.map(i => document.getElementById('step'+i));
-  stepEls.forEach(el => { el.className = 'step'; });
+  const stepEls = [0,1,2,3].map(i => document.getElementById('step'+i));
+  stepEls.forEach(el => el.className = 'step');
   let currentStep = 0;
   stepEls[0].classList.add('active');
 
   const stepTimer = setInterval(() => {
-    if (currentStep < steps.length - 1) {
+    if (currentStep < stepEls.length - 1) {
       stepEls[currentStep].classList.remove('active');
       stepEls[currentStep].classList.add('done');
       currentStep++;
@@ -377,113 +312,75 @@ async function startScan() {
     }
   }, 2500);
 
-  // Animate percentage
   let pct = 0;
   const pctEl = document.getElementById('scanPercent');
-  const pctTimer = setInterval(() => {
-    pct = Math.min(pct + Math.random() * 3, 92);
-    pctEl.textContent = Math.round(pct) + '%';
-  }, 200);
+  const pctTimer = setInterval(() => { pct = Math.min(pct + Math.random()*3, 92); pctEl.textContent = Math.round(pct)+'%'; }, 200);
 
   try {
     const res = await fetch(API_BASE + '/api/v1/scans', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_url: url, categories: null })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({agent_url:url, categories:null}),
+      signal: abortController.signal
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
     lastReport = data;
     currentAgentUrl = url;
-
-    clearInterval(stepTimer);
-    clearInterval(pctTimer);
-
-    // Finish steps
+    clearInterval(stepTimer); clearInterval(pctTimer);
     stepEls[currentStep].classList.remove('active');
     stepEls[currentStep].classList.add('done');
     pctEl.textContent = '100%';
-
     setTimeout(() => showResults(data), 400);
-  } catch (e) {
-    clearInterval(stepTimer);
-    clearInterval(pctTimer);
-    show('error');
-  } finally {
-    btn.disabled = false;
-  }
+  } catch(e) {
+    clearInterval(stepTimer); clearInterval(pctTimer);
+    if (e.name === 'AbortError') { show('landing'); }
+    else {
+      document.getElementById('errorMessage').textContent =
+        e.message === 'HTTP 422' ? 'Invalid agent URL. Please check the address and try again.' :
+        e.message === 'HTTP 429' ? 'Too many scans. Please wait a moment and try again.' :
+        e.message === 'HTTP 503' ? 'Scan service is temporarily unavailable. Please try again shortly.' :
+        'Could not connect to agent. Make sure the URL is correct and the agent is running.';
+      show('error');
+    }
+  } finally { btn.disabled = false; cancelBtn.style.display = 'none'; abortController = null; }
 }
 
-// ── Render Results ──
+function cancelScan() { if (abortController) abortController.abort(); }
+
 function showResults(data) {
   show('results');
-
   const color = gradeColor(data.overall_grade);
-  const circumference = 2 * Math.PI * 85; // ≈534.07
-
-  // Animate gauge
+  const circ = 2 * Math.PI * 85;
   const fill = document.getElementById('gaugeFill');
   fill.style.stroke = color;
-  setTimeout(() => {
-    fill.style.strokeDashoffset = circumference * (1 - data.overall_score / 100);
-  }, 100);
-
-  // Animate score number
+  setTimeout(() => { fill.style.strokeDashoffset = circ * (1 - data.overall_score / 100); }, 100);
   animateNumber('scoreNum', 0, Math.round(data.overall_score), 1200);
   const gradeEl = document.getElementById('scoreGrade');
   gradeEl.textContent = data.overall_grade;
   gradeEl.style.color = color;
   document.getElementById('scoreNum').style.color = color;
-
-  // Behaviors
   document.getElementById('behTested').textContent = data.behaviors_tested ?? '—';
   document.getElementById('behPassed').textContent = data.behaviors_passed ?? '—';
   document.getElementById('behFailed').textContent = data.behaviors_failed ?? '—';
-
-  // Summary
-  document.getElementById('summaryBox').innerHTML =
-    '<strong>Executive Summary</strong><br>' + (data.summary || 'No summary available.');
-
-  // Critical issues
+  document.getElementById('summaryBox').innerHTML = '<strong>Executive Summary</strong><br>' + (data.summary || 'No summary available.');
   const cl = document.getElementById('criticalList');
   cl.innerHTML = '';
   (data.critical_issues || []).forEach(issue => {
-    cl.innerHTML += `<div class="critical-issue">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      ${escHtml(issue)}
-    </div>`;
+    cl.innerHTML += '<div class="critical-issue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Warning"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'+escHtml(issue)+'</div>';
   });
-
-  // Domain cards
   const grid = document.getElementById('domainsGrid');
   grid.innerHTML = '';
   (data.domain_scores || []).forEach((d, i) => {
     const c = gradeColor(d.grade);
-    const findings = (d.findings || []).slice(0, 3).map(f => `<li>${escHtml(f)}</li>`).join('');
-    const recs = (d.recommendations || []).slice(0, 3).map(r => `<li class="recommendation">${escHtml(r)}</li>`).join('');
+    const findings = (d.findings||[]).slice(0,3).map(f => '<li>'+escHtml(f)+'</li>').join('');
+    const recs = (d.recommendations||[]).slice(0,3).map(r => '<li class="recommendation">'+escHtml(r)+'</li>').join('');
     const card = document.createElement('div');
     card.className = 'domain-card';
-    card.innerHTML = `
-      <div class="domain-card-header">
-        <div class="domain-icon" style="color:${c};background:${c}18">${domainIcon(d.name)}</div>
-        <h3>${escHtml(d.name)}</h3>
-        <div class="domain-grade" style="color:${c};background:${c}15">${d.grade}</div>
-      </div>
-      <div class="domain-score-bar"><div class="bar" style="background:${c}" data-width="${d.score}%"></div></div>
-      ${findings ? `<div class="domain-section"><h4>Findings</h4><ul>${findings}</ul></div>` : ''}
-      ${recs ? `<div class="domain-section"><h4>Recommendations</h4><ul>${recs}</ul></div>` : ''}
-    `;
+    card.innerHTML = '<div class="domain-card-header"><div class="domain-icon" style="color:'+c+';background:'+c+'18">'+domainIcon(d.name)+'</div><h3>'+escHtml(d.name)+'</h3><div class="domain-grade" style="color:'+c+';background:'+c+'15" aria-label="Grade '+d.grade+'">'+d.grade+'</div></div><div class="domain-score-bar"><div class="bar" style="background:'+c+'" data-width="'+d.score+'%"></div></div>'+(findings?'<div class="domain-section"><h4>Findings</h4><ul>'+findings+'</ul></div>':'')+(recs?'<div class="domain-section"><h4>Recommendations</h4><ul>'+recs+'</ul></div>':'');
     grid.appendChild(card);
-    // Staggered fade-in
-    setTimeout(() => {
-      card.classList.add('visible');
-      card.querySelector('.bar').style.width = d.score + '%';
-    }, 200 + i * 150);
+    setTimeout(() => { card.classList.add('visible'); card.querySelector('.bar').style.width = d.score+'%'; }, 200 + i * 150);
   });
-
-  // Load scan history from persistence
   loadHistory(currentAgentUrl);
 }
 
@@ -491,43 +388,28 @@ function animateNumber(elId, from, to, duration) {
   const el = document.getElementById(elId);
   const start = performance.now();
   function tick(now) {
-    const t = Math.min((now - start) / duration, 1);
-    const ease = 1 - Math.pow(1 - t, 3);
-    el.textContent = Math.round(from + (to - from) * ease);
+    const t = Math.min((now-start)/duration, 1);
+    el.textContent = Math.round(from + (to-from) * (1-Math.pow(1-t,3)));
     if (t < 1) requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-// ── Download ──
 function downloadReport() {
   if (!lastReport) return;
-  const blob = new Blob([JSON.stringify(lastReport, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(lastReport,null,2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `agentbench-report-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  a.download = 'agentbench-report-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
-// ── History & Regression ──
-let lastAgentUrl = '';
-
 async function loadHistory(agentUrl) {
-  lastAgentUrl = agentUrl;
   const section = document.getElementById('historySection');
   const timeline = document.getElementById('historyTimeline');
   const btnReg = document.getElementById('btnRegression');
   try {
-    const res = await fetch(API_BASE + '/api/v1/scans/history/' + encodeURIComponent(agentUrl), {
-      headers: { 'X-API-Key': 'demo' }
-    });
+    const res = await fetch(API_BASE+'/api/v1/scans/history/'+encodeURIComponent(agentUrl), {headers:{'X-API-Key':'demo'}});
     if (!res.ok) return;
     const scans = await res.json();
     if (!scans.length) return;
@@ -535,94 +417,53 @@ async function loadHistory(agentUrl) {
     btnReg.style.display = '';
     timeline.innerHTML = '';
     let prevScore = null;
-    scans.forEach((s, i) => {
+    scans.forEach(s => {
       const trend = prevScore === null ? '' :
-        s.overall_score > prevScore + 5 ? '<span class="he-trend up">↑</span>' :
-        s.overall_score < prevScore - 5 ? '<span class="he-trend down">↓</span>' :
+        s.overall_score > prevScore+5 ? '<span class="he-trend up">↑</span>' :
+        s.overall_score < prevScore-5 ? '<span class="he-trend down">↓</span>' :
         '<span class="he-trend flat">→</span>';
-      const color = gradeColor(s.grade);
-      const date = new Date(s.created_at).toLocaleDateString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      timeline.innerHTML += `<div class="history-entry">
-        ${trend}
-        <div class="he-score" style="color:${color}">${Math.round(s.overall_score)}</div>
-        <div class="he-info">
-          <span class="he-grade" style="color:${color}">${s.grade}</span>
-          <div class="he-date">${date}</div>
-        </div>
-      </div>`;
+      const c = gradeColor(s.grade);
+      const date = new Date(s.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      timeline.innerHTML += '<div class="history-entry">'+trend+'<div class="he-score" style="color:'+c+'">'+Math.round(s.overall_score)+'</div><div class="he-info"><span class="he-grade" style="color:'+c+'">'+s.grade+'</span><div class="he-date">'+date+'</div></div></div>';
       prevScore = s.overall_score;
     });
-  } catch(e) { /* silent */ }
+  } catch(e) {}
 }
 
 async function showRegression() {
   const container = document.getElementById('regressionContainer');
   container.innerHTML = '<p style="color:var(--text-muted)">Loading regression report…</p>';
   try {
-    const res = await fetch(API_BASE + '/api/v1/scans/regression/' + encodeURIComponent(lastAgentUrl), {
-      headers: { 'X-API-Key': 'demo' }
-    });
-    if (!res.ok) {
-      container.innerHTML = '<p style="color:var(--text-muted)">Not enough history for regression analysis.</p>';
-      return;
-    }
+    const res = await fetch(API_BASE+'/api/v1/scans/regression/'+encodeURIComponent(currentAgentUrl), {headers:{'X-API-Key':'demo'}});
+    if (!res.ok) { container.innerHTML = '<p style="color:var(--text-muted)">Not enough history for regression analysis.</p>'; return; }
     const data = await res.json();
-    const trendClass = data.overall_trend;
-    const trendLabel = data.overall_trend === 'improved' ? 'Improved' :
-                       data.overall_trend === 'regressed' ? 'Regressed' : 'Stable';
-    const deltaSign = data.overall_delta >= 0 ? '+' : '';
-    let html = `<div class="regression-card">
-      <h4>Regression Report</h4>
-      <div class="rc-overall ${trendClass}">
-        Overall: ${trendLabel} (${deltaSign}${data.overall_delta} points)
-      </div>
-      <div class="rc-domains">`;
-    (data.regressions || []).forEach(r => {
-      html += `<div class="rc-domain regression">
-        <span class="rc-name">▼ ${escHtml(r.domain)}</span>
-        <span>${r.previous_score} → ${r.current_score}</span>
-        <span class="rc-delta">${r.delta}</span>
-        <span style="font-size:.75rem;opacity:.7">${r.severity}</span>
-      </div>`;
-    });
-    (data.improvements || []).forEach(r => {
-      html += `<div class="rc-domain improvement">
-        <span class="rc-name">▲ ${escHtml(r.domain)}</span>
-        <span>${r.previous_score} → ${r.current_score}</span>
-        <span class="rc-delta">+${r.delta}</span>
-      </div>`;
-    });
-    if (!data.regressions?.length && !data.improvements?.length) {
-      html += `<div style="color:var(--text-muted);padding:8px 0">No significant changes detected.</div>`;
-    }
+    const trendLabel = data.overall_trend==='improved'?'Improved':data.overall_trend==='regressed'?'Regressed':'Stable';
+    const ds = data.overall_delta>=0?'+':'';
+    let html = '<div class="regression-card"><h4>Regression Report</h4><div class="rc-overall '+data.overall_trend+'">Overall: '+trendLabel+' ('+ds+data.overall_delta+' points)</div><div class="rc-domains">';
+    (data.regressions||[]).forEach(r => { html += '<div class="rc-domain regression"><span class="rc-name">▼ '+escHtml(r.domain)+'</span><span>'+r.previous_score+' → '+r.current_score+'</span><span class="rc-delta">'+r.delta+'</span><span style="font-size:.75rem;opacity:.7">'+r.severity+'</span></div>'; });
+    (data.improvements||[]).forEach(r => { html += '<div class="rc-domain improvement"><span class="rc-name">▲ '+escHtml(r.domain)+'</span><span>'+r.previous_score+' → '+r.current_score+'</span><span class="rc-delta">+'+r.delta+'</span></div>'; });
+    if (!data.regressions?.length && !data.improvements?.length) html += '<div style="color:var(--text-muted);padding:8px 0">No significant changes detected.</div>';
     html += '</div></div>';
     container.innerHTML = html;
-  } catch(e) {
-    container.innerHTML = '<p style="color:var(--red)">Failed to load regression report.</p>';
-  }
+  } catch(e) { container.innerHTML = '<p style="color:var(--danger)">Failed to load regression report.</p>'; }
 }
 
-// ── Reset ──
 function resetApp() {
   show('landing');
   document.getElementById('agentUrl').value = '';
-  // Reset gauge
+  document.getElementById('urlError').classList.remove('show');
   document.getElementById('gaugeFill').style.strokeDashoffset = '534.07';
   document.getElementById('scoreNum').textContent = '0';
   document.getElementById('scoreGrade').textContent = '—';
-  lastReport = null;
-  currentAgentUrl = '';
-  // Reset history
+  lastReport = null; currentAgentUrl = '';
   document.getElementById('historySection').style.display = 'none';
   document.getElementById('btnRegression').style.display = 'none';
   document.getElementById('regressionContainer').innerHTML = '';
   document.getElementById('historyTimeline').innerHTML = '';
 }
 
-// ── Enter key ──
-document.getElementById('agentUrl').addEventListener('keydown', e => {
-  if (e.key === 'Enter') startScan();
-});
+document.getElementById('agentUrl').addEventListener('keydown', e => { if (e.key === 'Enter') startScan(); });
+document.getElementById('agentUrl').addEventListener('input', () => { document.getElementById('urlError').classList.remove('show'); });
 </script>
 </body>
 </html>
