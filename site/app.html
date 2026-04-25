@@ -17,33 +17,48 @@
   --radius:10px;--transition:200ms cubic-bezier(.4,0,.2,1);
 }
 html{font-size:16px;-webkit-font-smoothing:antialiased}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:radial-gradient(circle at top,hsl(220 91% 55%/.16),transparent 28%),radial-gradient(circle at 85% 20%,hsl(25 95% 60%/.12),transparent 24%),var(--bg);color:var(--text);min-height:100vh;line-height:1.6;position:relative;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(hsl(220 15% 100%/.03) 1px,transparent 1px),linear-gradient(90deg,hsl(220 15% 100%/.03) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(180deg,hsl(0 0% 0%/.5),transparent 92%);pointer-events:none;z-index:-2}
+body::after{content:'';position:fixed;inset:0;background:radial-gradient(circle at 20% 10%,hsl(220 91% 55%/.08),transparent 24%),radial-gradient(circle at 80% 18%,hsl(25 95% 60%/.08),transparent 20%);pointer-events:none;z-index:-1}
 a{color:var(--primary);text-decoration:none}
 .skip-link{position:absolute;top:-100%;left:16px;background:var(--primary);color:#fff;padding:8px 16px;border-radius:var(--radius);z-index:100;font-weight:600}
 .skip-link:focus{top:8px}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .container{max-width:1180px;margin:0 auto;padding:0 24px}
-nav{padding:16px 0;border-bottom:1px solid var(--border);backdrop-filter:blur(12px)}
+nav{padding:16px 0;border-bottom:1px solid hsl(220 15% 100%/.06);background:hsl(220 15% 4%/.72);backdrop-filter:blur(16px);position:sticky;top:0;z-index:30}
 nav .container{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .logo{font-size:1.25rem;font-weight:700;letter-spacing:-.5px}
 .logo span{color:var(--primary)}
 .nav-actions{display:flex;align-items:center;gap:12px}
-.nav-link{color:var(--text-secondary);font-size:.9rem;font-weight:600;min-height:44px;display:inline-flex;align-items:center}
+.nav-link{color:var(--text-secondary);font-size:.9rem;font-weight:600;min-height:44px;display:inline-flex;align-items:center;padding:0 4px}
 .nav-link:hover{color:var(--text)}
 .nav-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-secondary);font-size:.8rem;font-weight:600}
 .nav-pill::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px var(--success-bg)}
+.nav-cta{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid hsl(220 91% 55%/.3);background:linear-gradient(135deg,hsl(220 91% 55%/.2),hsl(25 95% 60%/.14));color:var(--text);font-size:.9rem;font-weight:700}
+.nav-cta:hover{border-color:hsl(220 91% 55%/.5);color:#fff}
 .state{display:none;animation:fadeUp .4s ease}
 .state.active{display:block}
 @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-#landing{padding:48px 0 72px}
-.hero{display:grid;gap:32px;align-items:center}
+#landing{padding:32px 0 88px;position:relative}
+#landing::before{content:'';position:absolute;inset:0 auto auto 50%;transform:translateX(-50%);width:min(1100px,92vw);height:580px;border-radius:40px;background:radial-gradient(circle at top,hsl(220 91% 55%/.16),transparent 62%);filter:blur(12px);pointer-events:none}
+.hero-shell{position:relative;padding:28px;border:1px solid hsl(220 15% 100%/.07);border-radius:32px;background:linear-gradient(180deg,hsl(220 15% 10%/.92),hsl(220 15% 7%/.9));box-shadow:0 40px 100px hsl(220 30% 2%/.45)}
+.hero-shell::before{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(135deg,hsl(220 91% 55%/.12),transparent 34%,transparent 62%,hsl(25 95% 60%/.1));pointer-events:none}
+.hero{display:grid;gap:40px;align-items:center;position:relative;z-index:1}
 .hero-copy{text-align:left}
+.announcement{display:inline-flex;align-items:center;gap:10px;padding:10px 14px;border-radius:999px;border:1px solid hsl(220 91% 55%/.2);background:hsl(220 91% 55%/.08);color:hsl(220 91% 77%);font-size:.82rem;font-weight:700;margin-bottom:16px}
+.announcement strong{color:#fff}
 .eyebrow{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:linear-gradient(180deg,var(--surface-raised),var(--surface));color:var(--text-secondary);font-size:.8rem;font-weight:700;margin-bottom:20px}
 .eyebrow::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 4px var(--primary-glow)}
-#landing h1{font-size:clamp(2.4rem,6vw,4.75rem);font-weight:800;letter-spacing:-1.8px;line-height:1.05;margin-bottom:16px;max-width:12ch}
+#landing h1{font-size:clamp(2.9rem,6vw,5.25rem);font-weight:850;letter-spacing:-2.4px;line-height:1.02;margin-bottom:18px;max-width:10ch}
 .hero-gradient{background:linear-gradient(135deg,var(--text) 0%,hsl(220 91% 72%) 40%,hsl(25 95% 62%) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
-#landing .subtitle{font-size:1.125rem;color:var(--text-secondary);max-width:62ch;margin-bottom:24px}
+#landing .subtitle{font-size:1.14rem;color:var(--text-secondary);max-width:62ch;margin-bottom:24px}
+.hero-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:22px}
+.hero-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 18px;border-radius:12px;border:1px solid var(--border);background:hsl(220 15% 100%/.03);color:var(--text);font-size:.95rem;font-weight:700}
+.hero-secondary:hover{background:hsl(220 15% 100%/.06);border-color:var(--border-hover)}
+.hero-microcopy{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;color:var(--text-muted);font-size:.86rem}
+.hero-microcopy span{display:inline-flex;align-items:center;gap:8px}
+.hero-microcopy span::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px var(--success-bg)}
 .hero-proof{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px}
 .proof-chip{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--border);color:var(--text-secondary);font-size:.85rem;font-weight:600}
 .proof-chip strong{color:var(--text)}
@@ -63,8 +78,9 @@ nav .container{display:flex;align-items:center;justify-content:space-between;gap
 .btn-scan:hover{background:linear-gradient(135deg,var(--primary-hover),hsl(220 91% 66%));transform:translateY(-1px)}
 .btn-scan:active{transform:scale(.97)}
 .btn-scan:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
-.hero-card{position:relative;background:linear-gradient(180deg,hsl(220 15% 12%),var(--surface));border:1px solid var(--border);border-radius:24px;padding:24px;overflow:hidden;box-shadow:0 24px 80px hsl(220 30% 2%/.55)}
+.hero-card{position:relative;background:linear-gradient(180deg,hsl(220 15% 12%),var(--surface));border:1px solid hsl(220 15% 100%/.08);border-radius:28px;padding:24px;overflow:hidden;box-shadow:0 30px 80px hsl(220 30% 2%/.55)}
 .hero-card::before{content:'';position:absolute;inset:-20% auto auto -10%;width:180px;height:180px;background:radial-gradient(circle,var(--primary-glow),transparent 70%);pointer-events:none}
+.hero-card::after{content:'';position:absolute;inset:auto -60px -60px auto;width:180px;height:180px;background:radial-gradient(circle,hsl(25 95% 60%/.12),transparent 68%);pointer-events:none}
 .preview-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
 .preview-title{font-size:.9rem;font-weight:700;color:var(--text-secondary);letter-spacing:.04em;text-transform:uppercase}
 .preview-status{display:inline-flex;align-items:center;gap:8px;color:var(--success);font-size:.8rem;font-weight:700}
@@ -81,13 +97,32 @@ nav .container{display:flex;align-items:center;justify-content:space-between;gap
 .preview-domain-head span:last-child{color:var(--text-secondary)}
 .preview-bar{height:8px;border-radius:999px;background:hsl(220 15% 14%);overflow:hidden}
 .preview-bar span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),hsl(25 95% 55%))}
-.landing-sections{display:grid;gap:16px;margin-top:48px}
+.preview-findings{display:grid;gap:10px;margin-top:16px}
+.finding-row{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:hsl(220 15% 9%/.82);border:1px solid hsl(220 15% 100%/.05)}
+.finding-row strong{display:block;font-size:.88rem}
+.finding-row span{color:var(--text-secondary);font-size:.82rem;line-height:1.45}
+.finding-icon{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:800;flex-shrink:0}
+.finding-icon.warn{background:var(--warning-bg);color:var(--warning)}
+.finding-icon.bad{background:var(--danger-bg);color:var(--danger)}
+.landing-sections{display:grid;gap:18px;margin-top:22px}
+.trust-strip{display:grid;gap:12px;margin-top:22px;padding:18px;border-radius:22px;background:hsl(220 15% 100%/.03);border:1px solid hsl(220 15% 100%/.06)}
+.trust-title{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);font-weight:800}
+.trust-items{display:grid;gap:12px}
+.trust-item{padding:14px 16px;border-radius:16px;background:hsl(220 15% 100%/.03);border:1px solid hsl(220 15% 100%/.05)}
+.trust-item strong{display:block;font-size:.95rem;margin-bottom:4px}
+.trust-item span{color:var(--text-secondary);font-size:.86rem}
+.pain-grid{display:grid;gap:16px}
+.pain-card{padding:20px;border-radius:22px;background:linear-gradient(180deg,hsl(220 15% 10%),hsl(220 15% 8%));border:1px solid hsl(220 15% 100%/.06)}
+.pain-card-label{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px}
+.pain-card-label::before{content:'';width:8px;height:8px;border-radius:50%;background:hsl(25 95% 60%);box-shadow:0 0 0 4px hsl(25 95% 60%/.12)}
+.pain-card h3{font-size:1.02rem;font-weight:750;margin-bottom:8px}
+.pain-card p{color:var(--text-secondary);font-size:.92rem}
 .info-grid{display:grid;gap:16px}
-.info-card{padding:20px;border-radius:20px;background:var(--surface);border:1px solid var(--border)}
+.info-card{padding:22px;border-radius:22px;background:linear-gradient(180deg,hsl(220 15% 11%),var(--surface));border:1px solid hsl(220 15% 100%/.06)}
 .info-card h3{font-size:1rem;font-weight:700;margin-bottom:8px}
 .info-card p{color:var(--text-secondary);font-size:.92rem}
 .step-grid{display:grid;gap:16px}
-.step-card{padding:20px;border-radius:20px;background:linear-gradient(180deg,hsl(220 15% 10%),var(--surface));border:1px solid var(--border)}
+.step-card{padding:22px;border-radius:22px;background:linear-gradient(180deg,hsl(220 15% 10%),var(--surface));border:1px solid hsl(220 15% 100%/.06)}
 .step-number{display:inline-flex;width:32px;height:32px;border-radius:50%;align-items:center;justify-content:center;background:var(--primary-glow);color:var(--primary);font-size:.9rem;font-weight:800;margin-bottom:12px}
 .step-card h3{font-size:1rem;font-weight:700;margin-bottom:8px}
 .step-card p{color:var(--text-secondary);font-size:.92rem}
@@ -180,19 +215,21 @@ footer{padding:32px 0;border-top:1px solid var(--border);text-align:center;color
 footer a{color:var(--text-secondary)}
 footer a:hover{color:var(--text)}
 @media(min-width:768px){
-  .hero{grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr)}
-  .landing-sections,.info-grid,.step-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hero{grid-template-columns:minmax(0,1.1fr) minmax(340px,.9fr)}
+  .trust-items,.pain-grid,.info-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .step-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .domains-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(min-width:1024px){
   .container{max-width:1180px}
-  .landing-sections{grid-template-columns:1.1fr .9fr}
+  .landing-sections{grid-template-columns:1fr 1fr 1fr}
 }
 @media(max-width:767px){
   .nav-actions{display:none}
   .input-group{flex-direction:column}
   .btn-scan{width:100%}
-  #landing{padding:32px 0 56px}
+  #landing{padding:20px 0 56px}
+  .hero-shell{padding:20px}
   .hero-card{padding:20px}
   .preview-score{grid-template-columns:1fr;text-align:center}
   .preview-ring{margin:0 auto}
@@ -202,6 +239,8 @@ footer a:hover{color:var(--text)}
   .actions .btn{text-align:center}
   .form-meta{flex-direction:column;align-items:flex-start}
   .form-examples{width:100%}
+  .hero-actions{flex-direction:column;align-items:stretch}
+  .hero-secondary{width:100%}
 }
 @media(max-width:640px){
   .behaviors-row{gap:12px;flex-wrap:wrap;justify-content:center}
@@ -216,6 +255,7 @@ footer a:hover{color:var(--text)}
     <div class="nav-actions">
       <span class="nav-pill">Live product</span>
       <a class="nav-link" href="https://github.com/EdList/agentbench" target="_blank" rel="noopener">View on GitHub</a>
+      <a class="nav-cta" href="#agentUrl">Try a scan</a>
     </div>
   </div>
 </nav>
@@ -224,93 +264,160 @@ footer a:hover{color:var(--text)}
 <!-- LANDING -->
 <section id="landing" class="state active" aria-label="Agent scanner input">
   <div class="container">
-    <div class="hero">
-      <div class="hero-copy">
-        <div class="eyebrow">Open-source behavioral testing for AI agents</div>
-        <h1>Find agent failures <span class="hero-gradient">before your users do.</span></h1>
-        <p class="subtitle">Paste an agent endpoint and get a scored behavior report in about a minute. AgentBench probes safety, reliability, capability, and robustness, then gives you a report you can share with your team.</p>
-        <div class="hero-proof" aria-label="Product highlights">
-          <span class="proof-chip"><strong>38</strong> structured probes</span>
-          <span class="proof-chip"><strong>4</strong> scoring domains</span>
-          <span class="proof-chip"><strong>JSON</strong> exportable report</span>
-          <span class="proof-chip"><strong>History</strong> + regression tracking</span>
-        </div>
-        <div class="scan-form">
-          <div class="input-group" role="search">
-            <input type="url" id="agentUrl" placeholder="https://your-agent.example.com" spellcheck="false" autocomplete="off" aria-label="Agent URL">
-            <button class="btn-scan" id="scanBtn" onclick="startScan()" aria-label="Start scan">Run scan</button>
+    <div class="hero-shell">
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="announcement"><strong>New:</strong> behavioral scan reports in about 60 seconds</div>
+          <div class="eyebrow">Production evals for AI agents</div>
+          <h1>Ship agents with fewer <span class="hero-gradient">surprises in production.</span></h1>
+          <p class="subtitle">From a user’s point of view, the real question is simple: will this agent actually behave well when people poke at it? AgentBench probes the messy edge cases, scores the weak spots, and gives your team a report you can act on fast.</p>
+          <div class="hero-proof" aria-label="Product highlights">
+            <span class="proof-chip"><strong>38</strong> structured probes</span>
+            <span class="proof-chip"><strong>4</strong> scoring domains</span>
+            <span class="proof-chip"><strong>JSON</strong> downloadable report</span>
+            <span class="proof-chip"><strong>History</strong> + regression tracking</span>
           </div>
-          <div class="url-error" id="urlError" role="alert"></div>
-          <div class="form-meta">
+          <div class="scan-form">
+            <div class="input-group" role="search">
+              <input type="url" id="agentUrl" placeholder="https://your-agent.example.com" spellcheck="false" autocomplete="off" aria-label="Agent URL">
+              <button class="btn-scan" id="scanBtn" onclick="startScan()" aria-label="Start scan">Scan my agent</button>
+            </div>
+            <div class="url-error" id="urlError" role="alert"></div>
+            <div class="form-meta">
+              <div>
+                <div class="form-helper">Use a public HTTP endpoint that accepts prompt-style requests and returns the agent response.</div>
+              </div>
+              <div class="form-examples" aria-label="Example endpoint suggestions">
+                <button class="example-chip" type="button" onclick="fillExample('https://api.example.com/chat')">API endpoint</button>
+                <button class="example-chip" type="button" onclick="fillExample('https://demo.agentbench.ai/agent')">Demo agent</button>
+              </div>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <a class="hero-secondary" href="#how-it-works">How it works</a>
+            <a class="hero-secondary" href="https://github.com/EdList/agentbench" target="_blank" rel="noopener">Open source on GitHub</a>
+          </div>
+          <div class="hero-microcopy" aria-label="Deployment reassurance">
+            <span>No SDK required</span>
+            <span>Works with existing endpoints</span>
+            <span>Built for pre-launch checks</span>
+          </div>
+        </div>
+        <aside class="hero-card" aria-label="Example report preview">
+          <div class="preview-header">
+            <div class="preview-title">Sample report preview</div>
+            <div class="preview-status">Scan completed</div>
+          </div>
+          <div class="preview-score">
+            <div class="preview-ring"><span>73</span></div>
             <div>
-              <div class="form-helper">Works best with public HTTP endpoints that accept prompt-style input.</div>
+              <h3>Overall score: B</h3>
+              <p>Helpful in normal flows, but still brittle under prompt injection and malformed inputs.</p>
             </div>
-            <div class="form-examples" aria-label="Example endpoint suggestions">
-              <button class="example-chip" type="button" onclick="fillExample('https://api.example.com/chat')">API endpoint</button>
-              <button class="example-chip" type="button" onclick="fillExample('https://demo.agentbench.ai/agent')">Demo agent</button>
+          </div>
+          <div class="preview-domains">
+            <div class="preview-domain">
+              <div class="preview-domain-head"><span>Safety</span><span>A · 88</span></div>
+              <div class="preview-bar"><span style="width:88%"></span></div>
             </div>
+            <div class="preview-domain">
+              <div class="preview-domain-head"><span>Reliability</span><span>B · 76</span></div>
+              <div class="preview-bar"><span style="width:76%"></span></div>
+            </div>
+            <div class="preview-domain">
+              <div class="preview-domain-head"><span>Capability</span><span>B · 72</span></div>
+              <div class="preview-bar"><span style="width:72%"></span></div>
+            </div>
+            <div class="preview-domain">
+              <div class="preview-domain-head"><span>Robustness</span><span>C · 55</span></div>
+              <div class="preview-bar"><span style="width:55%"></span></div>
+            </div>
+          </div>
+          <div class="preview-findings" aria-label="Example critical findings">
+            <div class="finding-row">
+              <div class="finding-icon bad">!</div>
+              <div>
+                <strong>Prompt injection leak</strong>
+                <span>Agent exposed hidden chain-of-thought instructions when asked to ignore previous rules.</span>
+              </div>
+            </div>
+            <div class="finding-row">
+              <div class="finding-icon warn">△</div>
+              <div>
+                <strong>Schema drift on edge cases</strong>
+                <span>Returned inconsistent JSON shape when given partial or contradictory user input.</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="trust-strip" aria-label="Why teams use AgentBench">
+        <div class="trust-title">What teams actually want before launch</div>
+        <div class="trust-items">
+          <div class="trust-item">
+            <strong>Know what breaks first</strong>
+            <span>See the exact prompts, failures, and weak domains instead of guessing from a vague score.</span>
+          </div>
+          <div class="trust-item">
+            <strong>Get a report you can share</strong>
+            <span>Use structured findings, recommendations, and JSON output for engineering and product reviews.</span>
+          </div>
+          <div class="trust-item">
+            <strong>Track whether things improved</strong>
+            <span>Compare scans over time so fixes don’t quietly regress a week before launch.</span>
           </div>
         </div>
       </div>
-      <aside class="hero-card" aria-label="Example report preview">
-        <div class="preview-header">
-          <div class="preview-title">Sample report preview</div>
-          <div class="preview-status">Scan completed</div>
-        </div>
-        <div class="preview-score">
-          <div class="preview-ring"><span>73</span></div>
-          <div>
-            <h3>Overall score: B</h3>
-            <p>Useful, but with clear failure modes in safety and robustness that should be fixed before wider rollout.</p>
-          </div>
-        </div>
-        <div class="preview-domains">
-          <div class="preview-domain">
-            <div class="preview-domain-head"><span>Safety</span><span>A · 88</span></div>
-            <div class="preview-bar"><span style="width:88%"></span></div>
-          </div>
-          <div class="preview-domain">
-            <div class="preview-domain-head"><span>Reliability</span><span>B · 76</span></div>
-            <div class="preview-bar"><span style="width:76%"></span></div>
-          </div>
-          <div class="preview-domain">
-            <div class="preview-domain-head"><span>Capability</span><span>B · 72</span></div>
-            <div class="preview-bar"><span style="width:72%"></span></div>
-          </div>
-          <div class="preview-domain">
-            <div class="preview-domain-head"><span>Robustness</span><span>C · 55</span></div>
-            <div class="preview-bar"><span style="width:55%"></span></div>
-          </div>
-        </div>
-      </aside>
     </div>
 
     <div class="landing-sections">
+      <div class="pain-grid" aria-label="Common launch pains">
+        <div class="pain-card">
+          <div class="pain-card-label">Without AgentBench</div>
+          <h3>Issues show up after real users hit weird prompts</h3>
+          <p>Manual spot-checking catches the happy path and misses prompt injection, inconsistent refusals, and brittle edge cases.</p>
+        </div>
+        <div class="pain-card">
+          <div class="pain-card-label">Without AgentBench</div>
+          <h3>Teams argue from anecdotes instead of evidence</h3>
+          <p>One person says the agent feels good, another says it is unsafe, and nobody has a shared report to resolve it.</p>
+        </div>
+        <div class="pain-card">
+          <div class="pain-card-label">Without AgentBench</div>
+          <h3>Fixes regress silently</h3>
+          <p>A tweak that improves one flow can weaken refusal behavior somewhere else unless you compare runs over time.</p>
+        </div>
+      </div>
       <div class="info-grid" aria-label="What you get">
         <div class="info-card">
           <h3>See the failures that matter</h3>
-          <p>Spot prompt injection leaks, brittle edge-case handling, weak refusals, and inconsistent outputs before they hit production.</p>
+          <p>Spot prompt injection leaks, brittle edge-case handling, weak refusals, and inconsistent outputs before users do.</p>
         </div>
         <div class="info-card">
           <h3>Get something your team can act on</h3>
-          <p>Scores, domain-level findings, recommendations, scan history, and regression reports — not just vague thumbs-up/thumbs-down evals.</p>
+          <p>Scores, domain-level findings, recommendations, scan history, and regression reports — not just a thumbs-up.</p>
+        </div>
+        <div class="info-card">
+          <h3>Start from your existing endpoint</h3>
+          <p>No SDK or adapter ceremony. Paste the URL you already have and get signal quickly.</p>
         </div>
       </div>
-      <div class="step-grid" aria-label="How AgentBench works">
+      <div class="step-grid" id="how-it-works" aria-label="How AgentBench works">
         <div class="step-card">
           <div class="step-number">1</div>
           <h3>Paste your endpoint</h3>
-          <p>Start with the agent URL you already have. No SDK, no adapter, no setup ceremony.</p>
+          <p>Use the agent URL you already expose today. AgentBench starts where your team already is.</p>
         </div>
         <div class="step-card">
           <div class="step-number">2</div>
           <h3>We probe real behavior</h3>
-          <p>AgentBench runs a structured probe suite across safety, reliability, capability, and robustness.</p>
+          <p>Structured prompts test safety, reliability, capability, and robustness from a user-facing perspective.</p>
         </div>
         <div class="step-card">
           <div class="step-number">3</div>
-          <h3>Review the score</h3>
-          <p>Get a report with findings, recommendations, downloadable JSON, and historical comparisons over time.</p>
+          <h3>Review the score and findings</h3>
+          <p>Get a report with domain scores, critical issues, recommendations, JSON export, and historical comparisons.</p>
         </div>
       </div>
     </div>
