@@ -166,6 +166,7 @@ class TestScanJobsApi:
             agent_url: str,
             categories: list[str] | None,
             cancel_fn=None,
+            deadline=None,
         ):
             started.set()
             release.wait(timeout=2)

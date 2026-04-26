@@ -577,6 +577,109 @@ class TestAdversarialTestGenerator:
         cls = gen.generate_class()
         assert cls is not None
 
+    def test_adversarial_variant_preserves_original_assertions(self):
+        """Adversarial variants must run the original test method's assertions,
+        not just bare self.run(p)."""
+
+        assertion_was_run: list[bool] = []
+        prompt_received: list[str] = []
+
+        class _MockAdapter:
+            """Minimal adapter that records the prompt and returns a completed
+            trajectory."""
+
+            def run(self, prompt, trajectory, **kwargs):
+                prompt_received.append(prompt)
+                trajectory.completed = True
+                trajectory.final_response = "Done"
+                return trajectory
+
+        class SampleTest(AgentTest):
+            def test_basic(self):
+                result = self.run("Buy a shirt")
+                # This assertion must still execute in adversarial variants
+                assertion_was_run.append(True)
+                assert result.completed is True
+
+        gen = AdversarialTestGenerator(SampleTest, seed=42)
+        cls = gen.generate_class()
+
+        instance = cls()
+        instance.adapter = _MockAdapter()
+
+        # Find adversarial variant methods for test_basic
+        adversarial_methods = [
+            name
+            for name in dir(cls)
+            if name.startswith("test_adversarial_test_basic_")
+            and callable(getattr(cls, name))
+        ]
+        assert len(adversarial_methods) > 0, "Expected at least one adversarial variant"
+
+        # Call the first adversarial variant
+        method = getattr(instance, adversarial_methods[0])
+        method()
+
+        # The original test's assertion code must have run
+        assert assertion_was_run, (
+            "Original test assertions were NOT executed by adversarial variant"
+        )
+        # self.run() must have been called
+        assert prompt_received, "self.run() was never called"
+        # At least one variant should use a different prompt
+        instance2 = cls()
+        instance2.adapter = _MockAdapter()
+        prompt2_received: list[str] = []
+
+        def _capturing_run(prompt, trajectory, **kwargs):
+            prompt2_received.append(prompt)
+            trajectory.completed = True
+            trajectory.final_response = "Done"
+            return trajectory
+
+        instance2.adapter.run = _capturing_run
+
+        for mname in adversarial_methods:
+            getattr(instance2, mname)()
+
+        assert prompt2_received, "No prompts recorded across all variants"
+        assert any(p != "Buy a shirt" for p in prompt2_received), (
+            "All adversarial variants used the original prompt — "
+            "mutation is not being applied"
+        )
+
+    def test_adversarial_variant_propagates_original_assertion_failure(self):
+        """If the original test's assertion fails under the adversarial prompt,
+        the AssertionError must propagate (not be swallowed)."""
+
+        class _MockAdapter:
+            def run(self, prompt, trajectory, **kwargs):
+                trajectory.completed = False  # simulate failure
+                return trajectory
+
+        class SampleTest(AgentTest):
+            def test_strict(self):
+                result = self.run("Do something")
+                assert result.completed is True, "Agent did not complete!"
+
+        gen = AdversarialTestGenerator(SampleTest, seed=42)
+        cls = gen.generate_class()
+
+        instance = cls()
+        instance.adapter = _MockAdapter()
+
+        adversarial_methods = [
+            name
+            for name in dir(cls)
+            if name.startswith("test_adversarial_test_strict_")
+            and callable(getattr(cls, name))
+        ]
+        assert len(adversarial_methods) > 0
+
+        # The assertion from the original test must propagate
+        with pytest.raises(AssertionError, match="Agent did not complete"):
+            getattr(instance, adversarial_methods[0])()
+
 
 # =====================================================================
 # @adversarial_suite tests

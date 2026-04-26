@@ -180,12 +180,22 @@ class AgentProber:
 
     # -- public API ---------------------------------------------------------
 
-    def probe_all(self) -> ProbeSession:
-        """Run all configured probe categories and return a :class:`ProbeSession`."""
+    def probe_all(self, deadline: float | None = None) -> ProbeSession:
+        """Run all configured probe categories and return a :class:`ProbeSession`.
+
+        Parameters
+        ----------
+        deadline:
+            A monotonic time (from ``time.monotonic()``) by which probing
+            must finish.  If ``None`` there is no deadline.  When the deadline
+            is exceeded between categories, remaining categories are skipped.
+        """
         start = time.perf_counter()
         session = ProbeSession()
         for category in self.categories:
-            results = self._run_category(category)
+            if deadline is not None and time.monotonic() > deadline:
+                break
+            results = self._run_category(category, deadline=deadline)
             session.results.extend(results)
         session.duration = time.perf_counter() - start
         session.agent_info = self._extract_agent_info(session.results)
@@ -215,10 +225,12 @@ class AgentProber:
 
     # -- internals ----------------------------------------------------------
 
-    def _run_category(self, category: str) -> list[ProbeResult]:
+    def _run_category(self, category: str, deadline: float | None = None) -> list[ProbeResult]:
         prompts = _PROMPT_MAP.get(category, [])
         results: list[ProbeResult] = []
         for prompt in prompts:
+            if deadline is not None and time.monotonic() > deadline:
+                break
             t0 = time.perf_counter()
             status = "ok"
             try:

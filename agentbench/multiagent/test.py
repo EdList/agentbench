@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import enum
 import inspect
+import logging
 import time
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -173,7 +177,24 @@ class MultiAgentTest:
         """
         self._topology = topology
         if topology == Topology.CUSTOM:
-            self._custom_routes = routes or {}
+            if routes is None:
+                raise ValueError("CUSTOM topology requires a routes dict")
+            if not routes:
+                raise ValueError("CUSTOM topology routes must not be empty")
+            # Validate that every agent name in keys and values is registered
+            registered = {a.name for a in self._agents}
+            for source, targets in routes.items():
+                if source not in registered:
+                    raise ValueError(
+                        f"CUSTOM topology routes key '{source}' is not a registered agent"
+                    )
+                for target in targets:
+                    if target not in registered:
+                        raise ValueError(
+                            f"CUSTOM topology routes target '{target}' (from '{source}') "
+                            f"is not a registered agent"
+                        )
+            self._custom_routes = routes
         return self
 
     def run_conversation(
@@ -213,6 +234,14 @@ class MultiAgentTest:
                 if turn_count >= max_turns:
                     break
 
+                # For CUSTOM topology, only pass the message if the previous
+                # speaker is allowed to route to this agent.
+                if self._topology == Topology.CUSTOM and self._custom_routes and result.turns:
+                    last_speaker = result.turns[-1].agent_name
+                    allowed_targets = self._custom_routes.get(last_speaker, [])
+                    if agent_entry.name not in allowed_targets:
+                        continue
+
                 try:
                     response = agent_entry.invoke(current_message, result.turns)
                 except Exception as exc:
@@ -249,8 +278,9 @@ class MultiAgentTest:
         """Determine the order in which agents take turns.
 
         For SEQUENTIAL/RING/STAR/MESH, agents take turns in registration order.
-        The topology mainly affects routing (which messages go to whom),
-        but the turn order is always the registration order for simplicity.
+        For CUSTOM, the order is derived from the routes dict: agents that are
+        sources (can initiate) come first, followed by their targets in route
+        order.  Each agent appears exactly once (first occurrence wins).
         """
         if self._topology == Topology.RING:
             return list(self._agents)
@@ -261,8 +291,29 @@ class MultiAgentTest:
             hub = self._agents[0]
             spokes = self._agents[1:]
             return [hub] + spokes
+        elif self._topology == Topology.CUSTOM:
+            if not self._custom_routes:
+                warnings.warn(
+                    "CUSTOM topology has no routes configured; "
+                    "falling back to registration order",
+                    stacklevel=2,
+                )
+                return list(self._agents)
+            # Build order: sources first, then their targets
+            name_to_entry = {a.name: a for a in self._agents}
+            seen: set[str] = set()
+            order: list[_AgentEntry] = []
+            for source, targets in self._custom_routes.items():
+                if source not in seen:
+                    seen.add(source)
+                    order.append(name_to_entry[source])
+                for target in targets:
+                    if target not in seen:
+                        seen.add(target)
+                        order.append(name_to_entry[target])
+            return order
         else:
-            # SEQUENTIAL, MESH, CUSTOM — all in registration order
+            # SEQUENTIAL, MESH — registration order
             return list(self._agents)
 
     def _should_stop(self, result: ConversationResult) -> bool:

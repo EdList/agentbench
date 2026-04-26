@@ -113,36 +113,70 @@ class AdversarialTestGenerator:
                 method_name = _sanitize_identifier(method_name)
                 prompt = variant["prompt"]
 
-                # Create a closure capturing the prompt
-                def _make_test(p: str, orig: str) -> Callable:
+                # Create a closure capturing the prompt and original method name
+                def _make_test(
+                    p: str, orig_method_name: str, variant_label: str
+                ) -> Callable:
                     def test_fn(self: Any) -> None:
-                        # If self.run(p) completes, the test passes — the
-                        # agent handled the adversarial input gracefully.
-                        # AssertionError means the test found a real issue
-                        # (e.g. the agent produced unsafe output).
-                        # Non-AssertionError (connection error, timeout, …)
-                        # is stored as a skip/error rather than a silent pass.
-                        try:
-                            self.run(p)
-                        except AssertionError:
-                            # Real issue — let it propagate
-                            raise
-                        except Exception as non_assert_exc:
-                            # Infrastructure / runtime error — mark as skipped
-                            import pytest as _pytest  # type: ignore[import-untyped]
+                        # Look up the original test method so we can replay
+                        # its assertions against the adversarial prompt.
+                        orig_method = getattr(
+                            self.__class__, orig_method_name, None
+                        )
+                        if orig_method is not None:
+                            # Override self.run on this instance so that the
+                            # original test method's call to self.run(...)
+                            # actually uses the adversarial prompt *p* while
+                            # still forwarding any extra kwargs (max_steps,
+                            # inject_tool_failure, etc.).
+                            original_run = self.run
 
-                            _pytest.skip(
-                                f"Adversarial variant skipped due to "
-                                f"{type(non_assert_exc).__name__}: "
-                                f"{non_assert_exc}"
-                            )
+                            def _overridden_run(
+                                prompt: str = "", **kwargs: Any
+                            ) -> Any:
+                                return original_run(p, **kwargs)
+
+                            try:
+                                self.run = _overridden_run  # type: ignore[assignment]
+                                orig_method(self)
+                            except AssertionError:
+                                # Real issue — let it propagate
+                                raise
+                            except Exception as non_assert_exc:
+                                # Infrastructure / runtime error — skip
+                                import pytest as _pytest  # type: ignore[import-untyped]
+
+                                _pytest.skip(
+                                    f"Adversarial variant skipped due to "
+                                    f"{type(non_assert_exc).__name__}: "
+                                    f"{non_assert_exc}"
+                                )
+                            finally:
+                                self.run = original_run  # type: ignore[assignment]
+                        else:
+                            # No original method found — bare run fallback
+                            try:
+                                self.run(p)
+                            except AssertionError:
+                                raise
+                            except Exception as non_assert_exc:
+                                import pytest as _pytest  # type: ignore[import-untyped]
+
+                                _pytest.skip(
+                                    f"Adversarial variant skipped due to "
+                                    f"{type(non_assert_exc).__name__}: "
+                                    f"{non_assert_exc}"
+                                )
 
                     test_fn.__doc__ = (
-                        f"Adversarial variant of {orig} (strategy: {_sanitize_identifier(vname)})"
+                        f"Adversarial variant of {orig_method_name} "
+                        f"(strategy: {variant_label})"
                     )
                     return test_fn
 
-                methods[method_name] = _make_test(prompt, base_name)
+                methods[method_name] = _make_test(
+                    prompt, base_name, _sanitize_identifier(vname)
+                )
 
         # Also add auto-generated tests for common failure modes
         auto_tests = self._auto_failure_mode_tests()

@@ -334,7 +334,7 @@ class TestServerBackedScanStore:
         )
         assert resp.status_code == 200
         mock_run.assert_called_once_with(
-            "https://public-host.example.com/agent", None, cancel_fn=ANY,
+            "https://public-host.example.com/agent", None, cancel_fn=ANY, deadline=ANY,
         )
 
     @patch("agentbench.server.routes.scans._run_scan")
@@ -475,6 +475,7 @@ class TestServerBackedScanStore:
             "https://example.com/agent",
             ["safety", "capability"],
             cancel_fn=ANY,
+            deadline=ANY,
         )
 
     @patch("agentbench.server.routes.scans._run_scan")
@@ -491,6 +492,7 @@ class TestServerBackedScanStore:
             "https://example.com/agent",
             None,
             cancel_fn=ANY,
+            deadline=ANY,
         )
 
 
@@ -568,7 +570,7 @@ class TestSafeDNSTransport:
             def __init__(self, agent_fn, categories):
                 self._agent_fn = agent_fn
 
-            def probe_all(self):
+            def probe_all(self, deadline=None):
                 self._agent_fn("hello")
                 return object()
 
@@ -665,6 +667,7 @@ class TestProjectBackedScans:
             "https://example.com/agent",
             ["safety", "reliability"],
             cancel_fn=ANY,
+            deadline=ANY,
         )
 
     @patch("agentbench.server.routes.scans._run_scan")
@@ -1182,3 +1185,88 @@ class TestShareEndpoint:
             "content"
         ]["application/json"]["schema"]
         assert schema["$ref"].endswith("/ScanShareResponse")
+
+
+# ---------------------------------------------------------------------------
+# Deadline / hard timeout — regression test
+# ---------------------------------------------------------------------------
+
+
+class TestScanDeadline:
+    def test_prober_deadline_returns_partial_results(self):
+        """probe_all() with a very short deadline should return a subset of results."""
+        import time
+
+        from agentbench.scanner.prober import AgentProber
+
+        # Simulate a slow agent: each call sleeps 0.1 s
+        call_count = 0
+
+        def _slow_agent(prompt: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            time.sleep(0.1)
+            return f"response to {prompt!r}"
+
+        # 5 categories × ~8 prompts each = ~40 total probes
+        prober = AgentProber(agent_fn=_slow_agent)
+        # Deadline only 0.15 s from now — at most 1–2 probes can finish
+        deadline = time.monotonic() + 0.15
+        session = prober.probe_all(deadline=deadline)
+
+        # Should have *some* results but far fewer than the full 40
+        assert len(session.results) > 0
+        assert len(session.results) < 40
+        assert call_count < 40
+
+    def test_run_scan_deadline_propagates_to_prober(self):
+        """_run_scan with a short deadline should produce partial results, not hang."""
+        import time
+        from unittest.mock import patch
+
+        import agentbench.server.routes.scans as scans_mod
+        from agentbench.server.routes.scans import _run_scan
+
+        # Patch the SafeDNSTransport so we don't need a real HTTP server.
+        # We use a simple mock httpx.Client that simulates a slow agent.
+
+        class FakeResponse:
+            status_code = 200
+            headers = {"content-type": "application/json"}
+            text = '{"response": "ok"}'
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"response": "ok"}
+
+        def fake_client_init(self_client, *args, **kwargs):
+            # Skip real httpx init entirely
+            pass
+
+        def fake_post(self_client, url, json=None):
+            time.sleep(0.1)  # simulate slow agent
+            return FakeResponse()
+
+        def fake_close(self_client):
+            pass
+
+        with (
+            patch.object(scans_mod.httpx.Client, "__init__", fake_client_init),
+            patch.object(scans_mod.httpx.Client, "post", fake_post),
+            patch.object(scans_mod.httpx.Client, "close", fake_close),
+        ):
+            # Deadline only 0.25s — should get partial results
+            deadline = time.monotonic() + 0.25
+            response, _report = _run_scan(
+                "https://example.com/agent",
+                categories=None,
+                deadline=deadline,
+            )
+
+        # Should have a valid (partial) scan response
+        assert response.overall_score >= 0
+        # behaviors_tested will be fewer than the full 40
+        assert response.behaviors_tested > 0
+        assert response.behaviors_tested < 40

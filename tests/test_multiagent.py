@@ -501,3 +501,158 @@ class TestPrebuiltRoles:
     def test_all_are_roles(self):
         for role in [Customer, SupportAgent, Manager, Expert, Skeptic]:
             assert isinstance(role, Role)
+
+
+# ── CUSTOM topology validation ────────────────────────────────────────
+
+
+class TestCustomTopologyValidation:
+    """Tests for CUSTOM topology route validation in set_topology()."""
+
+    def _make_test(self):
+        """Return a MultiAgentTest with two agents registered."""
+        t = MultiAgentTest()
+        t.add_agent("A", MagicMock(return_value="hi from A"))
+        t.add_agent("B", MagicMock(return_value="hi from B"))
+        return t
+
+    def test_custom_none_routes_raises(self):
+        t = self._make_test()
+        with pytest.raises(ValueError, match="requires a routes dict"):
+            t.set_topology(Topology.CUSTOM, routes=None)
+
+    def test_custom_empty_routes_raises(self):
+        t = self._make_test()
+        with pytest.raises(ValueError, match="must not be empty"):
+            t.set_topology(Topology.CUSTOM, routes={})
+
+    def test_custom_unregistered_source_raises(self):
+        t = self._make_test()
+        with pytest.raises(ValueError, match="routes key 'X' is not a registered agent"):
+            t.set_topology(Topology.CUSTOM, routes={"X": ["A"]})
+
+    def test_custom_unregistered_target_raises(self):
+        t = self._make_test()
+        with pytest.raises(ValueError, match="routes target 'Z' .* is not a registered"):
+            t.set_topology(Topology.CUSTOM, routes={"A": ["Z"]})
+
+    def test_custom_valid_routes_accepted(self):
+        t = self._make_test()
+        routes = {"A": ["B"], "B": ["A"]}
+        result = t.set_topology(Topology.CUSTOM, routes=routes)
+        assert result is t  # chaining
+        assert t._custom_routes == routes
+
+    def test_custom_valid_routes_chain(self):
+        t = self._make_test()
+        t.set_topology(Topology.CUSTOM, routes={"A": ["B"]})
+        assert t._custom_routes == {"A": ["B"]}
+
+    def test_custom_routes_validated_at_set_time(self):
+        """Validation happens at set_topology() time, not run time."""
+        t = MultiAgentTest()
+        # No agents registered yet — should raise because 'A' isn't registered
+        with pytest.raises(ValueError, match="not a registered agent"):
+            t.set_topology(Topology.CUSTOM, routes={"A": []})
+
+
+# ── CUSTOM topology turn order ────────────────────────────────────────
+
+
+class TestCustomTopologyTurnOrder:
+    """Tests for _get_turn_order() with CUSTOM topology."""
+
+    def _make_test(self):
+        t = MultiAgentTest()
+        t.add_agent("A", MagicMock(return_value="a"))
+        t.add_agent("B", MagicMock(return_value="b"))
+        t.add_agent("C", MagicMock(return_value="c"))
+        return t
+
+    def test_turn_order_sources_first(self):
+        t = self._make_test()
+        t.set_topology(Topology.CUSTOM, routes={"A": ["B", "C"], "B": ["A"]})
+        order = t._get_turn_order()
+        names = [e.name for e in order]
+        # A is first source, then its targets B, C; then B (already seen), skip
+        assert names == ["A", "B", "C"]
+
+    def test_turn_order_preserves_route_sequence(self):
+        t = self._make_test()
+        t.set_topology(Topology.CUSTOM, routes={"C": ["A", "B"], "A": ["C"]})
+        order = t._get_turn_order()
+        names = [e.name for e in order]
+        # C first, then A, B; then A (seen), its target C (seen)
+        assert names == ["C", "A", "B"]
+
+    def test_turn_order_deduplicates(self):
+        t = self._make_test()
+        t.set_topology(Topology.CUSTOM, routes={"A": ["B", "C"], "B": ["A", "C"]})
+        order = t._get_turn_order()
+        names = [e.name for e in order]
+        assert names == ["A", "B", "C"]
+
+    def test_turn_order_fallback_warning(self):
+        """If custom_routes is empty/None, falls back with a warning."""
+        t = self._make_test()
+        t._topology = Topology.CUSTOM
+        t._custom_routes = None
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            order = t._get_turn_order()
+            assert len(w) == 1
+            assert "no routes configured" in str(w[0].message)
+        names = [e.name for e in order]
+        assert names == ["A", "B", "C"]  # registration order
+
+
+# ── CUSTOM topology message routing ───────────────────────────────────
+
+
+class TestCustomTopologyRouting:
+    """Tests that run_conversation() respects CUSTOM routing."""
+
+    def test_only_routed_agents_receive_messages(self):
+        """With A→B routing, only A and B speak (C never gets a turn from A)."""
+        t = MultiAgentTest()
+        t.add_agent("A", MagicMock(return_value="from A"))
+        t.add_agent("B", MagicMock(return_value="from B"))
+        t.add_agent("C", MagicMock(return_value="from C"))
+        t.set_topology(Topology.CUSTOM, routes={"A": ["B"], "B": ["A"]})
+
+        result = t.run_conversation("start", max_turns=6)
+        assert result.completed is True
+        # Only A and B should have spoken (C is never in A's or B's routes)
+        speakers = set(turn.agent_name for turn in result.turns)
+        assert "C" not in speakers
+        assert "A" in speakers
+        assert "B" in speakers
+
+    def test_routing_chain(self):
+        """A→B, B→C chain: first turn is A, then B (routed from A), then C (routed from B)."""
+        t = MultiAgentTest()
+        t.add_agent("A", MagicMock(return_value="from A"))
+        t.add_agent("B", MagicMock(return_value="from B"))
+        t.add_agent("C", MagicMock(return_value="from C"))
+        t.set_topology(Topology.CUSTOM, routes={"A": ["B"], "B": ["C"], "C": ["A"]})
+
+        result = t.run_conversation("start", max_turns=6)
+        assert result.completed is True
+        assert result.turn_count > 0
+        # Check that all three participate
+        speakers = set(turn.agent_name for turn in result.turns)
+        assert speakers == {"A", "B", "C"}
+
+    def test_first_agent_always_speaks(self):
+        """On the very first turn there is no previous speaker, so no routing filter applies."""
+        t = MultiAgentTest()
+        t.add_agent("A", MagicMock(return_value="hi"))
+        t.add_agent("B", MagicMock(return_value="hey"))
+        t.set_topology(Topology.CUSTOM, routes={"A": ["B"], "B": ["A"]})
+
+        result = t.run_conversation("start", max_turns=2)
+        assert result.turn_count >= 1
+        assert result.turns[0].agent_name == "A"
+

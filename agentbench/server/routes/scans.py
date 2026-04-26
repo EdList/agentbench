@@ -755,10 +755,14 @@ def _execute_resolved_scan(
     resolved: ResolvedScanRequest,
     principal: str,
     cancel_fn: Callable[[], bool] | None = None,
+    deadline: float | None = None,
 ) -> tuple[ScanResponse, object | None]:
     scan_id = str(uuid.uuid4())
     try:
-        result = _run_scan(resolved.agent_url, resolved.categories, cancel_fn=cancel_fn)
+        result = _run_scan(
+            resolved.agent_url, resolved.categories,
+            cancel_fn=cancel_fn, deadline=deadline,
+        )
         if isinstance(result, tuple):
             report_response, score_report = result
         else:
@@ -875,7 +879,7 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
                     return False
 
             report, score_report = _execute_resolved_scan(
-                resolved, principal, cancel_fn=_is_cancelled,
+                resolved, principal, cancel_fn=_is_cancelled, deadline=deadline,
             )
         except ScanCancelledError:
             job = (
@@ -1080,6 +1084,7 @@ def _run_scan(
     agent_url: str,
     categories: list[str] | None,
     cancel_fn: Callable[[], bool] | None = None,
+    deadline: float | None = None,
 ) -> tuple[ScanResponse, object]:
     """Execute the full prober → analyzer → scorer pipeline synchronously.
 
@@ -1087,6 +1092,9 @@ def _run_scan(
 
     If *cancel_fn* is provided, it is called between probe categories.
     If it returns True the scan aborts early with whatever results exist.
+
+    If *deadline* is provided (monotonic time), probing will abort early
+    when the deadline is exceeded, returning partial results.
     """
     cats = _expand_scan_categories(categories)
 
@@ -1101,8 +1109,6 @@ def _run_scan(
     # Wrap the agent URL in a simple callable for the prober
     def _agent_fn(prompt: str) -> str:
         """Send *prompt* to the agent via HTTP and return the response text."""
-        if cancel_fn is not None and cancel_fn():
-            raise ScanCancelledError("Scan cancelled before probe.")
         resp = client.post(
             agent_url,
             json={"prompt": prompt},
@@ -1123,7 +1129,7 @@ def _run_scan(
     try:
         # 1. Probe
         prober = AgentProber(agent_fn=_agent_fn, categories=cats)
-        session = prober.probe_all()
+        session = prober.probe_all(deadline=deadline)
     finally:
         client.close()
 
