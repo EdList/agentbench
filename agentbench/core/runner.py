@@ -5,9 +5,12 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import logging
 import threading
 import time
 import traceback
+
+logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -249,10 +252,12 @@ class TestRunner:
             is_prop = isinstance(attr, Property)
             has_meta = hasattr(attr, "_agentbench_property")
             if (is_prop or has_meta) and attr_name not in discovered_names:
+                logger.warning("Property-based test discovered for '%s' — experimental feature", attr_name)
                 expanded.append((attr_name, attr_name, {"property_test": True}))
 
         # --- Adversarial variant expansion ---
         if getattr(suite_class, "_adversarial_enabled", False):
+            logger.warning("Adversarial variant expansion is experimental — test quality may vary")
             config = getattr(suite_class, "_adversarial_config", {})
             mutators = config.get("mutators", [])
             count = config.get("count", 5)

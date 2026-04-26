@@ -1,4 +1,8 @@
-"""Adversarial Test Generation — mutation engine, strategies, and auto-discovery."""
+"""Adversarial Test Generation — mutation engine, strategies, and auto-discovery.
+
+⚠ EXPERIMENTAL — This module is alpha-quality. APIs may change without notice.
+For production agent scanning, use the core scan API (``agentbench.scanner``).
+"""
 
 from agentbench.adversarial.discovery import (
     AdversarialTestGenerator,

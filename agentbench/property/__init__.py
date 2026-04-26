@@ -1,5 +1,8 @@
 """Property-Based Testing module for AgentBench.
 
+⚠ EXPERIMENTAL — This module is alpha-quality. APIs may change without notice.
+For production agent scanning, use the core scan API (``agentbench.scanner``).
+
 Provides generators, property definitions, and shrinking for
 randomised, property-based testing of AI agents.
 

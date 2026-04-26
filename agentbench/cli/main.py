@@ -554,6 +554,7 @@ def adversarial_generate(
     seed: int | None = typer.Option(None, "--seed", help="Random seed for reproducibility"),
 ) -> None:
     """Generate adversarial test files from a base test suite (experimental)."""
+    console.print("[bold yellow]⚠ Experimental:[/bold yellow] Adversarial tooling is alpha. APIs may change.\n")
     from agentbench.adversarial.discovery import AdversarialTestGenerator
     from agentbench.adversarial.strategies import (
         STRATEGY_REGISTRY,
@@ -638,6 +639,7 @@ def adversarial_generate(
 @adversarial_app.command("list-strategies")
 def adversarial_list_strategies() -> None:
     """List all available adversarial strategies (experimental)."""
+    console.print("[bold yellow]⚠ Experimental:[/bold yellow] Adversarial tooling is alpha. APIs may change.\n")
     from agentbench.adversarial.strategies import list_strategies
 
     strategies = list_strategies()
