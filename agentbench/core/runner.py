@@ -252,7 +252,10 @@ class TestRunner:
             is_prop = isinstance(attr, Property)
             has_meta = hasattr(attr, "_agentbench_property")
             if (is_prop or has_meta) and attr_name not in discovered_names:
-                logger.warning("Property-based test discovered for '%s' — experimental feature", attr_name)
+                logger.warning(
+                    "Property-based test discovered for '%s' — experimental feature",
+                    attr_name,
+                )
                 expanded.append((attr_name, attr_name, {"property_test": True}))
 
         # --- Adversarial variant expansion ---
