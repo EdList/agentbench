@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 from collections.abc import Generator
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
@@ -206,6 +207,30 @@ class TestRuns:
         assert suite.code == "print('hello')"
         assert suite.path is None
         assert json.loads(suite.config_json) == {"timeout_seconds": 12, "parallel": 2}
+
+    def test_cleanup_old_records_removes_orphaned_test_suites(
+        self,
+        db_session: Session,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        old_suite = server_models.TestSuite(
+            id=str(uuid.uuid4()),
+            name="expired-suite",
+            code="print('stale')",
+        )
+        old_suite_id = old_suite.id
+        db_session.add(old_suite)
+        db_session.flush()
+        old_suite.created_at = datetime(2000, 1, 1, tzinfo=UTC)
+        db_session.commit()
+
+        monkeypatch.setattr(server_models.settings, "database_url", "postgresql://test")
+        with patch("agentbench.server.models.get_session_factory") as mock_factory:
+            mock_factory.return_value.return_value = db_session
+            counts = server_models.cleanup_old_records(retention_days=30)
+
+        assert counts["test_suites"] == 1
+        assert db_session.get(server_models.TestSuite, old_suite_id) is None
 
     def test_submit_run_requires_code_or_path(self, client: TestClient):
         resp = client.post(

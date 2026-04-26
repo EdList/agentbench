@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 os.environ["AGENTBENCH_API_KEYS"] = "test-api-key,other-api-key"
 os.environ["AGENTBENCH_SECRET_KEY"] = "test-secret-key-for-agentbench-32bytes"
 
+from agentbench.scanner.store import ServerScanStore
 from agentbench.server.app import create_app
 from agentbench.server.auth import settings as auth_settings
 from agentbench.server.models import Base, get_db
@@ -172,6 +173,76 @@ class TestSubmitScan:
         )
         assert resp.status_code == 400
         mock_run.assert_not_called()
+
+
+class TestServerBackedScanStore:
+    def test_get_scan_ignores_incomplete_rows(self, client: TestClient):
+        import agentbench.server.models as models_mod
+        import agentbench.server.routes.scans as scans_mod
+
+        db = models_mod.get_session_factory()()
+        job = models_mod.ScanJob(
+            id="job-incomplete",
+            principal="test-api-key",
+            agent_url="https://example.com/agent",
+            status="failed",
+            scan_id="scan-incomplete",
+        )
+        db.add(job)
+        db.commit()
+
+        scans_mod.store = ServerScanStore(session=db)
+
+        assert scans_mod.store.get_scan("scan-incomplete", principal="test-api-key") is None
+
+    def test_list_scans_orders_by_completion_time_and_filters_partial_rows(
+        self, client: TestClient
+    ):
+        import agentbench.server.models as models_mod
+        import agentbench.server.routes.scans as scans_mod
+
+        db = models_mod.get_session_factory()()
+        db.add_all(
+            [
+                models_mod.ScanJob(
+                    id="job-partial",
+                    principal="test-api-key",
+                    agent_url="https://example.com/agent",
+                    status="running",
+                    scan_id="scan-partial",
+                ),
+                models_mod.ScanJob(
+                    id="job-old-complete",
+                    principal="test-api-key",
+                    agent_url="https://example.com/agent",
+                    status="completed",
+                    scan_id="scan-old-complete",
+                    report_json="{}",
+                    overall_score=70.0,
+                    overall_grade="C",
+                    created_at=datetime(2026, 1, 2, tzinfo=UTC),
+                    completed_at=datetime(2026, 1, 3, tzinfo=UTC),
+                ),
+                models_mod.ScanJob(
+                    id="job-new-complete",
+                    principal="test-api-key",
+                    agent_url="https://example.com/agent",
+                    status="completed",
+                    scan_id="scan-new-complete",
+                    report_json="{}",
+                    overall_score=90.0,
+                    overall_grade="A",
+                    created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    completed_at=datetime(2026, 1, 4, tzinfo=UTC),
+                ),
+            ]
+        )
+        db.commit()
+
+        scans_mod.store = ServerScanStore(session=db)
+        scans = scans_mod.store.list_scans(principal="test-api-key")
+
+        assert [scan["id"] for scan in scans] == ["scan-new-complete", "scan-old-complete"]
 
     @patch("agentbench.server.routes.scans._run_scan")
     def test_submit_scan_rejects_dns_resolved_private_ipv6_host(

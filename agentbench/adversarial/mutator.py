@@ -364,12 +364,12 @@ class TrajectoryMutator:
                 val = tool_input[key]
                 if isinstance(val, str):
                     tool_input[key] = val + "_mutated"
+                elif isinstance(val, bool):
+                    tool_input[key] = not val
                 elif isinstance(val, int):
                     tool_input[key] = val + self._rng.randint(1, 10)
                 elif isinstance(val, float):
                     tool_input[key] = val * 1.1
-                elif isinstance(val, bool):
-                    tool_input[key] = not val
                 else:
                     tool_input[key] = "MUTATED"
                 step.tool_input = tool_input

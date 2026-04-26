@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any
@@ -97,7 +98,7 @@ class RawAPIAdapter(AgentAdapter):
         """Run agent via Python callable."""
         start = time.time()
         try:
-            result = self._func(prompt, context)
+            result = _call_with_optional_context(self._func, prompt, context)
 
             # If function returns structured data with steps
             if isinstance(result, dict):
@@ -219,3 +220,41 @@ class RawAPIAdapter(AgentAdapter):
             trajectory.error = str(e)
 
         return trajectory
+
+
+def _call_with_optional_context(
+    func: Callable[..., Any],
+    prompt: str,
+    context: dict[str, Any] | None,
+) -> Any:
+    """Call adapter functions that accept either (prompt) or (prompt, context)."""
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return func(prompt, context)
+
+    params = list(signature.parameters.values())
+    if any(param.kind is inspect.Parameter.VAR_POSITIONAL for param in params):
+        return func(prompt, context)
+
+    positional = [
+        param
+        for param in params
+        if param.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    if len(positional) >= 2:
+        return func(prompt, context)
+
+    keyword_only = {
+        param.name
+        for param in params
+        if param.kind is inspect.Parameter.KEYWORD_ONLY
+    }
+    if "context" in keyword_only:
+        return func(prompt, context=context)
+
+    return func(prompt)

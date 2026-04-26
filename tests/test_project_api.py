@@ -182,6 +182,36 @@ class TestSavedAgentsApi:
 
         assert resp.status_code == 404
 
+    def test_create_saved_agent_rejects_blocked_port(self, client: TestClient):
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": "Support Agent"},
+            headers=_auth_headers(),
+        ).json()
+
+        resp = client.post(
+            f"/api/v1/projects/{project['id']}/agents",
+            json={"name": "Blocked Port", "agent_url": "https://example.com:22/agent"},
+            headers=_auth_headers(),
+        )
+
+        assert resp.status_code == 422
+
+    def test_create_saved_agent_rejects_nonstandard_port(self, client: TestClient):
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": "Support Agent"},
+            headers=_auth_headers(),
+        ).json()
+
+        resp = client.post(
+            f"/api/v1/projects/{project['id']}/agents",
+            json={"name": "Custom Port", "agent_url": "https://example.com:8443/agent"},
+            headers=_auth_headers(),
+        )
+
+        assert resp.status_code == 400
+
 
 class TestScanPoliciesApi:
     def test_create_policy_under_project(self, client: TestClient):

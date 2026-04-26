@@ -240,7 +240,13 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
     """Prune expired server-side records and return deleted row counts."""
     days = settings.retention_days if retention_days is None else retention_days
     if days <= 0:
-        return {"run_results": 0, "runs": 0, "trajectories": 0, "scan_jobs": 0}
+        return {
+            "run_results": 0,
+            "runs": 0,
+            "test_suites": 0,
+            "trajectories": 0,
+            "scan_jobs": 0,
+        }
 
     cutoff = datetime.now(UTC) - timedelta(days=days)
     factory = get_session_factory()
@@ -262,6 +268,13 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
         deleted_runs = db.execute(
             delete(Run).where(Run.created_at.is_not(None), Run.created_at < cutoff)
         ).rowcount or 0
+        deleted_test_suites = db.execute(
+            delete(TestSuite).where(
+                TestSuite.created_at.is_not(None),
+                TestSuite.created_at < cutoff,
+                ~TestSuite.runs.any(),
+            )
+        ).rowcount or 0
         deleted_trajectories = db.execute(
             delete(Trajectory).where(
                 Trajectory.created_at.is_not(None),
@@ -273,13 +286,18 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
         ).rowcount or 0
         db.commit()
         if "sqlite" in settings.database_url and (
-            deleted_run_results or deleted_runs or deleted_trajectories or deleted_scan_jobs
+            deleted_run_results
+            or deleted_runs
+            or deleted_test_suites
+            or deleted_trajectories
+            or deleted_scan_jobs
         ):
             with get_engine().connect() as conn:
                 conn.exec_driver_sql("PRAGMA incremental_vacuum")
         return {
             "run_results": deleted_run_results,
             "runs": deleted_runs,
+            "test_suites": deleted_test_suites,
             "trajectories": deleted_trajectories,
             "scan_jobs": deleted_scan_jobs,
         }

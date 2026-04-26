@@ -332,7 +332,7 @@ class ScanStore:
 # Server-backed scan store (reads/writes from SQLAlchemy DB)
 # ---------------------------------------------------------------------------
 
-from sqlalchemy import Engine  # noqa: E402
+from sqlalchemy import Engine, func  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 
@@ -432,7 +432,11 @@ class ServerScanStore:
 
         session = self._get_session()
         try:
-            query = session.query(ScanJob).filter(ScanJob.scan_id == scan_id)
+            query = session.query(ScanJob).filter(
+                ScanJob.scan_id == scan_id,
+                ScanJob.status == "completed",
+                ScanJob.report_json.is_not(None),
+            )
             if principal is not None:
                 query = query.filter(ScanJob.principal == principal)
             job = query.first()
@@ -454,12 +458,16 @@ class ServerScanStore:
 
         session = self._get_session()
         try:
-            query = session.query(ScanJob).filter(ScanJob.scan_id.isnot(None))
+            query = session.query(ScanJob).filter(
+                ScanJob.scan_id.isnot(None),
+                ScanJob.status == "completed",
+                ScanJob.report_json.isnot(None),
+            )
             if principal is not None:
                 query = query.filter(ScanJob.principal == principal)
             if agent_url:
                 query = query.filter(ScanJob.agent_url == agent_url)
-            query = query.order_by(ScanJob.created_at.desc())
+            query = query.order_by(func.coalesce(ScanJob.completed_at, ScanJob.created_at).desc())
             jobs = query.offset(offset).limit(limit).all()
             return [self._job_to_summary_dict(j) for j in jobs]
         finally:
@@ -480,11 +488,12 @@ class ServerScanStore:
                 session.query(ScanJob)
                 .filter(ScanJob.agent_url == agent_url)
                 .filter(ScanJob.scan_id.isnot(None))
+                .filter(ScanJob.status == "completed")
                 .filter(ScanJob.report_json.isnot(None))
             )
             if principal is not None:
                 query = query.filter(ScanJob.principal == principal)
-            query = query.order_by(ScanJob.created_at.desc())
+            query = query.order_by(func.coalesce(ScanJob.completed_at, ScanJob.created_at).desc())
             jobs = query.limit(latest_n).all()
         finally:
             self._close_session(session)
@@ -577,12 +586,13 @@ class ServerScanStore:
     @staticmethod
     def _job_to_row_dict(job: ScanJob) -> dict[str, Any]:  # type: ignore[name-defined  # noqa: F821
         """Convert a ScanJob ORM object to the dict format expected by consumers."""
+        timestamp = job.completed_at or job.created_at
         return {
             "id": job.scan_id or job.id,
             "principal": job.principal,
             "agent_url": job.agent_url,
             "project_id": job.project_id,
-            "created_at": job.created_at.isoformat() if job.created_at else "",
+            "created_at": timestamp.isoformat() if timestamp else "",
             "overall_score": job.overall_score,
             "grade": job.overall_grade,
             "report_json": job.report_json or "{}",
@@ -592,10 +602,11 @@ class ServerScanStore:
     @staticmethod
     def _job_to_summary_dict(job: ScanJob) -> dict[str, Any]:  # type: ignore[name-defined  # noqa: F821
         """Convert a ScanJob to the summary dict format (for list_scans)."""
+        timestamp = job.completed_at or job.created_at
         return {
             "id": job.scan_id or job.id,
             "agent_url": job.agent_url,
-            "created_at": job.created_at.isoformat() if job.created_at else "",
+            "created_at": timestamp.isoformat() if timestamp else "",
             "overall_score": job.overall_score,
             "grade": job.overall_grade,
             "duration_ms": 0,

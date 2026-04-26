@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import inspect
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -99,14 +100,14 @@ class _AgentEntry:
         - An object with a .respond() method returning a response string
         """
         if callable(self.adapter_or_fn) and not hasattr(self.adapter_or_fn, "run"):
-            return self.adapter_or_fn(message, history)
+            return _call_with_optional_history(self.adapter_or_fn, message, history)
         # Object-style adapter
         if hasattr(self.adapter_or_fn, "run"):
             return self.adapter_or_fn.run(message, history=history)
         if hasattr(self.adapter_or_fn, "respond"):
             return self.adapter_or_fn.respond(message, history=history)
         # Fallback: call it directly
-        return str(self.adapter_or_fn(message, history))
+        return str(_call_with_optional_history(self.adapter_or_fn, message, history))
 
 
 class MultiAgentTest:
@@ -200,6 +201,7 @@ class MultiAgentTest:
 
         start_time = time.time()
         result = ConversationResult()
+        result.final_state["registered_agents"] = [agent.name for agent in self._agents]
         current_message = initial_message
 
         # Determine turn order based on topology
@@ -290,3 +292,41 @@ class MultiAgentTest:
             return True
 
         return False
+
+
+def _call_with_optional_history(
+    func: Callable[..., str] | Any,
+    message: str,
+    history: list[ConversationTurn],
+) -> str:
+    """Call multi-agent functions that accept either (message) or (message, history)."""
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return func(message, history)
+
+    params = list(signature.parameters.values())
+    if any(param.kind is inspect.Parameter.VAR_POSITIONAL for param in params):
+        return func(message, history)
+
+    positional = [
+        param
+        for param in params
+        if param.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    if len(positional) >= 2:
+        return func(message, history)
+
+    keyword_only = {
+        param.name
+        for param in params
+        if param.kind is inspect.Parameter.KEYWORD_ONLY
+    }
+    if "history" in keyword_only:
+        return func(message, history=history)
+
+    return func(message)

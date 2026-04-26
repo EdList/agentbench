@@ -39,11 +39,16 @@ def create_saved_agent(
     db: Session = Depends(get_db),
 ) -> SavedAgentResponse:
     _get_project_or_404(db, project_id, principal)
+    from agentbench.server.routes.scans import _validate_agent_url
+
+    validated_url = body.agent_url.strip()
+    _validate_agent_url(validated_url)
+
     agent = SavedAgent(
         project_id=project_id,
         principal=principal,
         name=body.name.strip(),
-        agent_url=body.agent_url.strip(),
+        agent_url=validated_url,
     )
     db.add(agent)
     db.commit()

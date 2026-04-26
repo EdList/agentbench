@@ -187,6 +187,15 @@ class TestMultiAgentTest:
         result = t.add_agent("A", MagicMock(return_value="x"))
         assert result is t
 
+    def test_run_conversation_supports_single_argument_callable(self):
+        t = MultiAgentTest()
+        t.add_agent("Solo", lambda message: f"echo:{message}")
+
+        result = t.run_conversation("start", max_turns=1)
+
+        assert result.completed is True
+        assert result.turns[0].message == "echo:start"
+
 
 # ── RoundRobin pattern ────────────────────────────────────────────────
 
@@ -354,6 +363,16 @@ class TestExpectConversation:
         )
         result = expect_conversation(r).every_agent_responds()
         assert result.all_passed is True
+
+    def test_every_agent_responds_uses_registered_agents_from_run_result(self):
+        t = MultiAgentTest()
+        t.add_agent("Alice", lambda message: "first")
+        t.add_agent("Bob", lambda message: "second")
+
+        result = t.run_conversation("start", max_turns=1)
+        expectation = expect_conversation(result).every_agent_responds()
+
+        assert expectation.all_passed is False
 
     def test_no_agent_dominates_pass(self):
         r = _make_result(

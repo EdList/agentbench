@@ -156,6 +156,29 @@ class TestRawAPIAdapterFunctionMode:
         _traj = adapter.run("Hi", _empty_trajectory(), context={"key": "val"})
         assert received_context == {"key": "val"}
 
+    def test_single_argument_function_is_supported(self):
+        def agent(prompt):
+            return {"response": f"Echo: {prompt}"}
+
+        adapter = RawAPIAdapter(func=agent)
+        traj = adapter.run("Hello", _empty_trajectory(), context={"ignored": True})
+
+        assert traj.completed is True
+        assert traj.final_response == "Echo: Hello"
+
+    def test_keyword_only_context_is_supported(self):
+        seen: dict[str, str] = {}
+
+        def agent(prompt, *, context=None):
+            seen.update(context or {})
+            return {"response": prompt}
+
+        adapter = RawAPIAdapter(func=agent)
+        traj = adapter.run("Hello", _empty_trajectory(), context={"mode": "kw"})
+
+        assert traj.completed is True
+        assert seen == {"mode": "kw"}
+
 
 # ─── RawAPIAdapter: Failure Injection ───
 

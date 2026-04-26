@@ -219,6 +219,22 @@ class TestTrajectoryMutator:
                             has_mutation = True
         assert has_mutation
 
+    def test_mutate_tool_inputs_toggles_booleans_instead_of_casting_to_int(self):
+        m = TrajectoryMutator(seed=42)
+        trajectory = AgentTrajectory()
+        trajectory.steps.append(
+            AgentStep(
+                step_number=0,
+                action="tool_call",
+                tool_name="search",
+                tool_input={"flag": True},
+            )
+        )
+
+        results = m.mutate_tool_inputs(trajectory, count=1)
+
+        assert results[0].steps[0].tool_input == {"flag": False}
+
     def test_does_not_mutate_original(self):
         m = TrajectoryMutator(seed=42)
         original = _make_trajectory(5)

@@ -251,12 +251,11 @@ class SavedAgentCreateRequest(BaseModel):
             {22, 23, 25, 465, 587, 993, 995, 3306, 5432, 6379, 9200, 27017}
         )
         if ":" in host_part:
-            try:
-                port = int(host_part.rsplit(":", 1)[-1].strip("]"))
+            port_token = host_part.rsplit(":", 1)[-1].strip("]")
+            if port_token.isdigit():
+                port = int(port_token)
                 if port in _ssrf_blocked_ports:
                     raise ValueError("agent_url port is not allowed.")
-            except (ValueError, IndexError):
-                pass  # non-numeric port in URL — let httpx reject it
         return parsed
 
 
