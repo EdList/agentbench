@@ -9,8 +9,6 @@ import logging
 import threading
 import time
 import traceback
-
-logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +23,8 @@ from agentbench.core.fixtures import FixtureRegistry
 from agentbench.core.test import AgentTest, AgentTrajectory
 from agentbench.multiagent.test import MultiAgentTest
 from agentbench.property.properties import Property
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
