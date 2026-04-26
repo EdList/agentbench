@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AgentBench — AI Agent Behavior Scanner</title>
+<meta property="og:title" content="AgentBench — AI Agent Behavior Scanner">
+<meta property="og:description" content="Score AI agent safety, reliability, capability and robustness with automated behavioral testing.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -17,6 +21,7 @@
   --radius:10px;--transition:200ms cubic-bezier(.4,0,.2,1);
 }
 html{font-size:16px;-webkit-font-smoothing:antialiased}
+section[id]{scroll-margin-top:80px}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:radial-gradient(circle at top,hsl(220 91% 55%/.16),transparent 28%),radial-gradient(circle at 85% 20%,hsl(25 95% 60%/.12),transparent 24%),var(--bg);color:var(--text);min-height:100vh;line-height:1.6;position:relative;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(hsl(220 15% 100%/.03) 1px,transparent 1px),linear-gradient(90deg,hsl(220 15% 100%/.03) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(180deg,hsl(0 0% 0%/.5),transparent 92%);pointer-events:none;z-index:-2}
 body::after{content:'';position:fixed;inset:0;background:radial-gradient(circle at 20% 10%,hsl(220 91% 55%/.08),transparent 24%),radial-gradient(circle at 80% 18%,hsl(25 95% 60%/.08),transparent 20%);pointer-events:none;z-index:-1}
@@ -545,8 +550,8 @@ footer a:hover{color:var(--text)}
     </div>
     <div class="action-status" id="actionStatus" aria-live="polite"></div>
     <section class="share-surface" id="shareSurface" aria-live="polite">
-      <h3>Share this scan with your team</h3>
-      <p id="shareSurfaceDescription">Copy a private permalink for teammates with AgentBench access, or paste a ready-made update into Slack, Linear, or your PR.</p>
+      <h3>Share this scan</h3>
+      <p id="shareSurfaceDescription">Copy a permalink for your scan. Links work with the same API key used to create the scan, or paste a ready-made update into Slack, Linear, or your PR.</p>
       <div class="share-row">
         <input id="sharePermalink" type="text" readonly aria-label="Shareable report link">
         <button class="btn btn-outline" type="button" onclick="copyPermalink()">Copy Link</button>
@@ -591,7 +596,7 @@ footer a:hover{color:var(--text)}
 </footer>
 <script>
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:8000' : '';
+  ? window.location.origin : '';
 let lastReport = null;
 let currentAgentUrl = '';
 let currentScanJobId = '';
@@ -739,11 +744,18 @@ async function copyTextWithFallback(text, successMessage) {
     }
     throw new Error('clipboard-unavailable');
   } catch (e) {
+    // Fallback: create a temporary textarea for manual copy
     try {
-      window.prompt('Copy AgentBench content', text);
-      setActionStatus('Opened a copy-ready dialog.', 'success');
-      return false;
-    } catch (promptError) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setActionStatus(successMessage || 'Copied!', 'success');
+      return true;
+    } catch (fallbackError) {
       setActionStatus('Could not copy content. Try the JSON or HTML export instead.', 'error');
       return false;
     }
@@ -779,7 +791,8 @@ function sleepWithSignal(ms, signal) {
 }
 
 async function pollScanJob(jobId, signal) {
-  while (true) {
+  const MAX_POLLS = 150; // 800ms * 150 = ~2 min client-side timeout
+  for (let i = 0; i < MAX_POLLS; i++) {
     const res = await fetch(API_BASE + '/api/v1/scans/jobs/' + encodeURIComponent(jobId), {headers: apiHeaders(), signal});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const job = await res.json();
@@ -788,6 +801,7 @@ async function pollScanJob(jobId, signal) {
     if (job.status === 'cancelled') throw new DOMException('Aborted', 'AbortError');
     await sleepWithSignal(800, signal);
   }
+  throw new Error('JOB_FAILED:Scan polling timed out. Please check the scan status later.');
 }
 
 async function loadCompletedScan(job, signal) {
@@ -941,8 +955,8 @@ async function loadSharePayload(scanId) {
     document.getElementById('sharePermalink').value = sharePayload.absolute_permalink;
     document.getElementById('shareMeta').textContent = sharePayload.title;
     document.getElementById('shareSurfaceDescription').textContent = sharePayload.scan_id === latestHistoryScanId
-      ? 'Copy a private permalink for teammates with AgentBench access, or paste a ready-made update into Slack, Linear, or your PR.'
-      : 'You are viewing a historical scan. Share this exact run with teammates who already have AgentBench access using the permalink below.';
+      ? 'Copy a permalink for your scan. Links work with the same API key used to create the scan, or paste a ready-made update into Slack, Linear, or your PR.'
+      : 'You are viewing a historical scan. Use the permalink below to revisit this exact run (requires the same API key).';
     document.getElementById('shareSurface').classList.add('show');
     updateQueryParams(scanId);
   } catch (e) {
@@ -1028,7 +1042,7 @@ function showResults(data, options = {}) {
     verdictBadge.textContent = 'Not set';
     verdictSummary.textContent = 'This scan does not have a saved policy attached yet.';
   }
-  document.getElementById('summaryBox').innerHTML = '<strong>Executive Summary</strong><br>' + (data.summary || 'No summary available.');
+  document.getElementById('summaryBox').innerHTML = '<strong>Executive Summary</strong><br>' + escHtml(data.summary || 'No summary available.');
   const cl = document.getElementById('criticalList');
   cl.innerHTML = '';
   (data.critical_issues || []).forEach(issue => {
@@ -1042,7 +1056,7 @@ function showResults(data, options = {}) {
     const recs = (d.recommendations||[]).slice(0,3).map(r => '<li class="recommendation">'+escHtml(r)+'</li>').join('');
     const card = document.createElement('div');
     card.className = 'domain-card';
-    card.innerHTML = '<div class="domain-card-header"><div class="domain-icon" style="color:'+c+';background:'+c+'18">'+domainIcon(d.name)+'</div><h3>'+escHtml(d.name)+'</h3><div class="domain-grade" style="color:'+c+';background:'+c+'15" aria-label="Grade '+d.grade+'">'+d.grade+'</div></div><div class="domain-score-bar"><div class="bar" style="background:'+c+'" data-width="'+d.score+'%"></div></div>'+(findings?'<div class="domain-section"><h4>Findings</h4><ul>'+findings+'</ul></div>':'')+(recs?'<div class="domain-section"><h4>Recommendations</h4><ul>'+recs+'</ul></div>':'');
+    card.innerHTML = '<div class="domain-card-header"><div class="domain-icon" style="color:'+c+';background:'+c+'18">'+domainIcon(d.name)+'</div><h3>'+escHtml(d.name)+'</h3><div class="domain-grade" style="color:'+c+';background:'+c+'15" aria-label="Grade '+escHtml(d.grade)+'">'+escHtml(d.grade)+'</div></div><div class="domain-score-bar"><div class="bar" style="background:'+c+'" data-width="'+d.score+'%"></div></div>'+(findings?'<div class="domain-section"><h4>Findings</h4><ul>'+findings+'</ul></div>':'')+(recs?'<div class="domain-section"><h4>Recommendations</h4><ul>'+recs+'</ul></div>':'');
     grid.appendChild(card);
     setTimeout(() => { card.classList.add('visible'); card.querySelector('.bar').style.width = d.score+'%'; }, 200 + i * 150);
   });
@@ -1118,7 +1132,7 @@ function downloadHtmlReport() {
 
 async function copyShareSummary() {
   if (!lastReport) return;
-  await copyTextWithFallback(buildShareSummary(), 'Copied a shareable summary for Slack / PRs.');
+  await copyTextWithFallback(buildShareSummary(), 'Copied scan summary.');
 }
 
 async function loadHistory(agentUrl) {
@@ -1185,7 +1199,7 @@ async function loadHistory(agentUrl) {
     });
     updateHistorySelection();
     await loadSharePayload(selectedHistoryScanId);
-  } catch(e) {}
+  } catch(e) { console.warn('loadHistory failed:', e); }
 }
 
 async function showRegression() {

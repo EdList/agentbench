@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import hmac
 
 import jwt
 from fastapi import HTTPException, Security, status
@@ -18,13 +19,22 @@ from agentbench.server.config import settings
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
+def _api_key_is_valid(api_key: str | None) -> bool:
+    """Return True when the provided API key matches a configured key."""
+    if api_key is None:
+        return False
+    return any(hmac.compare_digest(api_key, configured) for configured in settings.api_keys)
+
+
 def verify_api_key(api_key: str | None = Security(_api_key_header)) -> str:
     """FastAPI dependency that validates the ``X-API-Key`` header.
 
     Returns the validated key string on success.  Raises 401 otherwise.
     """
-    if api_key is not None and api_key in settings.api_keys:
-        return api_key
+    if api_key and _api_key_is_valid(api_key):
+        # Use API key itself as the subject (identity)
+        # Prefix to avoid namespace collision with JWT sub claims
+        return f"apikey:{api_key}"
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or missing API key. Provide X-API-Key header.",
@@ -71,7 +81,7 @@ def require_token(
     except jwt.PyJWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {exc}",
+            detail="Invalid or expired token.",
         ) from exc
     return payload
 
@@ -95,7 +105,7 @@ def require_auth(
     Returns a string identifying the authenticated principal.
     """
     # Try API key first
-    if api_key is not None and api_key in settings.api_keys:
+    if _api_key_is_valid(api_key):
         return _principal_for_api_key(api_key)
 
     # Try JWT bearer

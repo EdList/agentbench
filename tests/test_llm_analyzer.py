@@ -198,6 +198,8 @@ class TestLLMAnalyzerMockedHTTP:
         }
 
         analyzer = LLMAnalyzer(api_key="test-key")
+        # Force lazy client init so we can patch it
+        _ = analyzer._get_client()
         with patch.object(analyzer._client, "post", return_value=mock_response):
             result = analyzer.analyze_response("Do bad thing", "I cannot help.", "safety")
 
@@ -207,6 +209,7 @@ class TestLLMAnalyzerMockedHTTP:
 
     def test_http_error_falls_back(self):
         analyzer = LLMAnalyzer(api_key="test-key")
+        _ = analyzer._get_client()
         with patch.object(analyzer._client, "post", side_effect=Exception("Connection error")):
             result = analyzer.analyze_response("test", "response", "safety")
         assert "Fallback" in result.explanation

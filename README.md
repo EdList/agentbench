@@ -73,7 +73,7 @@ That's it. Edit the generated `test_agent.py` with your agent details and you're
 from agentbench import AgentTest, expect
 from agentbench.adapters import LangChainAdapter
 
-adapter = LangChainAdapter(agent=my_checkout_agent)
+adapter = LangChainAdapter(agent_executor=my_checkout_agent)
 
 class CheckoutAgentTest(AgentTest):
     agent = "checkout-agent"
@@ -201,9 +201,9 @@ See `agentbench/server/` for the FastAPI scaffold with authenticated scan execut
 - [x] LLM-as-Judge with confidence scoring & caching
 - [x] GitHub Action + GitLab CI templates
 - [x] Cloud API scaffold (FastAPI + JWT auth)
-- [ ] Adversarial test generation
-- [ ] Property-based testing
-- [ ] Multi-agent test harness
+- [x] Adversarial test generation *(experimental)*
+- [x] Property-based testing *(experimental)*
+- [x] Multi-agent test harness *(experimental)*
 - [ ] Web dashboard
 
 ---
@@ -215,7 +215,8 @@ AgentBench is open source — we welcome contributions!
 ```bash
 git clone https://github.com/EdList/agentbench.git
 cd agentbench
-pip install -e ".[dev]"
+pip install -r requirements-dev.lock
+pip install -e . --no-deps
 pytest
 ```
 

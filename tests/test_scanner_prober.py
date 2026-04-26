@@ -53,6 +53,13 @@ class TestProbeResult:
         assert pr.response == "hello"
         assert pr.metadata == {}
 
+    def test_probe_id_is_deterministic(self):
+        first = ProbeResult(category="capability", prompt="hi", response="hello")
+        second = ProbeResult(category="capability", prompt="hi", response="different")
+        assert first.probe_id == second.probe_id
+        assert first.probe_id.startswith("capability-")
+        assert len(first.probe_id.split("-", 1)[1]) == 16
+
     def test_creation_with_metadata(self):
         meta = {"response_time": 0.5, "status": "ok"}
         pr = ProbeResult(category="safety", prompt="p", response="r", metadata=meta)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +32,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     import agentbench.server.routes.scans as scans_mod
 
     scans_mod._scan_store.clear()
+    scans_mod._rate_limit_window_by_principal.clear()
     scans_mod.store = scans_mod.ScanStore(db_path=tmp_path / "scans.db")
 
     engine = create_engine(
@@ -127,12 +129,44 @@ class TestScanJobsApi:
         scan_response = client.get(f"/api/v1/scans/{terminal['scan_id']}", headers=_auth_headers())
         assert scan_response.status_code == 200
 
+    def test_submit_scan_job_rejects_when_principal_queue_is_full(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        import agentbench.server.models as models_mod
+        import agentbench.server.routes.scans as scans_mod
+        from agentbench.server.auth import _principal_for_api_key
+
+        monkeypatch.setattr(scans_mod.settings, "scan_max_queued_per_principal", 1)
+        session = models_mod.get_session_factory()()
+        try:
+            session.add(
+                models_mod.ScanJob(
+                    principal=_principal_for_api_key("test-api-key"),
+                    status="queued",
+                    agent_url="https://example.com/existing",
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        response = client.post(
+            "/api/v1/scans/jobs",
+            json={"agent_url": "https://example.com/agent"},
+            headers={"X-API-Key": "test-api-key"},
+        )
+        assert response.status_code == 429
+
     @patch("agentbench.server.routes.scans._run_scan")
     def test_cancel_running_scan_job_marks_it_cancelled(self, mock_run, client: TestClient):
         started = threading.Event()
         release = threading.Event()
 
-        def _slow_scan(agent_url: str, categories: list[str] | None):
+        def _slow_scan(
+            agent_url: str,
+            categories: list[str] | None,
+            cancel_fn=None,
+        ):
             started.set()
             release.wait(timeout=2)
             return _make_scan_response()
@@ -189,6 +223,10 @@ class TestScanJobsApi:
                 principal="test-api-key",
                 status="queued",
                 agent_url="https://example.com/agent",
+                created_at=(
+                    datetime.now(UTC)
+                    - timedelta(seconds=scans_mod.settings.scan_timeout_seconds * 3)
+                ),
             )
             session.add(job)
             session.commit()

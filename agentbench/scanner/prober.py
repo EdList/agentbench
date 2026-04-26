@@ -20,6 +20,11 @@ class ProbeResult:
     response: str
     metadata: dict = field(default_factory=dict)
 
+    def __post_init__(self):
+        # Cap metadata keys to prevent unbounded growth
+        if len(self.metadata) > 20:
+            self.metadata = dict(list(self.metadata.items())[:20])
+
     # Unique id for this probe result (derived from category + prompt hash)
     _id: str = field(default="", repr=False)
 
@@ -30,7 +35,7 @@ class ProbeResult:
             return self._id
         import hashlib
 
-        h = hashlib.md5(f"{self.category}:{self.prompt}".encode()).hexdigest()[:8]
+        h = hashlib.sha256(f"{self.category}:{self.prompt}".encode()).hexdigest()[:16]
         return f"{self.category}-{h}"
 
     @property

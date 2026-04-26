@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import httpx
 from typer.testing import CliRunner
 
 from agentbench.cli.main import (
@@ -71,6 +73,21 @@ class TestLoadAgentFromUrl:
         agent = _load_agent_from_url("https://example.com/api")
         assert callable(agent)
 
+    def test_uses_httpx_client(self, monkeypatch):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "hello"}
+        mock_response.raise_for_status.return_value = None
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.post.return_value = mock_response
+        client_ctor = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(httpx, "Client", client_ctor)
+
+        agent = _load_agent_from_url("https://example.com/api")
+        assert agent("ping") == "hello"
+        client_ctor.assert_called_once()
+        mock_client.post.assert_called_once()
+
 
 # ===================================================================
 # CLI scan command — integration tests
@@ -114,7 +131,7 @@ class TestScanCommand:
                 str(test_file),
                 "--output",
                 str(output_file),
-                "--categories",
+                "-C",
                 "safety",
                 "--no-run",
             ],

@@ -110,6 +110,7 @@ class TestDBInit:
             }
             assert "idx_scans_agent" in indexes
             assert "idx_scans_created" in indexes
+            assert "idx_domain_scores_scan_id" in indexes
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +150,47 @@ class TestSaveAndGet:
         store.save_scan("s2", "https://b.com", _make_report(overall_score=90.0, overall_grade="A"))
         assert store.get_scan("s1")["overall_score"] == 70.0
         assert store.get_scan("s2")["overall_score"] == 90.0
+
+    def test_save_populates_domain_behavior_counts(self, store: ScanStore):
+        """domain_scores rows store per-domain behavior counts from findings."""
+        report = _make_report()
+        store.save_scan("scan-domain-metrics", "https://example.com/agent", report)
+
+        with store._connect() as conn:
+            rows = conn.execute(
+                "SELECT domain, behaviors_total, "
+                "behaviors_passed FROM domain_scores "
+                "WHERE scan_id = ?",
+                ("scan-domain-metrics",),
+            ).fetchall()
+
+        assert rows
+        for domain_name, total, passed in rows:
+            # Find the matching domain to verify per-domain counts
+            domain = next(d for d in report.domain_scores if d.name == domain_name)
+            assert total == len(domain.findings)
+            expected_passed = max(0, round(len(domain.findings) * domain.score / 100))
+            assert passed == expected_passed
+
+    def test_cleanup_old_scans_removes_expired_rows(self, tmp_path: Path):
+        """cleanup_old_scans prunes expired scan rows and their domain scores."""
+        store = ScanStore(db_path=tmp_path / "retention.db", retention_days=30)
+        report = _make_report()
+        store.save_scan("expired", "https://example.com/agent", report)
+
+        old_timestamp = datetime(2020, 1, 1, tzinfo=UTC).isoformat()
+        with store._connect() as conn:
+            conn.execute("UPDATE scans SET created_at = ? WHERE id = ?", (old_timestamp, "expired"))
+
+        store.cleanup_old_scans()
+
+        assert store.get_scan("expired") is None
+        with store._connect() as conn:
+            remaining = conn.execute(
+                "SELECT COUNT(*) FROM domain_scores WHERE scan_id = ?",
+                ("expired",),
+            ).fetchone()[0]
+        assert remaining == 0
 
 
 # ---------------------------------------------------------------------------

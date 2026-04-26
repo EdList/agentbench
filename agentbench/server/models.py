@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import (
     Column,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    delete,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
@@ -51,9 +54,9 @@ class Project(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     owner = relationship("User", back_populates="projects")
-    test_suites = relationship("TestSuite", back_populates="project", lazy="selectin")
-    saved_agents = relationship("SavedAgent", back_populates="project", lazy="selectin")
-    scan_policies = relationship("ScanPolicy", back_populates="project", lazy="selectin")
+    test_suites = relationship("TestSuite", back_populates="project", lazy="select")
+    saved_agents = relationship("SavedAgent", back_populates="project", lazy="select")
+    scan_policies = relationship("ScanPolicy", back_populates="project", lazy="select")
 
 
 class SavedAgent(Base):
@@ -88,11 +91,27 @@ class ScanPolicy(Base):
 
 class ScanJob(Base):
     __tablename__ = "scan_jobs"
+    __table_args__ = (
+        Index("idx_scan_jobs_status_created", "status", "created_at"),
+        Index("idx_scan_jobs_cancel_requested", "cancel_requested"),
+    )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     principal = Column(String(255), nullable=False, index=True, default="")
-    status = Column(String(50), nullable=False, default="queued", server_default="queued")
-    cancel_requested = Column(Integer, nullable=False, default=0, server_default="0")
+    status = Column(
+        String(50),
+        nullable=False,
+        default="queued",
+        server_default="queued",
+        index=True,
+    )
+    cancel_requested = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        index=True,
+    )
     agent_url = Column(Text, nullable=False)
     project_id = Column(String, nullable=True, index=True)
     agent_id = Column(String, nullable=True, index=True)
@@ -216,7 +235,65 @@ def get_db():
         db.close()
 
 
+def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
+    """Prune expired server-side records and return deleted row counts."""
+    days = settings.retention_days if retention_days is None else retention_days
+    if days <= 0:
+        return {"run_results": 0, "runs": 0, "trajectories": 0, "scan_jobs": 0}
+
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    factory = get_session_factory()
+    db: Session = factory()
+    try:
+        old_run_ids = [
+            row[0]
+            for row in (
+                db.query(Run.id)
+                .filter(Run.created_at.is_not(None), Run.created_at < cutoff)
+                .all()
+            )
+        ]
+        deleted_run_results = 0
+        if old_run_ids:
+            deleted_run_results = db.execute(
+                delete(RunResult).where(RunResult.run_id.in_(old_run_ids))
+            ).rowcount or 0
+        deleted_runs = db.execute(
+            delete(Run).where(Run.created_at.is_not(None), Run.created_at < cutoff)
+        ).rowcount or 0
+        deleted_trajectories = db.execute(
+            delete(Trajectory).where(
+                Trajectory.created_at.is_not(None),
+                Trajectory.created_at < cutoff,
+            )
+        ).rowcount or 0
+        deleted_scan_jobs = db.execute(
+            delete(ScanJob).where(ScanJob.created_at.is_not(None), ScanJob.created_at < cutoff)
+        ).rowcount or 0
+        db.commit()
+        if "sqlite" in settings.database_url and (
+            deleted_run_results or deleted_runs or deleted_trajectories or deleted_scan_jobs
+        ):
+            with get_engine().connect() as conn:
+                conn.exec_driver_sql("PRAGMA incremental_vacuum")
+        return {
+            "run_results": deleted_run_results,
+            "runs": deleted_runs,
+            "trajectories": deleted_trajectories,
+            "scan_jobs": deleted_scan_jobs,
+        }
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def create_tables() -> None:
     """Create all tables — for dev setup only (use Alembic in production)."""
     engine = get_engine()
+    if "sqlite" in settings.database_url:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA auto_vacuum = INCREMENTAL")
+            conn.exec_driver_sql("PRAGMA busy_timeout = 5000")
     Base.metadata.create_all(bind=engine)

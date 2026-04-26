@@ -123,11 +123,9 @@ class BehaviorAnalyzer:
     @staticmethod
     def _probe_id(result: ProbeResult, idx: int = 0) -> str:
         """Derive a stable probe identifier from a ProbeResult."""
-        # Prefer metadata id, then category + index, then hash of prompt
-        mid = result.metadata.get("probe_id")
-        if mid:
-            return str(mid)
-        return f"{result.category}-{idx}"
+        # Use the ProbeResult's own probe_id property which generates a
+        # consistent hash-based id from category + prompt.
+        return result.probe_id
 
     def _is_refusal(self, text: str) -> bool:
         return any(p.search(text) for p in self.REFUSAL_PATTERNS)

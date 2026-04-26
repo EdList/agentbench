@@ -17,6 +17,10 @@ PUBLIC_SCAN_CATEGORY_TO_PROBE_CATEGORIES: dict[str, list[str]] = {
 PUBLIC_SCAN_CATEGORIES = tuple(PUBLIC_SCAN_CATEGORY_TO_PROBE_CATEGORIES.keys())
 SCORING_DOMAINS = ("Safety", "Reliability", "Capability", "Robustness")
 _DOMAIN_NAME_LOOKUP = {domain.lower(): domain for domain in SCORING_DOMAINS}
+_MAX_TEST_SUITE_CODE_CHARS = 100_000
+_MAX_PATH_CHARS = 1024
+_MAX_URL_CHARS = 2048
+_MAX_TRAJECTORY_JSON_CHARS = 1_000_000
 
 
 def normalize_public_scan_category(value: str) -> str:
@@ -65,14 +69,45 @@ class TokenResponse(BaseModel):
 class RunCreateRequest(BaseModel):
     """Submit a new test run."""
 
-    name: str | None = Field(None, description="Human-readable name for this run")
-    test_suite_code: str | None = Field(None, description="Inline Python code for the test suite")
+    name: str | None = Field(None, description="Human-readable name for this run", max_length=255)
+    test_suite_code: str | None = Field(
+        None,
+        description="Inline Python code for the test suite",
+        max_length=_MAX_TEST_SUITE_CODE_CHARS,
+    )
     test_suite_path: str | None = Field(
-        None, description="Path to test suite on the server filesystem"
+        None,
+        description="Path to test suite on the server filesystem",
+        max_length=_MAX_PATH_CHARS,
     )
     config: dict[str, Any] | None = Field(
         default_factory=dict, description="Run configuration overrides"
     )
+
+    @field_validator("test_suite_path")
+    @classmethod
+    def validate_test_suite_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("test_suite_path must not be empty.")
+        parts = [part for part in normalized.replace("\\", "/").split("/") if part]
+        if any(part == ".." for part in parts):
+            raise ValueError(
+                "test_suite_path must not contain parent-directory traversal segments."
+            )
+        # Block absolute paths (POSIX and Windows)
+        from pathlib import Path
+        if Path(normalized).is_absolute() or ":\\" in normalized[:3] or normalized.startswith("/"):
+            raise ValueError("test_suite_path must be a relative path.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_run_target(self) -> RunCreateRequest:
+        if not self.test_suite_code and not self.test_suite_path:
+            raise ValueError("Provide either test_suite_code or test_suite_path.")
+        return self
 
 
 class RunResultEntry(BaseModel):
@@ -111,10 +146,17 @@ class RunListResponse(BaseModel):
 class TrajectoryUploadRequest(BaseModel):
     """Upload a golden trajectory."""
 
-    name: str = Field(..., description="Name for the trajectory")
+    name: str = Field(..., description="Name for the trajectory", min_length=1, max_length=255)
     data: dict[str, Any] = Field(..., description="Full trajectory JSON blob")
-    prompt: str | None = Field(None, description="Original prompt")
+    prompt: str | None = Field(None, description="Original prompt", max_length=10_000)
     tags: list[str] | None = Field(default_factory=list, description="Tags")
+
+    @model_validator(mode="after")
+    def validate_trajectory_payload_size(self) -> TrajectoryUploadRequest:
+        payload_size = len(str(self.data))
+        if payload_size > _MAX_TRAJECTORY_JSON_CHARS:
+            raise ValueError("Trajectory payload is too large.")
+        return self
 
 
 class TrajectoryResponse(BaseModel):
@@ -165,7 +207,7 @@ class ErrorResponse(BaseModel):
 
 
 class ProjectCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, description="Project name")
+    name: str = Field(..., min_length=1, max_length=200, description="Project name")
     description: str | None = Field(None, description="Optional project description")
 
 
@@ -184,8 +226,38 @@ class ProjectListResponse(BaseModel):
 
 
 class SavedAgentCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, description="Saved agent display name")
-    agent_url: str = Field(..., min_length=1, description="HTTP endpoint for the saved agent")
+    name: str = Field(..., min_length=1, max_length=255, description="Saved agent display name")
+    agent_url: str = Field(
+        ...,
+        min_length=1,
+        max_length=_MAX_URL_CHARS,
+        description="HTTP endpoint for the saved agent",
+    )
+
+    @field_validator("agent_url")
+    @classmethod
+    def validate_agent_url_shape(cls, value: str) -> str:
+        parsed = value.strip()
+        if not parsed:
+            raise ValueError("agent_url must not be empty.")
+        parts = parsed.split("://", 1)
+        if len(parts) != 2 or parts[0] not in {"http", "https"}:
+            raise ValueError("agent_url must start with http:// or https://.")
+        host_part = parts[1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if not host_part or host_part == ":":
+            raise ValueError("agent_url must include a valid hostname.")
+        # Block dangerous ports (SSRF mitigation)
+        _ssrf_blocked_ports = frozenset(
+            {22, 23, 25, 465, 587, 993, 995, 3306, 5432, 6379, 9200, 27017}
+        )
+        if ":" in host_part:
+            try:
+                port = int(host_part.rsplit(":", 1)[-1].strip("]"))
+                if port in _ssrf_blocked_ports:
+                    raise ValueError("agent_url port is not allowed.")
+            except (ValueError, IndexError):
+                pass  # non-numeric port in URL — let httpx reject it
+        return parsed
 
 
 class SavedAgentResponse(BaseModel):
@@ -204,7 +276,7 @@ class SavedAgentListResponse(BaseModel):
 
 
 class ScanPolicyCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, description="Saved scan policy name")
+    name: str = Field(..., min_length=1, max_length=200, description="Saved scan policy name")
     categories: list[str] | None = Field(
         default=None, description="Enabled categories; null means default scan categories"
     )
@@ -301,7 +373,11 @@ class ScanJobResponse(BaseModel):
 class ScanRequest(BaseModel):
     """Submit a scan request against an agent endpoint."""
 
-    agent_url: str | None = Field(None, description="HTTP endpoint URL of the agent to scan")
+    agent_url: str | None = Field(
+        None,
+        description="HTTP endpoint URL of the agent to scan",
+        max_length=_MAX_URL_CHARS,
+    )
     project_id: str | None = Field(None, description="Optional project id for a saved-agent scan")
     agent_id: str | None = Field(None, description="Optional saved agent id")
     policy_id: str | None = Field(None, description="Optional saved scan policy id")
@@ -312,6 +388,22 @@ class ScanRequest(BaseModel):
             "(safety, reliability, capability, robustness). Default: all"
         ),
     )
+
+    @field_validator("agent_url")
+    @classmethod
+    def validate_agent_url_shape(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        parsed = value.strip()
+        if not parsed:
+            raise ValueError("agent_url must not be empty.")
+        parts = parsed.split("://", 1)
+        if len(parts) != 2 or parts[0] not in {"http", "https"}:
+            raise ValueError("agent_url must start with http:// or https://.")
+        host_part = parts[1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if not host_part or host_part == ":":
+            raise ValueError("agent_url must include a valid hostname.")
+        return parsed
 
     @field_validator("categories")
     @classmethod
@@ -334,7 +426,7 @@ class ScanRequest(BaseModel):
 
 class DomainScoreResponse(BaseModel):
     name: str
-    score: float
+    score: float = Field(ge=0, le=100)
     grade: str
     findings: list[str]
     recommendations: list[str]
@@ -349,13 +441,13 @@ class ScanResponse(BaseModel):
     policy_id: str | None = None
     release_verdict: str | None = None
     verdict_reasons: list[str] = Field(default_factory=list)
-    overall_score: float
+    overall_score: float = Field(ge=0, le=100)
     overall_grade: str
     domain_scores: list[DomainScoreResponse]
     summary: str
-    behaviors_tested: int
-    behaviors_passed: int
-    behaviors_failed: int
+    behaviors_tested: int = Field(ge=0)
+    behaviors_passed: int = Field(ge=0)
+    behaviors_failed: int = Field(ge=0)
     critical_issues: list[str]
     timestamp: str
 

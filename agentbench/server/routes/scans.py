@@ -10,9 +10,10 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
 import httpx
@@ -24,6 +25,7 @@ from agentbench.scanner.analyzer import BehaviorAnalyzer
 from agentbench.scanner.prober import ALL_CATEGORIES, AgentProber
 from agentbench.scanner.scorer import DomainScore, ScanReport, ScoringEngine
 from agentbench.scanner.store import ScanStore, ServerScanStore
+from agentbench.server import models as server_models
 from agentbench.server.auth import require_auth
 from agentbench.server.config import settings
 from agentbench.server.models import (
@@ -32,8 +34,6 @@ from agentbench.server.models import (
     ScanJob,
     ScanPolicy,
     get_db,
-    get_engine,
-    get_session_factory,
 )
 from agentbench.server.schemas import (
     PUBLIC_SCAN_CATEGORY_TO_PROBE_CATEGORIES,
@@ -50,6 +50,10 @@ from agentbench.server.schemas import (
 router = APIRouter(prefix="/scans", tags=["scans"])
 
 logger = logging.getLogger(__name__)
+
+
+class ScanCancelledError(Exception):
+    """Raised when a scan is cooperatively cancelled during execution."""
 
 # ---------------------------------------------------------------------------
 # In-memory scan storage — LRU-bounded, thread-safe
@@ -97,6 +101,8 @@ class _LRUScanStore:
 
 
 _scan_store = _LRUScanStore(maxsize=settings.scan_memory_cap)
+_rate_limit_window_by_principal: dict[str, list[float]] = {}
+_rate_limit_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Scan job execution — bounded thread pool
@@ -107,14 +113,151 @@ _job_executor = ThreadPoolExecutor(
     thread_name_prefix="agentbench-scan",
 )
 
+# Semaphore to limit concurrent sync-scan waits so they don't starve the
+# FastAPI thread pool.  Each sync scan blocks one thread while polling.
+_sync_scan_semaphore = threading.Semaphore(max(1, settings.scan_max_workers))
+
 # ---------------------------------------------------------------------------
 # Scan persistence store — "local" (SQLite file) or "server" (SQLAlchemy DB)
 # ---------------------------------------------------------------------------
 
-if settings.scan_store_mode == "server":
-    store = ServerScanStore(engine=get_engine())
-else:
-    store = ScanStore()
+store: ScanStore | ServerScanStore | None = None
+
+
+def _get_store() -> ScanStore | ServerScanStore:
+    """Lazily initialize the configured scan store."""
+    global store
+    if store is None:
+        if settings.scan_store_mode == "server":
+            store = ServerScanStore(engine=server_models.get_engine())
+        else:
+            store = ScanStore()
+    return store
+
+
+def _enforce_scan_rate_limit(principal: str) -> None:
+    """Reject bursty scan submissions for a single principal."""
+    now = time.monotonic()
+    window = settings.scan_rate_limit_window_seconds
+    limit = settings.scan_rate_limit_max_requests
+    with _rate_limit_lock:
+        # Prune entries for principals with no recent activity
+        stale = [
+            p
+            for p, timestamps in _rate_limit_window_by_principal.items()
+            if not timestamps or now - timestamps[-1] > window
+        ]
+        for p in stale:
+            del _rate_limit_window_by_principal[p]
+
+        recent = _rate_limit_window_by_principal.setdefault(principal, [])
+        recent[:] = [ts for ts in recent if now - ts < window]
+        if len(recent) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many scan submissions. Please wait and try again.",
+            )
+        recent.append(now)
+
+
+_queue_admission_lock = threading.Lock()
+
+
+def _enforce_scan_queue_limits(
+    db: Session, principal: str, resolved: ResolvedScanRequest,
+) -> ScanJob:
+    """Atomically check queue limits AND create the ScanJob under one lock.
+
+    Returns a committed ScanJob.  Eliminates TOCTOU between the queue
+    check and the row insert.
+    """
+    inflight_statuses = ["queued", "running"]
+    with _queue_admission_lock:
+        principal_inflight = (
+            db.query(ScanJob)
+            .filter(
+                ScanJob.principal == principal,
+                ScanJob.status.in_(inflight_statuses),
+            )
+            .count()
+        )
+        if principal_inflight >= settings.scan_max_queued_per_principal:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    "Too many scans already queued for this principal. "
+                    "Wait for an active scan to finish."
+                ),
+            )
+
+        total_inflight = (
+            db.query(ScanJob)
+            .filter(ScanJob.status.in_(inflight_statuses))
+            .count()
+        )
+        if total_inflight >= settings.scan_max_queued_total:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="The scan queue is full right now. Please retry shortly.",
+            )
+
+        job = ScanJob(
+            principal=principal,
+            status="queued",
+            agent_url=resolved.agent_url,
+            project_id=resolved.project_id,
+            agent_id=resolved.agent_id,
+            policy_id=resolved.policy_id,
+            categories_json=json.dumps(resolved.categories)
+            if resolved.categories is not None
+            else None,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+    return job
+
+
+def _wait_for_scan_job_result(
+    db: Session,
+    job_id: str,
+    principal: str,
+    timeout_seconds: int,
+) -> ScanResponse:
+    """Wait for an async scan job and return its completed report."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        db.expire_all()
+        job = _get_scan_job_or_404(db, job_id, principal)
+        if job.status == "completed":
+            resolved = _resolve_scan_record(job.scan_id or "", principal=principal)
+            if resolved is None:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Scan completed but the report could not be loaded.",
+                )
+            _, report = resolved
+            return report
+        if job.status == "failed":
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=job.error_detail or "Scan failed. Please retry shortly.",
+            )
+        if job.status == "cancelled":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Scan was cancelled before completion.",
+            )
+        time.sleep(0.5)
+
+    job = _get_scan_job_or_404(db, job_id, principal)
+    job.cancel_requested = 1
+    db.commit()
+    raise HTTPException(
+        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+        detail="Synchronous scan timed out. Use /api/v1/scans/jobs for long-running scans.",
+    )
 
 
 @dataclass(frozen=True)
@@ -141,9 +284,18 @@ class ResolvedScanRequest:
 
 
 def _is_safe_ip(ip_str: str) -> bool:
-    """Return *True* only for globally routable IP addresses."""
+    """Return *True* for globally routable IPs or explicit private allowlist entries."""
     ip = ipaddress.ip_address(ip_str)
-    return ip.is_global
+    if ip.is_global:
+        return True
+
+    for cidr in settings.allowed_private_cidrs:
+        try:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            logger.warning("Ignoring invalid AGENTBENCH_ALLOWED_PRIVATE_CIDRS entry: %s", cidr)
+    return False
 
 
 def _validate_agent_url(url: str) -> None:
@@ -164,10 +316,21 @@ def _validate_agent_url(url: str) -> None:
             detail="URL must contain a valid hostname.",
         )
 
+    # Restrict ports to standard HTTP/HTTPS
+    port = parsed.port
+    if port is not None and port not in (80, 443):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Non-standard port {port} is not allowed. Only ports 80 and 443 are permitted.",
+        )
+
     # Block well-known internal / cloud-metadata hostnames
     blocked_hostnames = {
         "localhost",
+        "host.docker.internal",
+        "kubernetes.default.svc",
         "metadata.google.internal",
+        "metadata.azure.com",
         "169.254.169.254",
         "100.100.100.200",
     }
@@ -332,7 +495,7 @@ def _evaluate_release_verdict(
         )
 
     if policy.max_regression_delta is not None:
-        previous_scans = store.list_scans(agent_url=agent_url, principal=principal, limit=1)
+        previous_scans = _get_store().list_scans(agent_url=agent_url, principal=principal, limit=1)
         if previous_scans:
             previous_score = previous_scans[0]["overall_score"]
             delta = report.overall_score - previous_score
@@ -389,13 +552,21 @@ def _scan_response_from_persisted(scan_row: dict | None) -> ScanResponse | None:
     domains = payload.get("domains", [])
     timestamp = payload.get("timestamp", scan_row.get("created_at", datetime.now(UTC).isoformat()))
 
+    # project_id can come from: (1) the DB row directly, (2) top-level payload,
+    # or (3) nested inside payload["metadata"] (local ScanStore format)
+    meta = payload.get("metadata", {})
+
     return ScanResponse(
         scan_id=scan_row["id"],
-        project_id=payload.get("project_id"),
-        agent_id=payload.get("agent_id"),
-        policy_id=payload.get("policy_id"),
-        release_verdict=payload.get("release_verdict"),
-        verdict_reasons=payload.get("verdict_reasons", []),
+        project_id=(
+            scan_row.get("project_id")
+            or payload.get("project_id")
+            or meta.get("project_id")
+        ),
+        agent_id=payload.get("agent_id") or meta.get("agent_id"),
+        policy_id=payload.get("policy_id") or meta.get("policy_id"),
+        release_verdict=payload.get("release_verdict") or meta.get("release_verdict"),
+        verdict_reasons=payload.get("verdict_reasons") or meta.get("verdict_reasons") or [],
         overall_score=payload.get("overall_score", scan_row["overall_score"]),
         overall_grade=payload.get("grade", scan_row["grade"]),
         domain_scores=[
@@ -437,7 +608,7 @@ def _resolve_scan_record(
     if entry is not None and (principal is None or entry.get("principal") == principal):
         return entry["agent_url"], entry["report"]
 
-    persisted = store.get_scan(scan_id, principal=principal)
+    persisted = _get_store().get_scan(scan_id, principal=principal)
     response = _scan_response_from_persisted(persisted)
     if persisted is None or response is None:
         return None
@@ -446,7 +617,10 @@ def _resolve_scan_record(
 
 def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> ScanShareResponse:
     """Build share-friendly text blocks and a permalink for a scan."""
-    permalink = f"/?scan_id={scan_id}"
+    # Build absolute permalink using configured base URL or request context
+    base_url = settings.base_url.rstrip("/") if settings.base_url else ""
+    relative = f"/?scan_id={scan_id}"
+    absolute_permalink = f"{base_url}{relative}"
     title = f"AgentBench report — {report.overall_grade} ({round(report.overall_score)}/100)"
     domain_lines = "\n".join(
         f"- {domain.name}: {domain.grade} ({round(domain.score)}/100)"
@@ -455,10 +629,11 @@ def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> 
     critical_issues = (
         "\n".join(f"- {issue}" for issue in report.critical_issues) or "- No critical issues found."
     )
+    # Use absolute permalink in copy-paste text so links work outside the app
     markdown = (
         f"# {title}\n\n"
         f"Scan ID: {scan_id}\n"
-        f"Permalink: {permalink}\n\n"
+        f"Permalink: {absolute_permalink}\n\n"
         f"Overall: {report.overall_grade} ({round(report.overall_score)}/100)\n"
         f"Release verdict: {(report.release_verdict or 'not-set').upper()}\n"
         f"Behaviors: {report.behaviors_passed}/{report.behaviors_tested} passed\n\n"
@@ -469,7 +644,7 @@ def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> 
     slack_text = (
         f"{title}\n"
         f"Scan ID: {scan_id}\n"
-        f"Permalink: {permalink}\n"
+        f"Permalink: {absolute_permalink}\n"
         f"Overall: {report.overall_grade} ({round(report.overall_score)}/100)\n"
         f"Release verdict: {(report.release_verdict or 'not-set').upper()}\n"
         f"Behaviors: {report.behaviors_passed}/{report.behaviors_tested} passed\n"
@@ -480,7 +655,7 @@ def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> 
     return ScanShareResponse(
         scan_id=scan_id,
         agent_url=agent_url,
-        permalink=permalink,
+        permalink=absolute_permalink,
         title=title,
         markdown=markdown,
         slack_text=slack_text,
@@ -490,9 +665,17 @@ def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> 
 def _policy_snapshot_from_model(policy: ScanPolicy | None) -> PolicySnapshot | None:
     if policy is None:
         return None
+    try:
+        domain_scores = json.loads(policy.minimum_domain_scores_json)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(
+            "Corrupt minimum_domain_scores_json for policy %s; defaulting to empty",
+            policy.id,
+        )
+        domain_scores = {}
     return PolicySnapshot(
         minimum_overall_score=policy.minimum_overall_score,
-        minimum_domain_scores=json.loads(policy.minimum_domain_scores_json),
+        minimum_domain_scores=domain_scores,
         fail_on_critical_issues=bool(policy.fail_on_critical_issues),
         max_regression_delta=policy.max_regression_delta,
     )
@@ -544,7 +727,7 @@ def _persist_scan_response(
 ) -> None:
     # Write to persistent store FIRST — if this fails, don't cache stale data
     persistable_report = _coerce_scan_report(report_response, score_report)
-    store.save_scan(
+    _get_store().save_scan(
         scan_id,
         resolved.agent_url,
         persistable_report,
@@ -571,10 +754,11 @@ def _persist_scan_response(
 def _execute_resolved_scan(
     resolved: ResolvedScanRequest,
     principal: str,
+    cancel_fn: Callable[[], bool] | None = None,
 ) -> tuple[ScanResponse, object | None]:
     scan_id = str(uuid.uuid4())
     try:
-        result = _run_scan(resolved.agent_url, resolved.categories)
+        result = _run_scan(resolved.agent_url, resolved.categories, cancel_fn=cancel_fn)
         if isinstance(result, tuple):
             report_response, score_report = result
         else:
@@ -598,9 +782,10 @@ def _execute_resolved_scan(
         )
         return report_response, score_report
     except Exception as exc:
+        logger.exception("Failed to scan agent endpoint %s", resolved.agent_url)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to scan agent at {resolved.agent_url}: {exc}",
+            detail="Scan failed. Check the agent endpoint and try again.",
         ) from exc
 
 
@@ -646,13 +831,25 @@ def _get_scan_job_or_404(db: Session, job_id: str, principal: str) -> ScanJob:
 
 
 def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequest) -> None:
-    factory = get_session_factory()
+    factory = server_models.get_session_factory()
     db = factory()
     deadline = time.monotonic() + settings.scan_timeout_seconds
     try:
         job = db.query(ScanJob).filter(ScanJob.id == job_id, ScanJob.principal == principal).first()
         if job is None:
             return
+
+        # Check timeout BEFORE setting running — avoids transient state leak
+        if time.monotonic() > deadline:
+            if bool(job.cancel_requested):
+                job.status = "cancelled"
+            else:
+                job.status = "failed"
+                job.error_detail = "Scan timed out before execution started (queue backlog)."
+            job.completed_at = datetime.now(UTC)
+            db.commit()
+            return
+
         if bool(job.cancel_requested):
             job.status = "cancelled"
             job.completed_at = datetime.now(UTC)
@@ -663,23 +860,36 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         job.started_at = datetime.now(UTC)
         db.commit()
 
-        # Check timeout and cancellation before running
-        if time.monotonic() > deadline:
+        try:
+            # Cooperatively check cancellation from DB between probes
+            def _is_cancelled() -> bool:
+                try:
+                    db.expire_all()
+                    j = (
+                        db.query(ScanJob)
+                        .filter(ScanJob.id == job_id)
+                        .first()
+                    )
+                    return j is not None and bool(j.cancel_requested)
+                except Exception:
+                    return False
+
+            report, score_report = _execute_resolved_scan(
+                resolved, principal, cancel_fn=_is_cancelled,
+            )
+        except ScanCancelledError:
             job = (
                 db.query(ScanJob)
                 .filter(ScanJob.id == job_id, ScanJob.principal == principal)
                 .first()
             )
             if job is not None:
-                job.status = "failed"
-                job.error_detail = "Scan timed out before execution started (queue backlog)."
+                job.status = "cancelled"
+                job.error_detail = "Scan was cancelled during execution."
                 job.completed_at = datetime.now(UTC)
                 db.commit()
             return
-
-        try:
-            report, score_report = _execute_resolved_scan(resolved, principal)
-        except HTTPException as exc:
+        except HTTPException:
             job = (
                 db.query(ScanJob)
                 .filter(ScanJob.id == job_id, ScanJob.principal == principal)
@@ -688,11 +898,11 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
             if job is None:
                 return
             job.status = "failed"
-            job.error_detail = str(exc.detail)
+            job.error_detail = "Scan failed. Check the agent endpoint and try again."
             job.completed_at = datetime.now(UTC)
             db.commit()
             return
-        except Exception as exc:
+        except Exception:
             # Generic catch-all — prevents stuck 'running' jobs
             logger.exception("Unhandled exception in scan job %s", job_id)
             job = (
@@ -702,7 +912,7 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
             )
             if job is not None:
                 job.status = "failed"
-                job.error_detail = f"Internal error: {exc}"
+                job.error_detail = "Internal error while processing the scan job."
                 job.completed_at = datetime.now(UTC)
                 db.commit()
             return
@@ -734,20 +944,26 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
             db.commit()
             return
 
+        # Set scan_id AND commit so ServerScanStore.save_scan() (which opens
+        # its own session) can see the row by scan_id.  A bare flush() is not
+        # enough — other sessions won't see uncommitted data under SQLite WAL.
+        job.scan_id = report.scan_id
+        db.commit()
+
         _persist_scan_response(
             report.scan_id or str(uuid.uuid4()), principal, resolved, report, score_report
         )
         job.status = "completed"
-        job.scan_id = report.scan_id
         job.release_verdict = report.release_verdict
         job.verdict_reasons_json = json.dumps(report.verdict_reasons)
         job.overall_score = report.overall_score
         job.overall_grade = report.overall_grade
         # Persist full report data into the ScanJob row for server-backed queries
-        if isinstance(store, ServerScanStore):
+        current_store = _get_store()
+        if isinstance(current_store, ServerScanStore):
             persistable = _coerce_scan_report(report, score_report)
             job.report_json = json.dumps(
-                store._report_to_dict(
+                current_store._report_to_dict(
                     persistable,
                     metadata={
                         "project_id": report.project_id,
@@ -783,21 +999,14 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         db.close()
 
 
-def _create_scan_job(resolved: ResolvedScanRequest, principal: str, db: Session) -> ScanJob:
-    job = ScanJob(
-        principal=principal,
-        status="queued",
-        agent_url=resolved.agent_url,
-        project_id=resolved.project_id,
-        agent_id=resolved.agent_id,
-        policy_id=resolved.policy_id,
-        categories_json=json.dumps(resolved.categories)
-        if resolved.categories is not None
-        else None,
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+def _create_scan_job(
+    job: ScanJob, resolved: ResolvedScanRequest, principal: str, db: Session,
+) -> ScanJob:
+    """Submit the pre-created ScanJob to the thread-pool executor.
+
+    The ScanJob is already committed to the DB by ``_enforce_scan_queue_limits``
+    so there is no TOCTOU window.
+    """
     try:
         _job_executor.submit(_run_scan_job_worker, job.id, principal, resolved)
     except RuntimeError:
@@ -811,10 +1020,16 @@ def _create_scan_job(resolved: ResolvedScanRequest, principal: str, db: Session)
 
 def fail_stale_scan_jobs() -> None:
     """Mark orphaned queued/running jobs as failed after a process restart."""
-    factory = get_session_factory()
+    factory = server_models.get_session_factory()
     db = factory()
     try:
-        rows = db.query(ScanJob).filter(ScanJob.status.in_(["queued", "running"])).all()
+        cutoff = datetime.now(UTC) - timedelta(seconds=max(settings.scan_timeout_seconds * 2, 60))
+        rows = (
+            db.query(ScanJob)
+            .filter(ScanJob.status.in_(["queued", "running"]))
+            .filter(ScanJob.created_at.is_not(None), ScanJob.created_at < cutoff)
+            .all()
+        )
         now = datetime.now(UTC)
         for job in rows:
             job.status = "failed"
@@ -834,17 +1049,21 @@ def _list_recent_scans(
     principal: str | None = None,
 ) -> list[ScanSummaryResponse]:
     """List scans, preferring persisted rows and falling back to in-memory cache."""
-    persisted_rows = store.list_scans(principal=principal, limit=limit, offset=offset)
+    persisted_rows = _get_store().list_scans(principal=principal, limit=limit, offset=offset)
     if persisted_rows:
         return [_scan_summary_from_persisted(row) for row in persisted_rows]
 
     entries = _scan_store.values()
+    # Filter + sort in-memory; LRU store is bounded by scan_memory_cap
+    filtered = [e for e in entries if principal is None or e.get("principal") == principal]
     sorted_entries = sorted(
-        [entry for entry in entries if principal is None or entry.get("principal") == principal],
+        filtered,
         key=lambda e: e.get("timestamp", ""),
         reverse=True,
     )
-    page = sorted_entries[offset : offset + limit]
+    # Safety: cap offset to prevent negative slice
+    safe_offset = min(offset, len(sorted_entries))
+    page = sorted_entries[safe_offset : safe_offset + limit]
     return [
         ScanSummaryResponse(
             scan_id=e["scan_id"],
@@ -857,32 +1076,57 @@ def _list_recent_scans(
     ]
 
 
-def _run_scan(agent_url: str, categories: list[str] | None) -> tuple[ScanResponse, object]:
+def _run_scan(
+    agent_url: str,
+    categories: list[str] | None,
+    cancel_fn: Callable[[], bool] | None = None,
+) -> tuple[ScanResponse, object]:
     """Execute the full prober → analyzer → scorer pipeline synchronously.
 
     Returns (ScanResponse, ScanReport) so callers can persist the rich report.
+
+    If *cancel_fn* is provided, it is called between probe categories.
+    If it returns True the scan aborts early with whatever results exist.
     """
     cats = _expand_scan_categories(categories)
+
+    # Create a single httpx.Client for the entire scan (reuses TCP connection)
+    transport = SafeDNSTransport()
+    client = httpx.Client(
+        timeout=30.0,
+        transport=transport,
+        follow_redirects=False,
+        max_response_size=5 * 1024 * 1024,  # 5 MB max response
+    )
 
     # Wrap the agent URL in a simple callable for the prober
     def _agent_fn(prompt: str) -> str:
         """Send *prompt* to the agent via HTTP and return the response text."""
-        transport = SafeDNSTransport()
-        with httpx.Client(timeout=30.0, transport=transport) as client:
-            resp = client.post(
-                agent_url,
-                json={"prompt": prompt},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            # Support common response shapes
-            if isinstance(data, dict):
-                return data.get("response", data.get("output", str(data)))
-            return str(data)
+        if cancel_fn is not None and cancel_fn():
+            raise ScanCancelledError("Scan cancelled before probe.")
+        resp = client.post(
+            agent_url,
+            json={"prompt": prompt},
+        )
+        resp.raise_for_status()
+        # Verify the response is JSON — reject non-JSON content types
+        ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if ct and ct not in ("application/json", "text/json"):
+            # Allow missing content-type but reject explicit non-JSON
+            if "html" in ct or "xml" in ct or "text/plain" in ct:
+                return f"[non-JSON response: {ct}]"
+        data = resp.json()
+        # Support common response shapes
+        if isinstance(data, dict):
+            return data.get("response", data.get("output", str(data)))
+        return str(data)
 
-    # 1. Probe
-    prober = AgentProber(agent_fn=_agent_fn, categories=cats)
-    session = prober.probe_all()
+    try:
+        # 1. Probe
+        prober = AgentProber(agent_fn=_agent_fn, categories=cats)
+        session = prober.probe_all()
+    finally:
+        client.close()
 
     # 2. Analyze
     analyzer = BehaviorAnalyzer(use_llm=settings.scanner_use_llm)
@@ -931,13 +1175,25 @@ def submit_scan(
     principal: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> ScanResponse:
-    """Scan an agent and return the full report immediately.
-
-    The scan runs synchronously (38 probes, no LLM) and typically completes
-    in under a minute.
-    """
-    resolved = _resolve_scan_request(body, principal, db)
-    return _run_resolved_scan(resolved, principal)
+    """Scan an agent and wait for the async job result up to a bounded timeout."""
+    if not _sync_scan_semaphore.acquire(blocking=False):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many concurrent sync scans. Use /api/v1/scans/jobs for async scanning.",
+        )
+    try:
+        resolved = _resolve_scan_request(body, principal, db)
+        _enforce_scan_rate_limit(principal)
+        job = _enforce_scan_queue_limits(db, principal, resolved)
+        job = _create_scan_job(job, resolved, principal, db)
+        return _wait_for_scan_job_result(
+            db,
+            job.id,
+            principal,
+            settings.sync_scan_wait_timeout_seconds,
+        )
+    finally:
+        _sync_scan_semaphore.release()
 
 
 @router.post(
@@ -952,7 +1208,9 @@ def submit_scan_job(
 ) -> ScanJobResponse:
     """Create an async scan job and return immediately with a pollable job id."""
     resolved = _resolve_scan_request(body, principal, db)
-    job = _create_scan_job(resolved, principal, db)
+    _enforce_scan_rate_limit(principal)
+    job = _enforce_scan_queue_limits(db, principal, resolved)
+    job = _create_scan_job(job, resolved, principal, db)
     return _scan_job_to_response(job)
 
 
@@ -980,14 +1238,35 @@ def cancel_scan_job(
     db: Session = Depends(get_db),
 ) -> ScanJobResponse:
     """Request cancellation for a running or queued scan job."""
-    job = _get_scan_job_or_404(db, job_id, principal)
-    job.cancel_requested = 1
-    if job.status == "queued":
-        job.status = "cancelled"
-        job.error_detail = "Scan job was cancelled before execution started."
-        job.completed_at = datetime.now(UTC)
+    queued_cancelled = (
+        db.query(ScanJob)
+        .filter(
+            ScanJob.id == job_id,
+            ScanJob.principal == principal,
+            ScanJob.status == "queued",
+        )
+        .update(
+            {
+                ScanJob.cancel_requested: 1,
+                ScanJob.status: "cancelled",
+                ScanJob.error_detail: "Scan job was cancelled before execution started.",
+                ScanJob.completed_at: datetime.now(UTC),
+            },
+            synchronize_session=False,
+        )
+    )
     db.commit()
-    db.refresh(job)
+
+    job = _get_scan_job_or_404(db, job_id, principal)
+    should_mark_running_job = (
+        not queued_cancelled
+        and job.status in {"queued", "running"}
+        and not bool(job.cancel_requested)
+    )
+    if should_mark_running_job:
+        job.cancel_requested = 1
+        db.commit()
+        db.refresh(job)
     return _scan_job_to_response(job)
 
 
@@ -1020,7 +1299,12 @@ def scan_history(
     principal: str = Depends(require_auth),
 ) -> list[ScanHistoryEntryResponse]:
     """List persisted scan history for a specific agent URL."""
-    return store.list_scans(agent_url=agent_url, principal=principal, limit=limit, offset=offset)
+    return _get_store().list_scans(
+        agent_url=agent_url,
+        principal=principal,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(
@@ -1032,7 +1316,7 @@ def regression_report(
     principal: str = Depends(require_auth),
 ) -> RegressionReportResponse:
     """Get regression report comparing the two latest scans for an agent."""
-    report = store.get_regression_report(agent_url, principal=principal)
+    report = _get_store().get_regression_report(agent_url, principal=principal)
     if report is None:
         raise HTTPException(
             status_code=404,

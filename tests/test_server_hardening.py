@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -144,7 +144,17 @@ class TestBoundedJobPool:
                 categories=None,
                 policy=None,
             )
-            job = scans_mod._create_scan_job(resolved, "test-user", db)
+            job = scans_mod._create_scan_job(
+                scans_mod.ScanJob(
+                    principal="test-user",
+                    status="queued",
+                    agent_url=resolved.agent_url,
+                    project_id=resolved.project_id,
+                    agent_id=resolved.agent_id,
+                    policy_id=resolved.policy_id,
+                ),
+                resolved, "test-user", db,
+            )
             assert job.status == "failed"
             assert "queue is full" in (job.error_detail or "").lower()
             db.close()
@@ -273,6 +283,14 @@ class TestWALMode:
             timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
         assert timeout >= 5000
 
+    def test_private_allowlist_accepts_configured_cidr(self, monkeypatch):
+        """Configured private CIDRs are treated as safe for SSRF checks."""
+        import agentbench.server.routes.scans as scans_mod
+
+        monkeypatch.setattr(scans_mod.settings, "allowed_private_cidrs", ["10.0.0.0/8"])
+        assert scans_mod._is_safe_ip("10.1.2.3") is True
+        assert scans_mod._is_safe_ip("192.168.1.10") is False
+
 
 # ---------------------------------------------------------------------------
 # 6. Generic exception handler in worker
@@ -388,6 +406,7 @@ class TestPeriodicReaper:
             principal="test",
             status="running",
             agent_url="https://example.com/agent",
+            created_at=datetime.now(UTC) - timedelta(seconds=1200),
         )
         db.add(job)
         db.commit()

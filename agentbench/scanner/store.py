@@ -3,21 +3,29 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from agentbench.scanner.scorer import _DOMAIN_WEIGHTS, ScanReport
 
 DEFAULT_DB_PATH = Path.home() / ".agentbench" / "scans.db"
+DEFAULT_RETENTION_DAYS = int(os.getenv("AGENTBENCH_RETENTION_DAYS", "90"))
 
 
 class ScanStore:
     """Persistent storage for scan results."""
 
-    def __init__(self, db_path: Path | str | None = None):
+    def __init__(
+        self,
+        db_path: Path | str | None = None,
+        retention_days: int | None = None,
+    ):
         self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+        self._retention_days = DEFAULT_RETENTION_DAYS if retention_days is None else retention_days
+        self._save_count: int = 0
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -25,6 +33,14 @@ class ScanStore:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA foreign_keys=ON")
+            # Activate incremental vacuum; requires a one-time VACUUM if the
+            # database was previously created with auto_vacuum = NONE (0) or
+            # FULL (1).
+            current_vacuum = conn.execute("PRAGMA auto_vacuum").fetchone()[0]
+            if current_vacuum != 2:  # 2 == INCREMENTAL
+                conn.execute("PRAGMA auto_vacuum=INCREMENTAL")
+                conn.execute("VACUUM")
             conn.execute("""CREATE TABLE IF NOT EXISTS scans (
                 id TEXT PRIMARY KEY,
                 principal TEXT NOT NULL DEFAULT '',
@@ -46,7 +62,7 @@ class ScanStore:
                 weight REAL NOT NULL,
                 behaviors_total INTEGER,
                 behaviors_passed INTEGER,
-                FOREIGN KEY (scan_id) REFERENCES scans(id)
+                FOREIGN KEY (scan_id) REFERENCES scans(id) ON DELETE CASCADE
             )""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_scans_agent ON scans(agent_url)""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_scans_created ON scans(created_at)""")
@@ -54,11 +70,52 @@ class ScanStore:
                 "CREATE INDEX IF NOT EXISTS "
                 "idx_scans_principal_agent ON scans(principal, agent_url)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_domain_scores_scan_id ON domain_scores(scan_id)"
+            )
+
+        # Periodic cleanup: only run during init if the DB file predates today,
+        # avoiding unnecessary I/O on every server restart.
+        try:
+            mtime = self._db_path.stat().st_mtime
+            from datetime import date
+            if date.fromtimestamp(mtime) < date.today():
+                self.cleanup_old_scans()
+        except OSError:
+            pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
         return conn
+
+    def cleanup_old_scans(self, retention_days: int | None = None) -> int:
+        """Delete expired scans and their domain scores, returning the scan count removed."""
+        days = self._retention_days if retention_days is None else retention_days
+        if days <= 0:
+            return 0
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            expired_ids = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT id FROM scans WHERE created_at < ?",
+                    (cutoff,),
+                ).fetchall()
+            ]
+            if not expired_ids:
+                return 0
+
+            placeholders = ",".join("?" for _ in expired_ids)
+            conn.execute(
+                f"DELETE FROM domain_scores WHERE scan_id IN ({placeholders})",
+                expired_ids,
+            )
+            conn.execute(f"DELETE FROM scans WHERE id IN ({placeholders})", expired_ids)
+            conn.execute("PRAGMA incremental_vacuum")
+            return len(expired_ids)
 
     def save_scan(
         self,
@@ -74,7 +131,7 @@ class ScanStore:
         with self._connect() as conn:
             conn.execute(
                 (
-                    "INSERT INTO scans "
+                    "INSERT OR REPLACE INTO scans "
                     "(id, principal, agent_url, created_at, "
                     "overall_score, grade, report_json, duration_ms) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
@@ -90,8 +147,14 @@ class ScanStore:
                     duration_ms,
                 ),
             )
+            conn.execute("DELETE FROM domain_scores WHERE scan_id = ?", (scan_id,))
             for domain in report.domain_scores:
                 weight = _DOMAIN_WEIGHTS.get(domain.name.lower(), 0.0)
+                # Per-domain behavior counts: derived from findings count as a
+                # proxy.  TODO: track actual per-domain pass/fail in the
+                # ScoringEngine for accurate counts.
+                domain_total = len(domain.findings)
+                domain_passed = max(0, round(domain_total * domain.score / 100))
                 conn.execute(
                     (
                         "INSERT INTO domain_scores "
@@ -105,10 +168,15 @@ class ScanStore:
                         domain.score,
                         domain.grade,
                         weight,
-                        0,
-                        0,
+                        domain_total,
+                        domain_passed,
                     ),
                 )
+
+        # Periodic cleanup — only every 10 saves to reduce I/O overhead.
+        self._save_count = getattr(self, "_save_count", 0) + 1
+        if self._save_count % 10 == 0:
+            self.cleanup_old_scans()
 
     def get_scan(
         self,
@@ -254,7 +322,9 @@ class ScanStore:
             "timestamp": report.timestamp.isoformat(),
         }
         if metadata:
-            payload.update(metadata)
+            # Merge metadata under a dedicated key to avoid overwriting
+            # core report fields (overall_score, grade, domains, etc.).
+            payload["metadata"] = metadata
         return payload
 
 
@@ -312,19 +382,21 @@ class ServerScanStore:
 
         session = self._get_session()
         try:
+            # Look up by scan_id first, then by id — prevents creating a
+            # duplicate row when the caller sets scan_id on the job *after*
+            # calling save_scan.
             job = session.query(ScanJob).filter(ScanJob.scan_id == scan_id).first()
             if job is None:
-                # Fallback: create a new ScanJob row if there's no match
-                job = ScanJob(
-                    id=scan_id,
-                    principal=principal,
-                    status="completed",
-                    agent_url=agent_url,
-                    scan_id=scan_id,
-                    overall_score=report.overall_score,
-                    overall_grade=report.overall_grade,
+                job = session.query(ScanJob).filter(ScanJob.id == scan_id).first()
+            if job is None:
+                # No matching ScanJob — this should not happen in normal flows.
+                # Log and return rather than silently creating a phantom row.
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "ServerScanStore.save_scan: no ScanJob found for scan_id=%s; skipping.",
+                    scan_id,
                 )
-                session.add(job)
+                return
 
             report_dict = self._report_to_dict(report, metadata=metadata)
             job.report_json = json.dumps(report_dict)
@@ -340,7 +412,10 @@ class ServerScanStore:
             )
             job.overall_score = report.overall_score
             job.overall_grade = report.overall_grade
-            session.commit()
+            # Flush instead of commit — let the caller control the transaction
+            # boundary.  The scan worker in routes/scans.py owns the session
+            # lifecycle and will commit after all writes are done.
+            session.flush()
         except Exception:
             session.rollback()
             raise
@@ -494,7 +569,9 @@ class ServerScanStore:
             "timestamp": report.timestamp.isoformat(),
         }
         if metadata:
-            payload.update(metadata)
+            # Merge metadata under a dedicated key to avoid overwriting
+            # core report fields (overall_score, grade, domains, etc.).
+            payload["metadata"] = metadata
         return payload
 
     @staticmethod
@@ -504,6 +581,7 @@ class ServerScanStore:
             "id": job.scan_id or job.id,
             "principal": job.principal,
             "agent_url": job.agent_url,
+            "project_id": job.project_id,
             "created_at": job.created_at.isoformat() if job.created_at else "",
             "overall_score": job.overall_score,
             "grade": job.overall_grade,

@@ -17,18 +17,19 @@ def _make_result(
     probe_id: str | None = None,
     status: str | None = None,
 ) -> ProbeResult:
-    """Build a ProbeResult. *probe_id* and *status* go into metadata."""
+    """Build a ProbeResult. *probe_id* sets the _id field (used by .probe_id property)."""
     metadata: dict = {}
-    if probe_id is not None:
-        metadata["probe_id"] = probe_id
     if status is not None:
         metadata["status"] = status
-    return ProbeResult(
+    result = ProbeResult(
         category=category,
         prompt=prompt,
         response=response,
         metadata=metadata,
     )
+    if probe_id is not None:
+        result._id = probe_id
+    return result
 
 
 def _make_session(*results: ProbeResult) -> ProbeSession:

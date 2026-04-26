@@ -254,7 +254,11 @@ def diff(
         console.print(f"[red]Golden trajectory not found: {golden}[/red]")
         raise typer.Exit(1)
 
-    golden_data = json.loads(golden_path.read_text())
+    try:
+        golden_data = json.loads(golden_path.read_text())
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Invalid JSON in golden trajectory: {exc}[/red]")
+        raise typer.Exit(1) from exc
 
     # Load or run current
     if current:
@@ -262,7 +266,11 @@ def diff(
         if not current_path.exists():
             console.print(f"[red]Current trajectory not found: {current}[/red]")
             raise typer.Exit(1)
-        current_data = json.loads(current_path.read_text())
+        try:
+            current_data = json.loads(current_path.read_text())
+        except json.JSONDecodeError as exc:
+            console.print(f"[red]Invalid JSON in current trajectory: {exc}[/red]")
+            raise typer.Exit(1) from exc
     else:
         # Auto re-run: find the adapter and execute with the same prompt
         prompt = golden_data.get("prompt", golden_data.get("input_prompt", ""))
@@ -495,7 +503,7 @@ def list_tests(
 
 @app.command()
 def serve(
-    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
+    host: str = typer.Option("0.0.0.0", "--host", "-H", help="Bind host"),
     port: int = typer.Option(8000, "--port", "-p", help="Bind port"),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev only)"),
 ) -> None:
@@ -708,8 +716,8 @@ def scan(
     categories: str | None = typer.Option(
         None,
         "--categories",
-        "-k",
-        help="Comma-separated categories: safety,capability,consistency,error_handling",
+        "-C",
+        help="Comma-separated categories: capability,safety,edge_case,persona,robustness",
     ),
     no_run: bool = typer.Option(
         False, "--no-run", help="Skip running generated tests after writing"
@@ -736,11 +744,11 @@ def scan(
             # Try importing as module:var
             console.print("[dim]No adapter discovered from path, trying module import…[/dim]")
             agent = _load_agent_from_module(path)
-    elif ":" in path:
-        agent = _load_agent_from_module(path)
     elif path.startswith("http://") or path.startswith("https://"):
         # HTTP endpoint — create a callable wrapper
         agent = _load_agent_from_url(path)
+    elif ":" in path:
+        agent = _load_agent_from_module(path)
     else:
         agent = _load_agent_from_module(path)
 
@@ -814,15 +822,23 @@ def scan(
     if not no_run:
         console.print("\n[bold]Step 5:[/bold] Running generated tests…")
         try:
+            import shutil
             import subprocess
 
-            result = subprocess.run(
-                ["python", "-m", "pytest", str(output_path), "-v"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            console.print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout)
+            pytest_bin = shutil.which("pytest") or shutil.which("py.test")
+            if pytest_bin is None:
+                console.print(
+                    "[yellow]pytest not found. Install it with: pip install pytest[/yellow]\n"
+                    f"[dim]Run manually with: pytest {output_path}[/dim]"
+                )
+            else:
+                result = subprocess.run(
+                    [pytest_bin, str(output_path), "-v"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                console.print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout)
         except Exception as exc:
             console.print(f"[yellow]Could not run tests: {exc}[/yellow]")
     else:
@@ -847,16 +863,14 @@ def _load_agent_from_module(path: str) -> Any:
 
 def _load_agent_from_url(url: str) -> Any:
     """Create a callable agent wrapper for an HTTP endpoint."""
-    import json
-    import urllib.request
+    import httpx
 
     def _call(prompt: str, context: dict | None = None) -> str:
-        payload = json.dumps({"prompt": prompt, "context": context or {}}).encode()
-        req = urllib.request.Request(
-            url, data=payload, headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
+        payload = {"prompt": prompt, "context": context or {}}
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
             return data.get("response", data.get("output", str(data)))
 
     return _call

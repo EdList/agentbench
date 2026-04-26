@@ -15,8 +15,9 @@ cd agentbench
 python -m venv .venv
 source .venv/bin/activate
 
-# Install in development mode with all dev dependencies
-pip install -e ".[dev]"
+# Install pinned development dependencies
+pip install -r requirements-dev.lock
+pip install -e . --no-deps
 
 # Verify the setup
 agentbench --help
@@ -37,7 +38,8 @@ pytest
 
 ```bash
 # Core + dev dependencies (pytest, ruff, mypy, pre-commit)
-pip install -e ".[dev]"
+pip install -r requirements-dev.lock
+pip install -e . --no-deps
 
 # Optional: install framework adapters for integration testing
 pip install -e ".[langchain]"

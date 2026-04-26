@@ -90,7 +90,8 @@ jobs:
 
       - name: "Install dependencies"
         run: |
-          pip install -e ".[dev,server]"
+          pip install -r requirements-dev.lock
+          pip install -e . --no-deps
 
       - name: "Run pytest"
         run: |
@@ -113,7 +114,9 @@ jobs:
           python-version: "3.11"
 
       - name: "Install ruff"
-        run: pip install ruff
+        run: |
+          pip install -r requirements-dev.lock
+          pip install -e . --no-deps
 
       - name: "Run ruff check"
         run: ruff check .

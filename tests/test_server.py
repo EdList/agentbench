@@ -131,6 +131,15 @@ class TestAuth:
         )
         assert resp.status_code == 201
 
+    def test_invalid_bearer_token_returns_generic_message(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/runs",
+            json={"test_suite_code": "print('hello')"},
+            headers={"Authorization": "Bearer definitely-invalid"},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Provide a valid X-API-Key header or Bearer token."
+
     def test_api_key_principals_do_not_collide_on_shared_prefix(self, monkeypatch):
         from agentbench.server.auth import require_auth
 
@@ -164,7 +173,7 @@ class TestRuns:
     def test_submit_run_with_path(self, client: TestClient):
         resp = client.post(
             "/api/v1/runs",
-            json={"test_suite_path": "/tmp/tests"},
+            json={"test_suite_path": "tests/suite.py"},
             headers=HEADERS,
         )
         assert resp.status_code == 201
@@ -175,6 +184,22 @@ class TestRuns:
         resp = client.post(
             "/api/v1/runs",
             json={"name": "empty run"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 422
+
+    def test_submit_run_rejects_path_traversal(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/runs",
+            json={"test_suite_path": "../secrets.py"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 422
+
+    def test_submit_run_rejects_oversized_inline_code(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/runs",
+            json={"test_suite_code": "x" * 100_001},
             headers=HEADERS,
         )
         assert resp.status_code == 422
@@ -283,6 +308,14 @@ class TestTrajectories:
         assert data["name"] == "golden-run-1"
         assert data["step_count"] == 2
         assert "golden" in data["tags"]
+
+    def test_upload_trajectory_rejects_oversized_payload(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/trajectories",
+            json={"name": "too-big", "data": {"blob": "x" * 1_000_100}, "prompt": "Say hello"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 422
 
     def test_list_trajectories(self, client: TestClient):
         resp = client.get("/api/v1/trajectories", headers=HEADERS)
@@ -418,7 +451,7 @@ class TestConfig:
         with pytest.raises(ValueError):
             ServerConfig()
 
-    def test_debug_config_allows_dev_defaults(self, monkeypatch):
+    def test_debug_config_generates_dev_defaults(self, monkeypatch):
         from agentbench.server.config import ServerConfig
 
         monkeypatch.delenv("AGENTBENCH_SECRET_KEY", raising=False)
@@ -427,14 +460,50 @@ class TestConfig:
 
         cfg = ServerConfig()
         assert cfg.debug is True
-        assert cfg.secret_key == "dev-secret-change-me"
-        assert cfg.api_keys == ["dev-key"]
+        assert cfg.secret_key.startswith("dev-secret-")
+        assert cfg.secret_key != "dev-secret-change-me"
+        assert len(cfg.api_keys) == 1
+        assert cfg.api_keys[0].startswith("dev-key-")
+        assert cfg.api_keys[0] != "dev-key"
 
     def test_cors_origins_default(self):
         from agentbench.server.config import ServerConfig
 
         cfg = ServerConfig()
         assert "*" in cfg.cors_origins
+        assert cfg.cors_allow_credentials is False
+
+    def test_production_rejects_wildcard_cors_with_credentials(self, monkeypatch):
+        from agentbench.server.config import ServerConfig
+
+        monkeypatch.setenv("AGENTBENCH_SECRET_KEY", "prod-secret")
+        monkeypatch.setenv("AGENTBENCH_API_KEYS", "prod-key")
+        monkeypatch.setenv("AGENTBENCH_CORS_ALLOW_CREDENTIALS", "true")
+        monkeypatch.delenv("AGENTBENCH_DEBUG", raising=False)
+
+        with pytest.raises(ValueError, match="CORS_ALLOW_CREDENTIALS"):
+            ServerConfig()
+
+    def test_debug_disables_wildcard_credentials(self, monkeypatch):
+        from agentbench.server.config import ServerConfig
+
+        monkeypatch.setenv("AGENTBENCH_DEBUG", "true")
+        monkeypatch.setenv("AGENTBENCH_CORS_ALLOW_CREDENTIALS", "true")
+
+        cfg = ServerConfig()
+        assert cfg.cors_allow_credentials is False
+
+    def test_allowed_private_cidrs_parsed(self, monkeypatch):
+        from agentbench.server.config import ServerConfig
+
+        monkeypatch.setenv("AGENTBENCH_DEBUG", "true")
+        monkeypatch.setenv(
+            "AGENTBENCH_ALLOWED_PRIVATE_CIDRS",
+            "10.0.0.0/8, 192.168.0.0/16",
+        )
+
+        cfg = ServerConfig()
+        assert cfg.allowed_private_cidrs == ["10.0.0.0/8", "192.168.0.0/16"]
 
 
 # ---------------------------------------------------------------------------

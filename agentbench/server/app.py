@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from agentbench.server.config import settings
-from agentbench.server.models import create_tables
+from agentbench.server.models import cleanup_old_records, create_tables
 from agentbench.server.routes import agents, policies, projects, runs, scans, trajectories
 from agentbench.server.schemas import HealthResponse
 
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
         import asyncio
 
         create_tables()
+        cleanup_old_records()
         scans.fail_stale_scan_jobs()
 
         # Periodic stale-job reaper
@@ -37,9 +39,11 @@ def create_app() -> FastAPI:
             while True:
                 await asyncio.sleep(_REAPER_INTERVAL)
                 try:
+                    cleanup_old_records()
                     scans.fail_stale_scan_jobs()
                 except Exception:
-                    pass  # Don't crash the reaper
+                    import logging as _reaper_log
+                    _reaper_log.getLogger(__name__).warning("Reaper error", exc_info=True)
 
         reaper_task = asyncio.create_task(_reaper_loop())
         try:
@@ -63,10 +67,24 @@ def create_app() -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_credentials=settings.cors_allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Global request body size limit (1 MB default)
+    _max_body = int(os.getenv("AGENTBENCH_MAX_BODY_BYTES", "1048576"))
+
+    @application.middleware("http")
+    async def _limit_body_size(request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > _max_body:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body too large."},
+            )
+        return await call_next(request)
 
     # Health check — not versioned
     @application.get("/health", response_model=HealthResponse, tags=["health"])

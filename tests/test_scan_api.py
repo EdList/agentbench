@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import socket
-from unittest.mock import patch
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import ANY, MagicMock, patch
 
 import httpx
 import pytest
@@ -26,11 +28,13 @@ auth_settings.secret_key = "test-secret-key-for-agentbench-32bytes"
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     """Create a fresh TestClient with isolated in-memory and SQLite scan stores."""
+    import agentbench.server.models as models_mod
     import agentbench.server.routes.scans as scans_mod
 
     scans_mod._scan_store.clear()
+    scans_mod._rate_limit_window_by_principal.clear()
     scans_mod.store = scans_mod.ScanStore(db_path=tmp_path / "scans.db")
     engine = create_engine(
         f"sqlite:///{tmp_path / 'server.db'}",
@@ -38,6 +42,8 @@ def client(tmp_path):
     )
     Base.metadata.create_all(bind=engine)
     test_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    monkeypatch.setattr(models_mod, "_engine", engine, raising=False)
+    monkeypatch.setattr(models_mod, "_SessionLocal", test_session, raising=False)
 
     def _override_get_db():
         db = test_session()
@@ -256,7 +262,9 @@ class TestSubmitScan:
             headers=_auth_headers(),
         )
         assert resp.status_code == 200
-        mock_run.assert_called_once_with("https://public-host.example.com/agent", None)
+        mock_run.assert_called_once_with(
+            "https://public-host.example.com/agent", None, cancel_fn=ANY,
+        )
 
     @patch("agentbench.server.routes.scans._run_scan")
     def test_submit_scan_success(self, mock_run, client):
@@ -281,6 +289,29 @@ class TestSubmitScan:
         assert "behaviors_failed" in data
         assert "critical_issues" in data
         assert "timestamp" in data
+
+    @patch("agentbench.server.routes.scans._run_scan")
+    def test_submit_scan_rate_limits_bursts(self, mock_run, client, monkeypatch):
+        """Per-principal rate limiting returns 429 once the window is exceeded."""
+        import agentbench.server.routes.scans as scans_mod
+
+        mock_run.return_value = _make_scan_response()
+        monkeypatch.setattr(scans_mod.settings, "scan_rate_limit_max_requests", 1)
+        monkeypatch.setattr(scans_mod.settings, "scan_rate_limit_window_seconds", 60)
+
+        first = client.post(
+            "/api/v1/scans",
+            json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
+        )
+        second = client.post(
+            "/api/v1/scans",
+            json={"agent_url": "https://example.com/agent"},
+            headers=_auth_headers(),
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 429
 
     @patch("agentbench.server.routes.scans._run_scan")
     def test_submit_scan_with_categories(self, mock_run, client):
@@ -354,6 +385,7 @@ class TestSubmitScan:
             headers=_auth_headers(),
         )
         assert resp.status_code == 502
+        assert resp.json()["detail"] == "Scan failed. Check the agent endpoint and try again."
 
     @patch("agentbench.server.routes.scans._run_scan")
     def test_submit_scan_passes_categories(self, mock_run, client):
@@ -371,6 +403,7 @@ class TestSubmitScan:
         mock_run.assert_called_once_with(
             "https://example.com/agent",
             ["safety", "capability"],
+            cancel_fn=ANY,
         )
 
     @patch("agentbench.server.routes.scans._run_scan")
@@ -386,6 +419,7 @@ class TestSubmitScan:
         mock_run.assert_called_once_with(
             "https://example.com/agent",
             None,
+            cancel_fn=ANY,
         )
 
 
@@ -446,6 +480,56 @@ class TestSafeDNSTransport:
         response = transport.handle_request(request)
         assert response is expected
 
+    def test_run_scan_disables_redirect_following(self, monkeypatch):
+        """The scanner client must not follow redirects when probing agents."""
+        import agentbench.server.routes.scans as scans_mod
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"response": "ok"}
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.post.return_value = mock_response
+        client_ctor = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(scans_mod.httpx, "Client", client_ctor)
+
+        class _FakeProber:
+            def __init__(self, agent_fn, categories):
+                self._agent_fn = agent_fn
+
+            def probe_all(self):
+                self._agent_fn("hello")
+                return object()
+
+        class _FakeAnalyzer:
+            def __init__(self, use_llm=False):
+                self.use_llm = use_llm
+
+            def analyze(self, session):
+                return ["behavior"]
+
+        class _FakeEngine:
+            def score(self, behaviors):
+                return SimpleNamespace(
+                    overall_score=80.0,
+                    overall_grade="B",
+                    domain_scores=[],
+                    summary="ok",
+                    behaviors_tested=1,
+                    behaviors_passed=1,
+                    behaviors_failed=0,
+                    critical_issues=[],
+                    timestamp=datetime.now(UTC),
+                )
+
+        monkeypatch.setattr(scans_mod, "AgentProber", _FakeProber)
+        monkeypatch.setattr(scans_mod, "BehaviorAnalyzer", _FakeAnalyzer)
+        monkeypatch.setattr(scans_mod, "ScoringEngine", _FakeEngine)
+
+        scans_mod._run_scan("https://example.com/agent", None)
+
+        assert client_ctor.call_args.kwargs["follow_redirects"] is False
+
 
 class TestScanCategoryExpansion:
     def test_expand_scan_categories_maps_public_domains_to_internal_probe_categories(self):
@@ -505,7 +589,11 @@ class TestProjectBackedScans:
         assert data["policy_id"] == policy["id"]
         assert data["release_verdict"] == "pass"
         assert data["verdict_reasons"] == []
-        mock_run.assert_called_once_with("https://example.com/agent", ["safety", "reliability"])
+        mock_run.assert_called_once_with(
+            "https://example.com/agent",
+            ["safety", "reliability"],
+            cancel_fn=ANY,
+        )
 
     @patch("agentbench.server.routes.scans._run_scan")
     def test_submit_scan_returns_fail_verdict_when_policy_threshold_is_missed(
