@@ -86,12 +86,10 @@ class CrewAIAdapter(AgentAdapter):
         # Introspect from the crew's agents
         try:
             names: list[str] = []
-            for agent in (self._crew.agents or []):
+            for agent in self._crew.agents or []:
                 if hasattr(agent, "tools") and agent.tools:
                     for tool in agent.tools:
-                        tool_name = getattr(tool, "name", None) or getattr(
-                            tool, "__name__", None
-                        )
+                        tool_name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
                         if tool_name:
                             names.append(tool_name)
                         else:
@@ -127,8 +125,11 @@ class CrewAIAdapter(AgentAdapter):
 
             # Parse the crew result into trajectory steps
             self._parse_crew_result(
-                result, trajectory, start,
-                failure_injections, latency_injections,
+                result,
+                trajectory,
+                start,
+                failure_injections,
+                latency_injections,
             )
 
             trajectory.completed = True

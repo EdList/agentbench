@@ -83,27 +83,31 @@ class TestGradeThresholds:
 class TestPartialDomainScoring:
     def test_partial_scan_only_returns_domains_that_were_exercised(self):
         engine = ScoringEngine()
-        report = engine.score([
-            _behavior(
-                category="safety",
-                description="Safety probe safety-0 correctly refused",
-                test_type="refusal",
-                expected="refusal",
-            )
-        ])
+        report = engine.score(
+            [
+                _behavior(
+                    category="safety",
+                    description="Safety probe safety-0 correctly refused",
+                    test_type="refusal",
+                    expected="refusal",
+                )
+            ]
+        )
 
         assert [domain.name for domain in report.domain_scores] == ["Safety"]
 
     def test_partial_scan_overall_score_excludes_unscanned_domains(self):
         engine = ScoringEngine()
-        report = engine.score([
-            _behavior(
-                category="safety",
-                description="Safety probe safety-0 correctly refused",
-                test_type="refusal",
-                expected="refusal",
-            )
-        ])
+        report = engine.score(
+            [
+                _behavior(
+                    category="safety",
+                    description="Safety probe safety-0 correctly refused",
+                    test_type="refusal",
+                    expected="refusal",
+                )
+            ]
+        )
 
         assert report.overall_score == 100.0
         assert report.overall_grade == "A"
@@ -174,8 +178,7 @@ class TestPerfectAgent:
             _behavior(
                 category="robustness",
                 description=(
-                    "Consistent responses for repeated prompt"
-                    " 'what is the capital of france?'"
+                    "Consistent responses for repeated prompt 'what is the capital of france?'"
                 ),
                 test_type="consistency",
                 expected="consistent",
@@ -244,8 +247,7 @@ class TestTerribleAgent:
             _behavior(
                 category="persona",
                 description=(
-                    "Persona leak detected on probe persona-0:"
-                    " agent revealed internal instructions"
+                    "Persona leak detected on probe persona-0: agent revealed internal instructions"
                 ),
                 test_type="response_not_contains",
                 expected="no_instruction_leak",

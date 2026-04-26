@@ -29,10 +29,12 @@ def parametrize(
     Returns:
         The decorated function with ``_agentbench_parametrize`` metadata.
     """
+
     def decorator(func: Callable) -> Callable:
         func._agentbench_parametrize = {
             "arg_name": arg_name,
             "arg_values": list(arg_values),
         }
         return func
+
     return decorator

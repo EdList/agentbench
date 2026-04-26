@@ -32,6 +32,7 @@ from agentbench.property.shrink import (
 # Helper utilities
 # ===================================================================
 
+
 def _make_trajectory(
     steps=None,
     final_response="done",
@@ -75,6 +76,7 @@ def _step(
 # ===================================================================
 # AgentInput generator
 # ===================================================================
+
 
 class TestAgentInput:
     def test_generates_string(self):
@@ -127,6 +129,7 @@ class TestAgentInput:
 # ToolCallGen
 # ===================================================================
 
+
 class TestToolCallGen:
     def test_generates_list_of_tool_calls(self):
         gen = ToolCallGen()
@@ -162,6 +165,7 @@ class TestToolCallGen:
 # ConversationGen
 # ===================================================================
 
+
 class TestConversationGen:
     def test_generates_conversation(self):
         gen = ConversationGen()
@@ -191,6 +195,7 @@ class TestConversationGen:
 # TrajectoryGen
 # ===================================================================
 
+
 class TestTrajectoryGen:
     def test_generates_trajectory(self):
         from agentbench.core.test import AgentTrajectory
@@ -216,6 +221,7 @@ class TestTrajectoryGen:
 # Generator composition: map, filter, chain
 # ===================================================================
 
+
 class TestGeneratorComposition:
     def test_map(self):
         gen = AgentInput(max_length=100).map(str.upper)
@@ -224,9 +230,7 @@ class TestGeneratorComposition:
             assert v == v.upper()
 
     def test_filter(self):
-        gen = AgentInput(min_length=20, max_length=200).filter(
-            lambda v: len(v) >= 20
-        )
+        gen = AgentInput(min_length=20, max_length=200).filter(lambda v: len(v) >= 20)
         for _ in range(10):
             v = gen.generate()
             assert len(v) >= 20
@@ -240,11 +244,7 @@ class TestGeneratorComposition:
         assert isinstance(value, str)
 
     def test_filter_with_map(self):
-        gen = (
-            AgentInput(min_length=10)
-            .filter(lambda v: len(v) >= 10)
-            .map(str.strip)
-        )
+        gen = AgentInput(min_length=10).filter(lambda v: len(v) >= 10).map(str.strip)
         for _ in range(10):
             v = gen.generate()
             assert len(v) >= 10
@@ -253,6 +253,7 @@ class TestGeneratorComposition:
 # ===================================================================
 # Shrinking engine
 # ===================================================================
+
 
 class TestShrink:
     def test_shrink_string_to_empty(self):
@@ -339,6 +340,7 @@ class TestShrink:
 # Generator shrinking helpers
 # ===================================================================
 
+
 class TestGeneratorShrinking:
     def test_agent_input_shrink_value(self):
         gen = AgentInput()
@@ -379,6 +381,7 @@ class TestGeneratorShrinking:
 # ===================================================================
 # Property wrapper
 # ===================================================================
+
 
 class TestProperty:
     def test_property_passes(self):
@@ -434,6 +437,7 @@ class TestProperty:
 # @property_test decorator
 # ===================================================================
 
+
 class TestPropertyTestDecorator:
     def test_creates_property(self):
         @property_test(gen=AgentInput(max_length=50), runs=5)
@@ -463,6 +467,7 @@ class TestPropertyTestDecorator:
 # Built-in property: no_pii_leakage
 # ===================================================================
 
+
 class TestNoPIILeakage:
     def test_passes_when_no_pii(self):
         def safe_run(prompt):
@@ -473,9 +478,7 @@ class TestNoPIILeakage:
 
     def test_fails_when_pii_exposed(self):
         def leaky_run(prompt):
-            return _make_trajectory(
-                [_step(response="SSN: 123-45-6789")]
-            )
+            return _make_trajectory([_step(response="SSN: 123-45-6789")])
 
         results = no_pii_leakage(leaky_run, runs=1)
         assert any(not r.passed for r in results)
@@ -491,6 +494,7 @@ class TestNoPIILeakage:
 # ===================================================================
 # Built-in property: bounded_steps
 # ===================================================================
+
 
 class TestBoundedSteps:
     def test_passes_within_limit(self):
@@ -511,6 +515,7 @@ class TestBoundedSteps:
 # ===================================================================
 # Built-in property: consistent_behavior
 # ===================================================================
+
 
 class TestConsistentBehavior:
     def test_passes_when_consistent(self):
@@ -539,33 +544,27 @@ class TestConsistentBehavior:
 # Built-in property: no_hallucinated_tools
 # ===================================================================
 
+
 class TestNoHallucinatedTools:
     def test_passes_with_valid_tools(self):
         def good_run(prompt):
-            return _make_trajectory(
-                [_step(action="tool_call", tool_name="search")]
-            )
+            return _make_trajectory([_step(action="tool_call", tool_name="search")])
 
-        results = no_hallucinated_tools(
-            good_run, runs=3, available_tools=["search", "lookup"]
-        )
+        results = no_hallucinated_tools(good_run, runs=3, available_tools=["search", "lookup"])
         assert all(r.passed for r in results)
 
     def test_fails_with_hallucinated_tool(self):
         def bad_run(prompt):
-            return _make_trajectory(
-                [_step(action="tool_call", tool_name="made_up_tool")]
-            )
+            return _make_trajectory([_step(action="tool_call", tool_name="made_up_tool")])
 
-        results = no_hallucinated_tools(
-            bad_run, runs=1, available_tools=["search"]
-        )
+        results = no_hallucinated_tools(bad_run, runs=1, available_tools=["search"])
         assert any(not r.passed for r in results)
 
 
 # ===================================================================
 # Built-in property: graceful_degradation
 # ===================================================================
+
 
 class TestGracefulDegradation:
     def test_passes_on_graceful_handling(self):
@@ -598,11 +597,13 @@ class TestGracefulDegradation:
 # Package-level imports
 # ===================================================================
 
+
 class TestPackageImports:
     def test_imports_from_package(self):
         from agentbench.property import (
             AgentInput,
             shrink,
         )
+
         assert AgentInput is not None
         assert shrink is not None

@@ -55,6 +55,7 @@ def client(tmp_path):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _auth_headers() -> dict[str, str]:
     """Return headers with the primary test API key."""
     return {"X-API-Key": "test-api-key"}
@@ -144,7 +145,9 @@ class TestSubmitScan:
         assert resp.status_code == 400
 
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_submit_scan_rejects_dns_resolved_private_ipv4_host(self, mock_run, client, monkeypatch):
+    def test_submit_scan_rejects_dns_resolved_private_ipv4_host(
+        self, mock_run, client, monkeypatch
+    ):
         """A public-looking hostname must be rejected when DNS resolves it to private IPv4."""
         mock_run.return_value = _make_scan_response()
 
@@ -165,7 +168,9 @@ class TestSubmitScan:
         mock_run.assert_not_called()
 
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_submit_scan_rejects_dns_resolved_private_ipv6_host(self, mock_run, client, monkeypatch):
+    def test_submit_scan_rejects_dns_resolved_private_ipv6_host(
+        self, mock_run, client, monkeypatch
+    ):
         """A public-looking hostname must be rejected when DNS resolves it to private IPv6."""
         mock_run.return_value = _make_scan_response()
 
@@ -186,7 +191,9 @@ class TestSubmitScan:
         mock_run.assert_not_called()
 
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_submit_scan_rejects_host_with_mixed_public_and_private_dns_results(self, mock_run, client, monkeypatch):
+    def test_submit_scan_rejects_host_with_mixed_public_and_private_dns_results(
+        self, mock_run, client, monkeypatch
+    ):
         """Mixed DNS answers must be rejected if any resolved address is private."""
         mock_run.return_value = _make_scan_response()
 
@@ -208,7 +215,9 @@ class TestSubmitScan:
         mock_run.assert_not_called()
 
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_submit_scan_rejects_dns_resolved_carrier_grade_nat_host(self, mock_run, client, monkeypatch):
+    def test_submit_scan_rejects_dns_resolved_carrier_grade_nat_host(
+        self, mock_run, client, monkeypatch
+    ):
         """Carrier-grade NAT space is non-global and must be rejected."""
         mock_run.return_value = _make_scan_response()
 
@@ -331,6 +340,7 @@ class TestSubmitScan:
         assert resp.status_code == 200
 
         import agentbench.server.routes.scans as scans_mod
+
         assert len(scans_mod._scan_store) == 1
 
     @patch("agentbench.server.routes.scans._run_scan")
@@ -417,7 +427,11 @@ class TestSafeDNSTransport:
                 (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 0)),
             ]
 
-        expected = httpx.Response(200, json={"response": "ok"}, request=httpx.Request("POST", "https://public.example.com/agent"))
+        expected = httpx.Response(
+            200,
+            json={"response": "ok"},
+            request=httpx.Request("POST", "https://public.example.com/agent"),
+        )
 
         def _fake_super(self, request):
             assert str(request.url) == "https://public.example.com/agent"
@@ -437,7 +451,9 @@ class TestScanCategoryExpansion:
     def test_expand_scan_categories_maps_public_domains_to_internal_probe_categories(self):
         import agentbench.server.routes.scans as scans_mod
 
-        assert scans_mod._expand_scan_categories(["safety", "reliability", "capability", "robustness"]) == [
+        assert scans_mod._expand_scan_categories(
+            ["safety", "reliability", "capability", "robustness"]
+        ) == [
             "safety",
             "persona",
             "edge_case",
@@ -464,7 +480,11 @@ class TestProjectBackedScans:
         ).json()
         policy = client.post(
             f"/api/v1/projects/{project['id']}/policies",
-            json={"name": "Release Gate", "categories": ["safety", "reliability"], "minimum_domain_scores": {}},
+            json={
+                "name": "Release Gate",
+                "categories": ["safety", "reliability"],
+                "minimum_domain_scores": {},
+            },
             headers=_auth_headers(),
         ).json()
 
@@ -488,7 +508,9 @@ class TestProjectBackedScans:
         mock_run.assert_called_once_with("https://example.com/agent", ["safety", "reliability"])
 
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_submit_scan_returns_fail_verdict_when_policy_threshold_is_missed(self, mock_run, client):
+    def test_submit_scan_returns_fail_verdict_when_policy_threshold_is_missed(
+        self, mock_run, client
+    ):
         """Policy thresholds should produce a fail verdict with explicit reasons."""
         mock_run.return_value = _make_scan_response(overall_score=72.0, overall_grade="C")
 
@@ -545,7 +567,11 @@ class TestProjectBackedScans:
         ).json()
         policy = client.post(
             f"/api/v1/projects/{project['id']}/policies",
-            json={"name": "Release Gate", "fail_on_critical_issues": True, "minimum_domain_scores": {}},
+            json={
+                "name": "Release Gate",
+                "fail_on_critical_issues": True,
+                "minimum_domain_scores": {},
+            },
             headers=_auth_headers(),
         ).json()
 
@@ -565,8 +591,13 @@ class TestProjectBackedScans:
         assert any("critical issue" in reason.lower() for reason in data["verdict_reasons"])
 
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_submit_scan_returns_fail_verdict_when_regression_delta_exceeds_policy(self, mock_run, client):
-        """Regression delta thresholds should fail the release gate when the latest scan drops too far."""
+    def test_submit_scan_returns_fail_verdict_when_regression_delta_exceeds_policy(
+        self, mock_run, client
+    ):
+        """Regression delta thresholds should fail the release gate.
+
+        This happens when the latest scan drops too far.
+        """
         mock_run.side_effect = [
             _make_scan_response(overall_score=90.0, overall_grade="A"),
             _make_scan_response(overall_score=60.0, overall_grade="D"),
@@ -878,7 +909,9 @@ class TestHistoryEndpoint:
     def test_history_openapi_uses_typed_schema(self, client):
         """History endpoint should advertise a concrete response schema in OpenAPI."""
         openapi = client.get("/openapi.json").json()
-        schema = openapi["paths"]["/api/v1/scans/history/{agent_url}"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = openapi["paths"]["/api/v1/scans/history/{agent_url}"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]
         assert schema["type"] == "array"
         assert schema["items"]["$ref"].endswith("/ScanHistoryEntryResponse")
 
@@ -922,7 +955,9 @@ class TestRegressionEndpoint:
     def test_regression_openapi_uses_typed_schema(self, client):
         """Regression endpoint should advertise a concrete response schema in OpenAPI."""
         openapi = client.get("/openapi.json").json()
-        schema = openapi["paths"]["/api/v1/scans/regression/{agent_url}"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = openapi["paths"]["/api/v1/scans/regression/{agent_url}"]["get"]["responses"][
+            "200"
+        ]["content"]["application/json"]["schema"]
         assert schema["$ref"].endswith("/RegressionReportResponse")
 
 
@@ -983,5 +1018,7 @@ class TestShareEndpoint:
     def test_share_openapi_uses_typed_schema(self, client):
         """Share endpoint should advertise a concrete response schema in OpenAPI."""
         openapi = client.get("/openapi.json").json()
-        schema = openapi["paths"]["/api/v1/scans/{scan_id}/share"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        schema = openapi["paths"]["/api/v1/scans/{scan_id}/share"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]
         assert schema["$ref"].endswith("/ScanShareResponse")

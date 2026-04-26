@@ -60,6 +60,7 @@ def client(db_session) -> TestClient:
     # Patch the global session factory so the dependency uses our test session
     with patch("agentbench.server.models.get_session_factory") as mock_factory:
         mock_factory.return_value.return_value = db_session
+
         # We need get_db to yield our session
         def _override_get_db():
             yield db_session
@@ -83,6 +84,7 @@ HEADERS = {"X-API-Key": API_KEY}
 # Health check
 # ---------------------------------------------------------------------------
 
+
 class TestHealthCheck:
     def test_health_endpoint(self, client: TestClient):
         resp = client.get("/health")
@@ -95,6 +97,7 @@ class TestHealthCheck:
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
+
 
 class TestAuth:
     def test_no_api_key_returns_401(self, client: TestClient):
@@ -144,6 +147,7 @@ class TestAuth:
 # ---------------------------------------------------------------------------
 # Runs
 # ---------------------------------------------------------------------------
+
 
 class TestRuns:
     def test_submit_run_with_code(self, client: TestClient):
@@ -251,6 +255,7 @@ class TestRuns:
 # ---------------------------------------------------------------------------
 # Trajectories
 # ---------------------------------------------------------------------------
+
 
 class TestTrajectories:
     def test_upload_trajectory(self, client: TestClient):
@@ -362,13 +367,16 @@ class TestTrajectories:
         assert [traj["id"] for traj in own_list.json()["trajectories"]] == [own["id"]]
         assert [traj["name"] for traj in other_list.json()["trajectories"]] == ["other-traj"]
 
-        forbidden = client.get("/api/v1/trajectories/other-traj/diff", headers={"X-API-Key": "test-api-key"})
+        forbidden = client.get(
+            "/api/v1/trajectories/other-traj/diff", headers={"X-API-Key": "test-api-key"}
+        )
         assert forbidden.status_code == 404
 
 
 # ---------------------------------------------------------------------------
 # JWT token auth
 # ---------------------------------------------------------------------------
+
 
 class TestJWT:
     def test_create_and_decode_token(self):
@@ -397,6 +405,7 @@ class TestJWT:
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+
 
 class TestConfig:
     def test_production_config_requires_explicit_secret_and_api_keys(self, monkeypatch):
@@ -432,6 +441,7 @@ class TestConfig:
 # Models
 # ---------------------------------------------------------------------------
 
+
 class TestModels:
     def test_create_tables_in_memory(self):
         from agentbench.server.models import Base
@@ -443,7 +453,15 @@ class TestModels:
 
         inspector = sa_inspect(engine)
         table_names = inspector.get_table_names()
-        expected = {"users", "projects", "test_suites", "runs", "run_results", "trajectories", "scan_jobs"}
+        expected = {
+            "users",
+            "projects",
+            "test_suites",
+            "runs",
+            "run_results",
+            "trajectories",
+            "scan_jobs",
+        }
         assert expected.issubset(set(table_names))
 
     def test_run_model_defaults(self):

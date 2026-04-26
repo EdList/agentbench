@@ -10,6 +10,7 @@ from agentbench.core.test import AgentStep, AgentTest, AgentTrajectory
 
 # ─── Helpers ───
 
+
 def make_trajectory(
     steps: list[dict] | None = None,
     completed: bool = True,
@@ -22,12 +23,13 @@ def make_trajectory(
         final_response=final_response,
         error=error,
     )
-    for step_data in (steps or []):
+    for step_data in steps or []:
         traj.steps.append(AgentStep(**step_data))
     return traj
 
 
 # ─── Assertion Tests ───
+
 
 class TestExpectations:
     """Test the expect() assertion API."""
@@ -44,11 +46,7 @@ class TestExpectations:
 
     def test_to_complete_within(self):
         steps = [
-            {
-                "step_number": i, "action": "llm_response",
-                "response": f"step {i}"
-            }
-            for i in range(5)
+            {"step_number": i, "action": "llm_response", "response": f"step {i}"} for i in range(5)
         ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
@@ -56,11 +54,7 @@ class TestExpectations:
 
     def test_to_complete_within_fails(self):
         steps = [
-            {
-                "step_number": i, "action": "llm_response",
-                "response": f"step {i}"
-            }
-            for i in range(15)
+            {"step_number": i, "action": "llm_response", "response": f"step {i}"} for i in range(15)
         ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
@@ -68,8 +62,12 @@ class TestExpectations:
 
     def test_to_use_tool(self):
         steps = [
-            {"step_number": 0, "action": "tool_call", "tool_name": "search",
-             "tool_output": "results"},
+            {
+                "step_number": 0,
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_output": "results",
+            },
             {"step_number": 1, "action": "llm_response", "response": "Found it"},
         ]
         traj = make_trajectory(steps=steps)
@@ -94,8 +92,12 @@ class TestExpectations:
 
     def test_to_not_expose(self):
         steps = [
-            {"step_number": 0, "action": "tool_call", "tool_name": "payment",
-             "tool_output": "Card ****1234 processed"},
+            {
+                "step_number": 0,
+                "action": "tool_call",
+                "tool_name": "payment",
+                "tool_output": "Card ****1234 processed",
+            },
             {"step_number": 1, "action": "llm_response", "response": "Payment successful"},
         ]
         traj = make_trajectory(steps=steps)
@@ -105,8 +107,12 @@ class TestExpectations:
 
     def test_to_not_expose_fails(self):
         steps = [
-            {"step_number": 0, "action": "tool_call", "tool_name": "logging",
-             "tool_output": "User card: 4111111111111111"},
+            {
+                "step_number": 0,
+                "action": "tool_call",
+                "tool_name": "logging",
+                "tool_output": "User card: 4111111111111111",
+            },
         ]
         traj = make_trajectory(steps=steps)
         result = expect(traj).to_not_expose("4111111111111111")
@@ -136,8 +142,12 @@ class TestExpectations:
         steps = [
             {"step_number": 0, "action": "tool_call", "tool_name": "search", "error": "timeout"},
             {"step_number": 1, "action": "retry", "response": "retrying"},
-            {"step_number": 2, "action": "tool_call",
-             "tool_name": "search", "tool_output": "results"},
+            {
+                "step_number": 2,
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_output": "results",
+            },
             {"step_number": 3, "action": "llm_response", "response": "Done"},
         ]
         traj = make_trajectory(steps=steps, completed=True)
@@ -146,7 +156,12 @@ class TestExpectations:
 
     def test_to_retry_requires_an_actual_retry_step(self):
         steps = [
-            {"step_number": 0, "action": "tool_call", "tool_name": "search", "tool_output": "results"},
+            {
+                "step_number": 0,
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_output": "results",
+            },
             {"step_number": 1, "action": "llm_response", "response": "Done"},
         ]
         traj = make_trajectory(steps=steps, completed=True)
@@ -191,8 +206,12 @@ class TestExpectations:
 
     def test_chained_expectations(self):
         steps = [
-            {"step_number": 0, "action": "tool_call",
-             "tool_name": "search", "tool_output": "results"},
+            {
+                "step_number": 0,
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_output": "results",
+            },
             {"step_number": 1, "action": "llm_response", "response": "Found it"},
         ]
         traj = make_trajectory(steps=steps, completed=True, final_response="Found it")
@@ -210,20 +229,24 @@ class TestExpectations:
 
 # ─── Trajectory Tests ───
 
+
 class TestTrajectory:
     def test_step_count(self):
-        traj = make_trajectory(steps=[
-            {"step_number": i, "action": "llm_response", "response": f"s{i}"}
-            for i in range(5)
-        ])
+        traj = make_trajectory(
+            steps=[
+                {"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(5)
+            ]
+        )
         assert traj.step_count == 5
 
     def test_tool_calls(self):
-        traj = make_trajectory(steps=[
-            {"step_number": 0, "action": "tool_call", "tool_name": "search"},
-            {"step_number": 1, "action": "llm_response", "response": "ok"},
-            {"step_number": 2, "action": "tool_call", "tool_name": "calculate"},
-        ])
+        traj = make_trajectory(
+            steps=[
+                {"step_number": 0, "action": "tool_call", "tool_name": "search"},
+                {"step_number": 1, "action": "llm_response", "response": "ok"},
+                {"step_number": 2, "action": "tool_call", "tool_name": "calculate"},
+            ]
+        )
         assert len(traj.tool_calls) == 2
         assert len(traj.tool_calls_by_name("search")) == 1
 
@@ -236,6 +259,7 @@ class TestTrajectory:
 
 
 # ─── RawAPI Adapter Tests ───
+
 
 class TestRawAPIAdapter:
     def test_function_adapter(self):
@@ -260,8 +284,12 @@ class TestRawAPIAdapter:
             return {
                 "response": "Here's the weather",
                 "steps": [
-                    {"action": "tool_call", "tool_name": "weather_api",
-                     "tool_input": {"city": "NYC"}, "tool_output": "72°F sunny"},
+                    {
+                        "action": "tool_call",
+                        "tool_name": "weather_api",
+                        "tool_input": {"city": "NYC"},
+                        "tool_output": "72°F sunny",
+                    },
                     {"action": "llm_response", "response": "It's 72°F and sunny in NYC"},
                 ],
             }
@@ -294,6 +322,7 @@ class TestRawAPIAdapter:
 
 # ─── AgentTest Integration Tests ───
 
+
 class TestAgentTestIntegration:
     def test_run_with_adapter(self):
         def echo_agent(prompt: str, context=None):
@@ -323,6 +352,7 @@ class TestAgentTestIntegration:
 
 # ─── Edge Case: Agent Timeout ───
 
+
 class TestAgentTimeout:
     """Tests for agent timeout handling in the runner."""
 
@@ -331,6 +361,7 @@ class TestAgentTimeout:
 
         def hanging_agent(prompt: str, context=None):
             import time
+
             time.sleep(10)  # Hang for 10 seconds
             return {"response": "done", "steps": []}
 
@@ -351,11 +382,15 @@ class TestAgentTimeout:
 
     def test_fast_test_passes_under_timeout(self):
         """A fast test should pass within the timeout."""
+
         class FastSuite(AgentTest):
             agent = "fast"
-            adapter = RawAPIAdapter(func=lambda p, c=None: {
-                "response": "done", "steps": [{"action": "llm_response", "response": "done"}]
-            })
+            adapter = RawAPIAdapter(
+                func=lambda p, c=None: {
+                    "response": "done",
+                    "steps": [{"action": "llm_response", "response": "done"}],
+                }
+            )
 
             def test_fast(self):
                 self.run("fast")
@@ -366,8 +401,10 @@ class TestAgentTimeout:
 
     def test_timeout_error_message_includes_diagnosis(self):
         """Timeout error should include what went wrong, expected, and suggested fix."""
+
         def slow_agent(prompt: str, context=None):
             import time
+
             time.sleep(10)
             return {"response": "late", "steps": []}
 
@@ -391,16 +428,21 @@ class TestAgentTimeout:
 
 # ─── Edge Case: Agent Crash ───
 
+
 class TestAgentCrash:
     """Tests for agent crash handling."""
 
     def test_crash_in_test_method_caught_gracefully(self):
         """An exception during test execution should be caught with diagnosis."""
+
         class CrashSuite(AgentTest):
             agent = "crash"
-            adapter = RawAPIAdapter(func=lambda p, c=None: {
-                "response": "ok", "steps": [{"action": "llm_response", "response": "ok"}]
-            })
+            adapter = RawAPIAdapter(
+                func=lambda p, c=None: {
+                    "response": "ok",
+                    "steps": [{"action": "llm_response", "response": "ok"}],
+                }
+            )
 
             def test_crash(self):
                 raise ValueError("Something broke inside the test")
@@ -417,6 +459,7 @@ class TestAgentCrash:
 
     def test_crash_error_includes_fix_suggestion(self):
         """Crash error message should suggest checking the adapter."""
+
         class CrashSuite(AgentTest):
             agent = "crash"
             adapter = RawAPIAdapter(func=lambda p, c=None: {"response": "ok", "steps": []})
@@ -433,6 +476,7 @@ class TestAgentCrash:
 
     def test_adapter_exception_caught_in_trajectory(self):
         """When the adapter itself raises, trajectory should capture it."""
+
         def bad_adapter_func(prompt: str, context=None):
             raise ConnectionError("API is down")
 
@@ -451,6 +495,7 @@ class TestAgentCrash:
 
 
 # ─── Edge Case: Empty/None Responses ───
+
 
 class TestEmptyNoneResponses:
     """Tests for empty or None agent responses."""
@@ -490,22 +535,23 @@ class TestEmptyNoneResponses:
 
 # ─── Edge Case: Malformed Trajectory Data ───
 
+
 class TestMalformedTrajectory:
     """Tests for malformed trajectory data handling."""
 
     def test_step_index_out_of_range(self):
         """Requesting an out-of-range step should give helpful error."""
-        traj = make_trajectory(steps=[
-            {"step_number": 0, "action": "llm_response", "response": "ok"}
-        ])
+        traj = make_trajectory(
+            steps=[{"step_number": 0, "action": "llm_response", "response": "ok"}]
+        )
         with pytest.raises(IndexError, match="out of range"):
             expect(traj).step(5)
 
     def test_step_index_negative(self):
         """Negative step index should be rejected."""
-        traj = make_trajectory(steps=[
-            {"step_number": 0, "action": "llm_response", "response": "ok"}
-        ])
+        traj = make_trajectory(
+            steps=[{"step_number": 0, "action": "llm_response", "response": "ok"}]
+        )
         with pytest.raises(IndexError):
             expect(traj).step(-1)
 
@@ -516,15 +562,17 @@ class TestMalformedTrajectory:
 
     def test_step_index_error_includes_suggestion(self):
         """Out-of-range step error should suggest valid indices."""
-        traj = make_trajectory(steps=[
-            {"step_number": i, "action": "llm_response", "response": f"s{i}"}
-            for i in range(3)
-        ])
+        traj = make_trajectory(
+            steps=[
+                {"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(3)
+            ]
+        )
         with pytest.raises(IndexError, match="Suggested fix"):
             expect(traj).step(10)
 
 
 # ─── Improved Error Messages ───
+
 
 class TestImprovedErrorMessages:
     """Verify all failure messages include: what went wrong, expected,
@@ -541,9 +589,7 @@ class TestImprovedErrorMessages:
 
     def test_to_complete_within_failure_message(self):
         steps = [
-            {"step_number": i, "action": "llm_response",
-             "response": f"s{i}"}
-            for i in range(15)
+            {"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(15)
         ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
@@ -552,9 +598,9 @@ class TestImprovedErrorMessages:
         assert "Suggested fix" in msg
 
     def test_to_use_tool_failure_message(self):
-        traj = make_trajectory(steps=[
-            {"step_number": 0, "action": "llm_response", "response": "no tools"}
-        ])
+        traj = make_trajectory(
+            steps=[{"step_number": 0, "action": "llm_response", "response": "no tools"}]
+        )
         result = expect(traj).to_use_tool("search")
         msg = result.results[0].message
         assert "What went wrong" in msg
@@ -587,9 +633,7 @@ class TestImprovedErrorMessages:
         assert "Suggested fix" in msg
 
     def test_to_not_expose_failure_message(self):
-        steps = [
-            {"step_number": 0, "action": "llm_response", "response": "SSN: 123-45-6789"}
-        ]
+        steps = [{"step_number": 0, "action": "llm_response", "response": "SSN: 123-45-6789"}]
         traj = make_trajectory(steps=steps)
         result = expect(traj).to_not_expose("123-45-6789")
         msg = result.results[0].message
@@ -597,10 +641,7 @@ class TestImprovedErrorMessages:
         assert "Suggested fix" in msg
 
     def test_to_retry_failure_message(self):
-        steps = [
-            {"step_number": i, "action": "retry", "response": f"retry {i}"}
-            for i in range(5)
-        ]
+        steps = [{"step_number": i, "action": "retry", "response": f"retry {i}"} for i in range(5)]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_retry(max_attempts=2)
         msg = result.results[0].message
@@ -650,12 +691,14 @@ class TestImprovedErrorMessages:
 
 # ─── Fixture Scope Enforcement ───
 
+
 class TestFixtureScopeEnforcement:
     """Tests for fixture scope enforcement in the runner."""
 
     def test_fixture_registry_singleton(self):
         """FixtureRegistry.get() returns the same instance."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
         r1 = FixtureRegistry.get()
         r2 = FixtureRegistry.get()
@@ -665,6 +708,7 @@ class TestFixtureScopeEnforcement:
     def test_fixture_registry_reset(self):
         """FixtureRegistry.reset() clears the singleton."""
         from agentbench.core.fixtures import FixtureRegistry
+
         r1 = FixtureRegistry.get()
         FixtureRegistry.reset()
         r2 = FixtureRegistry.get()
@@ -674,6 +718,7 @@ class TestFixtureScopeEnforcement:
     def test_test_scope_creates_fresh_each_time(self):
         """scope='test' should create a new value on every call."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
         registry = FixtureRegistry.get()
 
@@ -694,6 +739,7 @@ class TestFixtureScopeEnforcement:
     def test_suite_scope_caches_within_suite(self):
         """scope='suite' should return same value within a suite."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
         registry = FixtureRegistry.get()
 
@@ -718,6 +764,7 @@ class TestFixtureScopeEnforcement:
     def test_session_scope_caches_globally(self):
         """scope='session' should return same value across all suites."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
         registry = FixtureRegistry.get()
 
@@ -738,6 +785,7 @@ class TestFixtureScopeEnforcement:
     def test_suite_teardown_clears_cache(self):
         """teardown_suite should clear suite-scoped fixtures."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
         registry = FixtureRegistry.get()
 
@@ -768,6 +816,7 @@ class TestFixtureScopeEnforcement:
     def test_teardown_all_clears_session_and_suite(self):
         """teardown_all should clear both session and suite caches."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
         registry = FixtureRegistry.get()
 
@@ -803,9 +852,12 @@ class TestFixtureScopeEnforcement:
 
         class MySuite(AgentTest):
             agent = "scope-test"
-            adapter = RawAPIAdapter(func=lambda p, c=None: {
-                "response": "ok", "steps": [{"action": "llm_response", "response": "ok"}]
-            })
+            adapter = RawAPIAdapter(
+                func=lambda p, c=None: {
+                    "response": "ok",
+                    "steps": [{"action": "llm_response", "response": "ok"}],
+                }
+            )
 
             def test_it(self):
                 self.run("test")
@@ -820,6 +872,7 @@ class TestFixtureScopeEnforcement:
     def test_runner_resets_registry_on_run(self):
         """TestRunner.run() should reset the fixture registry for a fresh session."""
         from agentbench.core.fixtures import FixtureRegistry
+
         FixtureRegistry.reset()
 
         runner = TestRunner()
@@ -830,19 +883,23 @@ class TestFixtureScopeEnforcement:
 
 # ─── Pytest Warning Prevention ───
 
+
 class TestPytestWarningPrevention:
     """Verify TestResult and TestSuiteResult don't trigger pytest collection."""
 
     def test_result_has_test_false(self):
         from agentbench.core.runner import TestResult
+
         assert TestResult.__test__ is False
 
     def test_suite_result_has_test_false(self):
         from agentbench.core.runner import TestSuiteResult
+
         assert TestSuiteResult.__test__ is False
 
 
 # ─── Max Steps / Infinite Loop Detection ───
+
 
 class TestMaxStepsEnforcement:
     """Tests for max steps enforcement and infinite loop detection."""
@@ -851,9 +908,7 @@ class TestMaxStepsEnforcement:
         """Non-completed trajectory should fail step limit check
         with clear message."""
         steps = [
-            {"step_number": i, "action": "llm_response",
-             "response": f"s{i}"}
-            for i in range(3)
+            {"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(3)
         ]
         traj = make_trajectory(steps=steps, completed=False, error="Agent stalled")
         result = expect(traj).to_complete_within(steps=10)
@@ -864,9 +919,7 @@ class TestMaxStepsEnforcement:
     def test_step_limit_exact_boundary(self):
         """Agent using exactly the step limit should pass."""
         steps = [
-            {"step_number": i, "action": "llm_response",
-             "response": f"s{i}"}
-            for i in range(10)
+            {"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(10)
         ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
@@ -875,9 +928,7 @@ class TestMaxStepsEnforcement:
     def test_step_limit_one_over_fails(self):
         """Agent using one more step than limit should fail."""
         steps = [
-            {"step_number": i, "action": "llm_response",
-             "response": f"s{i}"}
-            for i in range(11)
+            {"step_number": i, "action": "llm_response", "response": f"s{i}"} for i in range(11)
         ]
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_complete_within(steps=10)
@@ -885,6 +936,7 @@ class TestMaxStepsEnforcement:
 
 
 # ─── Negation ───
+
 
 class TestNegation:
     """Test the to_not negation modifier."""
@@ -905,6 +957,7 @@ class TestNegation:
 
 
 # ─── AssertionResult ───
+
 
 class TestAssertionResult:
     """Test AssertionResult dataclass behavior."""
@@ -928,11 +981,13 @@ class TestAssertionResult:
 
 # ─── RunnerResult ───
 
+
 class TestRunResult:
     """Test RunResult dataclass."""
 
     def test_empty_run_result(self):
         from agentbench.core.runner import RunResult
+
         rr = RunResult()
         assert rr.total_passed == 0
         assert rr.total_failed == 0
@@ -941,12 +996,14 @@ class TestRunResult:
 
     def test_run_result_summary(self):
         from agentbench.core.runner import RunResult, TestSuiteResult
+
         rr = RunResult()
         rr.suite_results.append(TestSuiteResult(suite_name="Test"))
         assert "Total:" in rr.summary()
 
 
 # ─── AgentStep ───
+
 
 class TestAgentStep:
     """Test AgentStep functionality."""
@@ -978,6 +1035,7 @@ class TestAgentStep:
 
 
 # ─── to_complete_within edge: incomplete ───
+
 
 class TestCompletionEdgeCases:
     def test_incomplete_not_completed_no_error(self):

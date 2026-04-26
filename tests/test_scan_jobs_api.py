@@ -201,7 +201,11 @@ class TestScanJobsApi:
 
         verify_session = models_mod.get_session_factory()()
         try:
-            refreshed = verify_session.query(models_mod.ScanJob).filter(models_mod.ScanJob.id == job_id).first()
+            refreshed = (
+                verify_session.query(models_mod.ScanJob)
+                .filter(models_mod.ScanJob.id == job_id)
+                .first()
+            )
             assert refreshed is not None
             assert refreshed.status == "failed"
             assert refreshed.error_detail is not None
@@ -212,7 +216,9 @@ class TestScanJobsApi:
 
 class TestProjectGateJobsApi:
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_project_gate_job_returns_machine_friendly_terminal_payload(self, mock_run, client: TestClient):
+    def test_project_gate_job_returns_machine_friendly_terminal_payload(
+        self, mock_run, client: TestClient
+    ):
         mock_run.return_value = _make_scan_response(overall_score=72.0, overall_grade="C")
 
         project = client.post(

@@ -75,11 +75,11 @@ class ConversationResult:
 class Topology(enum.Enum):
     """Defines how agents communicate with each other."""
 
-    MESH = "mesh"          # Every agent can talk to every other agent
-    STAR = "star"          # One central agent talks to all others
-    RING = "ring"          # Agents pass messages in a ring
+    MESH = "mesh"  # Every agent can talk to every other agent
+    STAR = "star"  # One central agent talks to all others
+    RING = "ring"  # Agents pass messages in a ring
     SEQUENTIAL = "sequential"  # Agents speak in fixed order
-    CUSTOM = "custom"      # Custom routing defined by user
+    CUSTOM = "custom"  # Custom routing defined by user
 
 
 @dataclass

@@ -66,9 +66,7 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
         )
         self._trajectory.steps.append(step)
 
-    def on_tool_start(
-        self, serialized: dict, input_str: str, **kwargs: Any
-    ) -> None:
+    def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
         self._step_start = time.time()
         tool_name = serialized.get("name", "unknown")
         # Store tool_input for use in on_tool_end
@@ -88,16 +86,15 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
         if len(self._trajectory.steps) >= self._max_steps:
             return
         # Skip if failure was injected — error step already recorded in on_agent_action
-        if getattr(self, '_injected_failure', False):
+        if getattr(self, "_injected_failure", False):
             self._injected_failure = False
             return
 
         latency = (time.time() - self._step_start) * 1000 if self._step_start else 0
-        tool_name = (
-            getattr(self, '_current_tool_name', None)
-            or kwargs.get("serialized", {}).get("name", "unknown")
+        tool_name = getattr(self, "_current_tool_name", None) or kwargs.get("serialized", {}).get(
+            "name", "unknown"
         )
-        tool_input = getattr(self, '_current_tool_input', None)
+        tool_input = getattr(self, "_current_tool_input", None)
 
         step = AgentStep(
             step_number=len(self._trajectory.steps),
@@ -151,8 +148,7 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
                 action="error",
                 tool_name=tool_name,
                 tool_input=(
-                    tool_input if isinstance(tool_input, dict)
-                    else {"input": str(tool_input)}
+                    tool_input if isinstance(tool_input, dict) else {"input": str(tool_input)}
                 ),
                 error=error_msg,
             )

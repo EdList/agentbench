@@ -283,7 +283,9 @@ class TestScanPoliciesApi:
 
 class TestProjectGateApi:
     @patch("agentbench.server.routes.scans._run_scan")
-    def test_project_gate_returns_machine_friendly_verdict_payload(self, mock_run, client: TestClient):
+    def test_project_gate_returns_machine_friendly_verdict_payload(
+        self, mock_run, client: TestClient
+    ):
         mock_run.return_value = _make_scan_response(overall_score=72.0, overall_grade="C")
 
         project = client.post(

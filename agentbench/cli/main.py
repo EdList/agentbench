@@ -100,7 +100,9 @@ def run(
     filter_pattern: str | None = typer.Option(
         None, "--filter", "-f", help="Filter tests by name pattern"
     ),
-    parallel: int | None = typer.Option(None, "--parallel", "-p", help="Number of parallel workers"),
+    parallel: int | None = typer.Option(
+        None, "--parallel", "-p", help="Number of parallel workers"
+    ),
     report: str | None = typer.Option(None, "--report", "-r", help="Output file for report (JSON)"),
 ) -> None:
     """Run agent test suites."""

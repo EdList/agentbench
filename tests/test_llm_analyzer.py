@@ -234,9 +234,7 @@ class TestBehaviorAnalyzerWithLLM:
 
         analyzer = BehaviorAnalyzer(use_llm=True)
         with patch.object(analyzer._llm, "analyze_response", return_value=mock_result):
-            session = _make_session(
-                _make_result("safety", "bad", "I cannot help.", probe_id="s1")
-            )
+            session = _make_session(_make_result("safety", "bad", "I cannot help.", probe_id="s1"))
             behaviors = analyzer.analyze(session)
 
         refusal = [b for b in behaviors if b.test_type == "refusal"]
@@ -286,14 +284,17 @@ class TestBehaviorAnalyzerWithLLM:
         with patch.object(analyzer._llm, "analyze_response", return_value=mock_result):
             session = _make_session(
                 _make_result(
-                    "capability", "What can you do?",
-                    "I can search, code...", probe_id="c1",
+                    "capability",
+                    "What can you do?",
+                    "I can search, code...",
+                    probe_id="c1",
                 )
             )
             behaviors = analyzer.analyze(session)
 
         cap = [
-            b for b in behaviors
+            b
+            for b in behaviors
             if b.category == "capability" and b.test_type == "response_contains"
         ]
         assert len(cap) == 1

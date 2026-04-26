@@ -10,53 +10,74 @@ def checkout_agent(prompt: str, context=None):
     steps = []
 
     if "return" in prompt.lower():
-        steps.append({
-            "action": "tool_call",
-            "tool_name": "returns_api",
-            "tool_input": {"action": "initiate_return"},
-            "tool_output": "Return label generated",
-        })
-        steps.append({
-            "action": "llm_response",
-            "response": "I've initiated your return. A shipping label has been sent to your email.",
-        })
+        steps.append(
+            {
+                "action": "tool_call",
+                "tool_name": "returns_api",
+                "tool_input": {"action": "initiate_return"},
+                "tool_output": "Return label generated",
+            }
+        )
+        steps.append(
+            {
+                "action": "llm_response",
+                "response": (
+                    "I've initiated your return. "
+                    "A shipping label has been sent to your email."
+                ),
+            }
+        )
         return {"response": steps[-1]["response"], "steps": steps}
 
     elif "buy" in prompt.lower() or "order" in prompt.lower():
         # Search for product
         import re
-        sanitized = re.sub(r'\d{12,19}', '[REDACTED]', prompt)
-        steps.append({
-            "action": "tool_call",
-            "tool_name": "product_search",
-            "tool_input": {"query": sanitized},
-            "tool_output": "Blue shirt, Size M - $29.99",
-        })
+
+        sanitized = re.sub(r"\d{12,19}", "[REDACTED]", prompt)
+        steps.append(
+            {
+                "action": "tool_call",
+                "tool_name": "product_search",
+                "tool_input": {"query": sanitized},
+                "tool_output": "Blue shirt, Size M - $29.99",
+            }
+        )
         # Add to cart
-        steps.append({
-            "action": "tool_call",
-            "tool_name": "add_to_cart",
-            "tool_input": {"product_id": "SHIRT-M-BLUE", "quantity": 1},
-            "tool_output": "Added to cart",
-        })
+        steps.append(
+            {
+                "action": "tool_call",
+                "tool_name": "add_to_cart",
+                "tool_input": {"product_id": "SHIRT-M-BLUE", "quantity": 1},
+                "tool_output": "Added to cart",
+            }
+        )
         # Process payment
-        steps.append({
-            "action": "tool_call",
-            "tool_name": "payment_api",
-            "tool_input": {"amount": 29.99, "currency": "USD"},
-            "tool_output": "Payment successful - Order #12345",
-        })
-        steps.append({
-            "action": "llm_response",
-            "response": "Your blue shirt (Size M) has been ordered! Order #12345. Total: $29.99",
-        })
+        steps.append(
+            {
+                "action": "tool_call",
+                "tool_name": "payment_api",
+                "tool_input": {"amount": 29.99, "currency": "USD"},
+                "tool_output": "Payment successful - Order #12345",
+            }
+        )
+        steps.append(
+            {
+                "action": "llm_response",
+                "response": (
+                    "Your blue shirt (Size M) has been ordered! "
+                    "Order #12345. Total: $29.99"
+                ),
+            }
+        )
         return {"response": steps[-1]["response"], "steps": steps}
 
     else:
-        steps.append({
-            "action": "llm_response",
-            "response": "I can help you buy products or process returns. What would you like?",
-        })
+        steps.append(
+            {
+                "action": "llm_response",
+                "response": "I can help you buy products or process returns. What would you like?",
+            }
+        )
         return {"response": steps[-1]["response"], "steps": steps}
 
 

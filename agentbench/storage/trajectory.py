@@ -44,11 +44,11 @@ class DiffResult:
     def format_output(self) -> str:
         """Format diff result for console output."""
         from io import StringIO
+
         console = Console(file=StringIO(), force_terminal=True, width=100)
 
         console.print(
-            f"\n[bold]Trajectory Diff: {self.golden_name} "
-            f"vs {self.current_name}[/bold]\n"
+            f"\n[bold]Trajectory Diff: {self.golden_name} vs {self.current_name}[/bold]\n"
         )
 
         if not self.step_diffs:
@@ -61,10 +61,9 @@ class DiffResult:
         summary_table.add_column("Count", justify="right")
         for severity in ["critical", "warning", "info", "match"]:
             count = self.summary.get(severity, 0)
-            style = {
-                "critical": "red", "warning": "yellow",
-                "info": "blue", "match": "green"
-            }[severity]
+            style = {"critical": "red", "warning": "yellow", "info": "blue", "match": "green"}[
+                severity
+            ]
             summary_table.add_row(severity, str(count), style=style)
         console.print(summary_table)
 
@@ -75,9 +74,7 @@ class DiffResult:
                 continue
             style = {"critical": "red", "warning": "yellow", "info": "blue"}[diff.severity]
             icon = (
-                '🔴' if diff.severity == 'critical'
-                else '🟡' if diff.severity == 'warning'
-                else 'ℹ️'
+                "🔴" if diff.severity == "critical" else "🟡" if diff.severity == "warning" else "ℹ️"
             )
             console.print(
                 f"  [{style}]{icon} "
@@ -99,19 +96,16 @@ class TrajectoryStore:
     def _sanitize_name(name: str) -> str:
         """Sanitize a trajectory name to prevent path traversal."""
         import re
-        clean = re.sub(r'[^\w\-.]', '_', name)
-        if not clean or clean == '_':
+
+        clean = re.sub(r"[^\w\-.]", "_", name)
+        if not clean or clean == "_":
             raise ValueError(f"Invalid trajectory name: {name!r}")
         return clean
 
     def save(self, trajectory_data: dict[str, Any], name: str | None = None) -> Path:
         """Save a trajectory to disk."""
-        name = (
-            name
-            or trajectory_data.get(
-                "name",
-                f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-            )
+        name = name or trajectory_data.get(
+            "name", f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         )
         name = self._sanitize_name(name)
         path = self._base_dir / f"{name}.json"
@@ -167,14 +161,16 @@ class TrajectoryDiff:
 
         # Compare step counts
         if len(golden_steps) != len(current_steps):
-            result.step_diffs.append(StepDiff(
-                step_number=0,
-                severity="warning",
-                field="step_count",
-                golden_value=len(golden_steps),
-                current_value=len(current_steps),
-                message=f"Different step count: {len(golden_steps)} → {len(current_steps)}",
-            ))
+            result.step_diffs.append(
+                StepDiff(
+                    step_number=0,
+                    severity="warning",
+                    field="step_count",
+                    golden_value=len(golden_steps),
+                    current_value=len(current_steps),
+                    message=f"Different step count: {len(golden_steps)} → {len(current_steps)}",
+                )
+            )
 
         # Compare each step
         max_steps = max(len(golden_steps), len(current_steps))
@@ -183,19 +179,29 @@ class TrajectoryDiff:
             current_step = current_steps[i] if i < len(current_steps) else None
 
             if golden_step is None:
-                result.step_diffs.append(StepDiff(
-                    step_number=i, severity="warning", field="extra_step",
-                    golden_value=None, current_value=current_step,
-                    message="Extra step in current run",
-                ))
+                result.step_diffs.append(
+                    StepDiff(
+                        step_number=i,
+                        severity="warning",
+                        field="extra_step",
+                        golden_value=None,
+                        current_value=current_step,
+                        message="Extra step in current run",
+                    )
+                )
                 continue
 
             if current_step is None:
-                result.step_diffs.append(StepDiff(
-                    step_number=i, severity="warning", field="missing_step",
-                    golden_value=golden_step, current_value=None,
-                    message="Step missing in current run",
-                ))
+                result.step_diffs.append(
+                    StepDiff(
+                        step_number=i,
+                        severity="warning",
+                        field="missing_step",
+                        golden_value=golden_step,
+                        current_value=None,
+                        message="Step missing in current run",
+                    )
+                )
                 continue
 
             self._compare_steps(i, golden_step, current_step, result)
@@ -204,14 +210,16 @@ class TrajectoryDiff:
         golden_response = golden.get("response", golden.get("final_response", ""))
         current_response = current.get("response", current.get("final_response", ""))
         if golden_response != current_response:
-            result.step_diffs.append(StepDiff(
-                step_number=max_steps,
-                severity="info",
-                field="final_response",
-                golden_value=(golden_response or "")[:100],
-                current_value=(current_response or "")[:100],
-                message="Final response differs",
-            ))
+            result.step_diffs.append(
+                StepDiff(
+                    step_number=max_steps,
+                    severity="info",
+                    field="final_response",
+                    golden_value=(golden_response or "")[:100],
+                    current_value=(current_response or "")[:100],
+                    message="Final response differs",
+                )
+            )
 
         # Build summary
         result.summary = {
@@ -223,64 +231,97 @@ class TrajectoryDiff:
 
         return result
 
-    def _compare_steps(
-        self, index: int, golden: dict, current: dict, result: DiffResult
-    ) -> None:
+    def _compare_steps(self, index: int, golden: dict, current: dict, result: DiffResult) -> None:
         """Compare two individual steps."""
         # Check action type
         if golden.get("action") != current.get("action"):
-            result.step_diffs.append(StepDiff(
-                step_number=index, severity="critical", field="action",
-                golden_value=golden.get("action"), current_value=current.get("action"),
-                message=f"Action changed: {golden.get('action')} → {current.get('action')}",
-            ))
+            result.step_diffs.append(
+                StepDiff(
+                    step_number=index,
+                    severity="critical",
+                    field="action",
+                    golden_value=golden.get("action"),
+                    current_value=current.get("action"),
+                    message=f"Action changed: {golden.get('action')} → {current.get('action')}",
+                )
+            )
             return  # Different action types, skip further comparison
 
         # Check tool name (for tool_call steps)
         if golden.get("action") == "tool_call":
             if golden.get("tool_name") != current.get("tool_name"):
-                result.step_diffs.append(StepDiff(
-                    step_number=index, severity="critical", field="tool_name",
-                    golden_value=golden.get("tool_name"), current_value=current.get("tool_name"),
-                    message=(
-                        f"Different tool: "
-                        f"{golden.get('tool_name')} → "
-                        f"{current.get('tool_name')}"
-                    ),
-                ))
+                result.step_diffs.append(
+                    StepDiff(
+                        step_number=index,
+                        severity="critical",
+                        field="tool_name",
+                        golden_value=golden.get("tool_name"),
+                        current_value=current.get("tool_name"),
+                        message=(
+                            f"Different tool: "
+                            f"{golden.get('tool_name')} → "
+                            f"{current.get('tool_name')}"
+                        ),
+                    )
+                )
             elif golden.get("tool_input") != current.get("tool_input"):
-                result.step_diffs.append(StepDiff(
-                    step_number=index, severity="warning", field="tool_input",
-                    golden_value=golden.get("tool_input"), current_value=current.get("tool_input"),
-                    message=f"Tool '{golden.get('tool_name')}' called with different inputs",
-                ))
+                result.step_diffs.append(
+                    StepDiff(
+                        step_number=index,
+                        severity="warning",
+                        field="tool_input",
+                        golden_value=golden.get("tool_input"),
+                        current_value=current.get("tool_input"),
+                        message=f"Tool '{golden.get('tool_name')}' called with different inputs",
+                    )
+                )
             elif golden.get("tool_output") != current.get("tool_output"):
-                result.step_diffs.append(StepDiff(
-                    step_number=index, severity="warning", field="tool_output",
-                    golden_value=golden.get("tool_output"), current_value=current.get("tool_output"),
-                    message=f"Tool '{golden.get('tool_name')}' returned different output",
-                ))
+                result.step_diffs.append(
+                    StepDiff(
+                        step_number=index,
+                        severity="warning",
+                        field="tool_output",
+                        golden_value=golden.get("tool_output"),
+                        current_value=current.get("tool_output"),
+                        message=f"Tool '{golden.get('tool_name')}' returned different output",
+                    )
+                )
             else:
-                result.step_diffs.append(StepDiff(
-                    step_number=index, severity="match", field="tool_call",
-                    golden_value=golden.get("tool_name"), current_value=current.get("tool_name"),
-                    message="Tool call matches",
-                ))
+                result.step_diffs.append(
+                    StepDiff(
+                        step_number=index,
+                        severity="match",
+                        field="tool_call",
+                        golden_value=golden.get("tool_name"),
+                        current_value=current.get("tool_name"),
+                        message="Tool call matches",
+                    )
+                )
 
         # Check for errors
         if current.get("error") and not golden.get("error"):
-            result.step_diffs.append(StepDiff(
-                step_number=index, severity="critical", field="error",
-                golden_value=None, current_value=current.get("error"),
-                message=f"New error: {current.get('error')}",
-            ))
+            result.step_diffs.append(
+                StepDiff(
+                    step_number=index,
+                    severity="critical",
+                    field="error",
+                    golden_value=None,
+                    current_value=current.get("error"),
+                    message=f"New error: {current.get('error')}",
+                )
+            )
 
         # Check response content (info-level)
         golden_resp = (golden.get("response") or golden.get("reasoning") or "").lower()
         current_resp = (current.get("response") or current.get("reasoning") or "").lower()
         if golden_resp and current_resp and golden_resp != current_resp:
-            result.step_diffs.append(StepDiff(
-                step_number=index, severity="info", field="response",
-                golden_value=golden_resp[:80], current_value=current_resp[:80],
-                message="Response content differs",
-            ))
+            result.step_diffs.append(
+                StepDiff(
+                    step_number=index,
+                    severity="info",
+                    field="response",
+                    golden_value=golden_resp[:80],
+                    current_value=current_resp[:80],
+                    message="Response content differs",
+                )
+            )

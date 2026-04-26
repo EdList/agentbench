@@ -144,14 +144,22 @@ class LangGraphAdapter(AgentAdapter):
 
             try:
                 result = self._run_streaming(
-                    input_data, trajectory, start,
-                    failure_injections, latency_injections, max_steps,
+                    input_data,
+                    trajectory,
+                    start,
+                    failure_injections,
+                    latency_injections,
+                    max_steps,
                 )
             except (TypeError, AttributeError):
                 # Fallback to invoke if stream is not supported
                 result = self._run_invoke(
-                    input_data, trajectory, start,
-                    failure_injections, latency_injections, max_steps,
+                    input_data,
+                    trajectory,
+                    start,
+                    failure_injections,
+                    latency_injections,
+                    max_steps,
                 )
 
             trajectory.completed = True
@@ -253,8 +261,11 @@ class LangGraphAdapter(AgentAdapter):
                 if key == "messages":
                     # Process messages specially
                     self._process_messages(
-                        value, trajectory, step_start,
-                        failure_injections, latency_injections,
+                        value,
+                        trajectory,
+                        step_start,
+                        failure_injections,
+                        latency_injections,
                     )
                 else:
                     self._process_node_output(
@@ -291,32 +302,39 @@ class LangGraphAdapter(AgentAdapter):
         # Check if this node output contains messages (agent/tool nodes)
         if isinstance(node_output, dict) and "messages" in node_output:
             self._process_messages(
-                node_output["messages"], trajectory, step_start,
-                failure_injections, latency_injections,
+                node_output["messages"],
+                trajectory,
+                step_start,
+                failure_injections,
+                latency_injections,
             )
             return
 
         # Check if the output looks like tool call results
         if isinstance(node_output, dict) and "tool_calls" in node_output:
             self._process_tool_calls_dict(
-                node_output["tool_calls"], node_output, trajectory,
-                step_start, failure_injections, latency_injections,
+                node_output["tool_calls"],
+                node_output,
+                trajectory,
+                step_start,
+                failure_injections,
+                latency_injections,
             )
             return
 
         # Check if output is a list of messages
         if isinstance(node_output, (list, tuple)):
             self._process_messages(
-                node_output, trajectory, step_start,
-                failure_injections, latency_injections,
+                node_output,
+                trajectory,
+                step_start,
+                failure_injections,
+                latency_injections,
             )
             return
 
         # Determine if this is a tool node based on name conventions
-        is_tool_node = (
-            "tool" in node_name.lower()
-            or node_name in self._node_name_map
-        )
+        is_tool_node = "tool" in node_name.lower() or node_name in self._node_name_map
 
         if is_tool_node:
             # Check failure injection
@@ -398,8 +416,7 @@ class LangGraphAdapter(AgentAdapter):
                             action="error",
                             tool_name=tc_name,
                             tool_input=(
-                                tc_args if isinstance(tc_args, dict)
-                                else {"input": str(tc_args)}
+                                tc_args if isinstance(tc_args, dict) else {"input": str(tc_args)}
                             ),
                             error=fail_msg,
                             latency_ms=(time.time() - step_start) * 1000,
@@ -416,8 +433,7 @@ class LangGraphAdapter(AgentAdapter):
                         action="tool_call",
                         tool_name=tc_name,
                         tool_input=(
-                            tc_args if isinstance(tc_args, dict)
-                            else {"input": str(tc_args)}
+                            tc_args if isinstance(tc_args, dict) else {"input": str(tc_args)}
                         ),
                         latency_ms=(time.time() - step_start) * 1000,
                     )

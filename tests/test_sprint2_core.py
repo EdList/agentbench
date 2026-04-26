@@ -12,19 +12,23 @@ from agentbench.core.test import AgentTest
 
 # ─── Helpers ───
 
+
 def _echo_adapter():
     """Return a simple echo adapter for testing."""
+
     def echo_agent(prompt: str, context=None):
         return {
             "response": f"Echo: {prompt}",
             "steps": [{"action": "llm_response", "response": f"Echo: {prompt}"}],
         }
+
     return RawAPIAdapter(func=echo_agent)
 
 
 # ═══════════════════════════════════════════════════════════════
 # 1. PARAMETRIC TESTS
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestParametrizeDecorator:
     """Test the @parametrize decorator."""
@@ -173,6 +177,7 @@ class TestParametrizeRunner:
 # 2. PARALLEL EXECUTION
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestParallelExecution:
     """Test parallel test execution."""
 
@@ -266,6 +271,7 @@ class TestParallelExecution:
                     "response": f"slow: {prompt}",
                     "steps": [{"action": "llm_response", "response": f"slow: {prompt}"}],
                 }
+
             return RawAPIAdapter(func=agent)
 
         class SlowSuite(AgentTest):
@@ -291,6 +297,7 @@ class TestParallelExecution:
 # ═══════════════════════════════════════════════════════════════
 # 3. FIXTURES AND HOOKS
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestFixtureDecorator:
     """Test the @fixture decorator."""
@@ -342,6 +349,7 @@ class TestFixtureDecorator:
 
     def test_generator_fixture_teardown_idempotent(self):
         """Calling teardown twice on a generator fixture should be safe."""
+
         @fixture
         def gen_fixture():
             yield "val"
@@ -410,6 +418,7 @@ class TestHooksSetupTeardown:
         def failing_adapter():
             def agent(prompt: str, context=None):
                 raise RuntimeError("Agent exploded")
+
             return RawAPIAdapter(func=agent)
 
         class FailTeardownSuite(AgentTest):
@@ -532,8 +541,12 @@ class TestHooksSetupTeardown:
         assert result.all_passed
         assert log == [
             "setup_class",
-            "setup", "test_a", "teardown",
-            "setup", "test_b", "teardown",
+            "setup",
+            "test_a",
+            "teardown",
+            "setup",
+            "test_b",
+            "teardown",
             "teardown_class",
         ]
 
@@ -602,6 +615,7 @@ class TestFixtureIntegration:
 # INTEGRATION: All features combined
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestAllFeaturesCombined:
     """Test parametrize + parallel + hooks together."""
 
@@ -656,6 +670,7 @@ class TestAllFeaturesCombined:
                     {"action": "llm_response", "response": f"Found: {prompt}"},
                 ]
                 return {"response": f"Result for {prompt}", "steps": steps}
+
             return RawAPIAdapter(func=agent)
 
         class AssertionSuite(AgentTest):
@@ -701,10 +716,7 @@ class TestAuditRegressionFixes:
         def boundary_agent(prompt: str, context=None):
             return {
                 "response": "done",
-                "steps": [
-                    {"action": "llm_response", "response": f"step-{i}"}
-                    for i in range(50)
-                ],
+                "steps": [{"action": "llm_response", "response": f"step-{i}"} for i in range(50)],
             }
 
         class BoundarySuite(AgentTest):

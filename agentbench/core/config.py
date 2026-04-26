@@ -92,28 +92,25 @@ class AgentBenchConfig:
                     type_name = (
                         expected_types[key].__name__
                         if isinstance(expected_types[key], type)
-                        else 'number'
+                        else "number"
                     )
                     raise TypeError(
-                        f"Config '{key}' expected {type_name}, "
-                        f"got {type(value).__name__}"
+                        f"Config '{key}' expected {type_name}, got {type(value).__name__}"
                     )
                 setattr(config, key, value)
 
         # Nested configs
         if "sandbox" in data:
             sandbox_data = data["sandbox"]
-            config.sandbox = SandboxConfig(**{
-                k: v for k, v in sandbox_data.items()
-                if k in SandboxConfig.__dataclass_fields__
-            })
+            config.sandbox = SandboxConfig(
+                **{k: v for k, v in sandbox_data.items() if k in SandboxConfig.__dataclass_fields__}
+            )
 
         if "judge" in data:
             judge_data = data["judge"]
-            config.judge = JudgeConfig(**{
-                k: v for k, v in judge_data.items()
-                if k in JudgeConfig.__dataclass_fields__
-            })
+            config.judge = JudgeConfig(
+                **{k: v for k, v in judge_data.items() if k in JudgeConfig.__dataclass_fields__}
+            )
 
         if "trajectories_dir" in data:
             config.trajectories_dir = Path(data["trajectories_dir"])

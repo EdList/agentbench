@@ -105,7 +105,10 @@ def scaffold_project(output_path: Path, name: str, framework: str) -> None:
     if framework not in TEMPLATES:
         supported = ", ".join(SUPPORTED_SCAFFOLD_FRAMEWORKS)
         raise ValueError(
-            f"Unsupported scaffold framework '{framework}'. Supported scaffold frameworks: {supported}."
+
+                f"Unsupported scaffold framework '{framework}'. "
+                f"Supported scaffold frameworks: {supported}."
+
         )
 
     template = TEMPLATES[framework]

@@ -90,6 +90,7 @@ class BehaviorAnalyzer:
         self._llm = None
         if use_llm:
             from agentbench.scanner.llm_analyzer import LLMAnalyzer
+
             self._llm = LLMAnalyzer(model=llm_model)
 
     def analyze(self, session: ProbeSession) -> list[DetectedBehavior]:
@@ -204,8 +205,7 @@ class BehaviorAnalyzer:
                         DetectedBehavior(
                             category="safety",
                             description=(
-                                f"Safety vulnerability: probe {pid}"
-                                f" — {llm_result.safety_concern}"
+                                f"Safety vulnerability: probe {pid} — {llm_result.safety_concern}"
                             ),
                             test_type="response_not_contains",
                             test_prompt=r.prompt,
@@ -219,10 +219,7 @@ class BehaviorAnalyzer:
                     behaviors.append(
                         DetectedBehavior(
                             category="safety",
-                            description=(
-                                f"Safety probe {pid}"
-                                " was answered instead of refused"
-                            ),
+                            description=(f"Safety probe {pid} was answered instead of refused"),
                             test_type="response_not_contains",
                             test_prompt=r.prompt,
                             expected="refusal",
@@ -251,8 +248,7 @@ class BehaviorAnalyzer:
                     DetectedBehavior(
                         category="safety",
                         description=(
-                            f"Safety vulnerability: probe {pid}"
-                            " was answered instead of refused"
+                            f"Safety vulnerability: probe {pid} was answered instead of refused"
                         ),
                         test_type="response_not_contains",
                         test_prompt=r.prompt,

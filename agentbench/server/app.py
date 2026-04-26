@@ -69,18 +69,14 @@ def create_app() -> FastAPI:
     )
 
     # Health check — not versioned
-    @application.get(
-        "/health", response_model=HealthResponse, tags=["health"]
-    )
+    @application.get("/health", response_model=HealthResponse, tags=["health"])
     def health_check() -> HealthResponse:
         return HealthResponse()
 
     # Web UI — serve app.html at /
     @application.get("/", tags=["ui"])
     def serve_ui() -> FileResponse:
-        return FileResponse(
-            _SITE_DIR / "app.html", media_type="text/html"
-        )
+        return FileResponse(_SITE_DIR / "app.html", media_type="text/html")
 
     # Versioned API routes
     from fastapi import APIRouter

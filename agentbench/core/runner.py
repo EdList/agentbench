@@ -21,7 +21,7 @@ from agentbench.core.assertions import (
 from agentbench.core.fixtures import FixtureRegistry
 from agentbench.core.test import AgentTest, AgentTrajectory
 from agentbench.multiagent.test import MultiAgentTest
-from agentbench.property.properties import Property, PropertyResult
+from agentbench.property.properties import Property
 
 
 @dataclass
@@ -167,7 +167,7 @@ class TestRunner:
         # Check for adversarial suite attachments and expand
         additional: list[type] = []
         for suite in list(suites):
-            adversarial_suite_cls = getattr(suite, '_adversarial_suite', None)
+            adversarial_suite_cls = getattr(suite, "_adversarial_suite", None)
             if adversarial_suite_cls is not None:
                 additional.append(adversarial_suite_cls)
         suites.extend(additional)
@@ -189,12 +189,11 @@ class TestRunner:
                         suites.append(obj)
         except Exception as e:
             import logging
+
             logging.warning("Could not load %s: %s", path, e)
         return suites
 
-    def _discover_test_methods(
-        self, suite_class: type
-    ) -> list[tuple[str, str, dict | None]]:
+    def _discover_test_methods(self, suite_class: type) -> list[tuple[str, str, dict | None]]:
         """Discover test methods and their parametrize metadata.
 
         Returns:
@@ -212,15 +211,14 @@ class TestRunner:
         if temp_instance is not None:
             test_methods = [
                 name
-                for name, method in inspect.getmembers(
-                    temp_instance, predicate=inspect.ismethod
-                )
+                for name, method in inspect.getmembers(temp_instance, predicate=inspect.ismethod)
                 if name.startswith("test_")
             ]
 
         # Apply filter if specified
         if self._filter:
             import re
+
             pattern = re.compile(self._filter, re.IGNORECASE)
             test_methods = [m for m in test_methods if pattern.search(m)]
 
@@ -236,9 +234,7 @@ class TestRunner:
                 for value in parametrize_meta["arg_values"]:
                     display_name = f"{method_name}[{value}]"
                     param = {"arg_name": arg_name, "value": value}
-                    expanded.append(
-                        (method_name, display_name, param)
-                    )
+                    expanded.append((method_name, display_name, param))
             else:
                 expanded.append((method_name, method_name, None))
 
@@ -256,26 +252,22 @@ class TestRunner:
                 expanded.append((attr_name, attr_name, {"property_test": True}))
 
         # --- Adversarial variant expansion ---
-        if getattr(suite_class, '_adversarial_enabled', False):
-            config = getattr(suite_class, '_adversarial_config', {})
-            mutators = config.get('mutators', [])
-            count = config.get('count', 5)
+        if getattr(suite_class, "_adversarial_enabled", False):
+            config = getattr(suite_class, "_adversarial_config", {})
+            mutators = config.get("mutators", [])
+            count = config.get("count", 5)
 
-            original_methods = getattr(
-                suite_class, '_adversarial_original_methods', {}
-            )
+            original_methods = getattr(suite_class, "_adversarial_original_methods", {})
 
             for method_name in test_methods:
                 # Skip methods that are already adversarial variants
-                if '_adversarial_' in method_name:
+                if "_adversarial_" in method_name:
                     continue
 
                 # Extract a base prompt from the original method
                 base_prompt = "default test prompt"
                 if method_name in original_methods:
-                    extracted = self._extract_adversarial_prompt(
-                        original_methods[method_name]
-                    )
+                    extracted = self._extract_adversarial_prompt(original_methods[method_name])
                     if extracted:
                         base_prompt = extracted
 
@@ -300,9 +292,7 @@ class TestRunner:
 
         # Handle MultiAgentTest subclasses with a simpler execution path
         if issubclass(suite_class, MultiAgentTest):
-            return self._run_multi_agent_suite(
-                suite_class, suite_result, suite_start
-            )
+            return self._run_multi_agent_suite(suite_class, suite_result, suite_start)
 
         # Discover test methods (with parametrize expansion)
         test_items = self._discover_test_methods(suite_class)
@@ -328,9 +318,11 @@ class TestRunner:
                         instance.__dict__.update(shared_class_state)
                         future = executor.submit(
                             self._run_single_test,
-                            instance, method_name,
-                            display_name, param_info,
-                            suite_name
+                            instance,
+                            method_name,
+                            display_name,
+                            param_info,
+                            suite_name,
                         )
                         futures[future] = idx
 
@@ -363,9 +355,7 @@ class TestRunner:
                     instance = suite_class()
                     instance.__dict__.update(shared_class_state)
                     result = self._run_single_test(
-                        instance, method_name,
-                        display_name, param_info,
-                        suite_name
+                        instance, method_name, display_name, param_info, suite_name
                     )
                     suite_result.results.append(result)
             finally:
@@ -385,6 +375,7 @@ class TestRunner:
                 hook()
             except Exception as e:
                 import logging
+
                 logging.warning("Error in %s for %s: %s", hook_name, type(instance).__name__, e)
 
     def _run_single_test(
@@ -409,9 +400,7 @@ class TestRunner:
         def _execute():
             try:
                 self._execute_test_body(
-                    instance, method_name,
-                    display_name, param_info,
-                    suite_name, result
+                    instance, method_name, display_name, param_info, suite_name, result
                 )
             except Exception as exc:
                 test_error[0] = f"{type(exc).__name__}: {exc}"
@@ -469,6 +458,7 @@ class TestRunner:
             if setup and callable(setup):
                 if param_info:
                     import inspect as _inspect
+
                     sig = _inspect.signature(setup)
                     if param_info["arg_name"] in sig.parameters:
                         setup(**{param_info["arg_name"]: param_info["value"]})
@@ -487,35 +477,28 @@ class TestRunner:
                     prop_results = prop.check(instance=instance)
                     for pr in prop_results:
                         if pr.passed:
-                            result.assertions.append(AssertionResult(
-                                passed=True,
-                                message=(
-                                    f"Property passed for input: "
-                                    f"{pr.input_value!r}"
-                                ),
-                                assertion_type="property_test",
-                            ))
-                        else:
-                            msg = (
-                                f"Property failed for input: "
-                                f"{pr.input_value!r}"
+                            result.assertions.append(
+                                AssertionResult(
+                                    passed=True,
+                                    message=(f"Property passed for input: {pr.input_value!r}"),
+                                    assertion_type="property_test",
+                                )
                             )
+                        else:
+                            msg = f"Property failed for input: {pr.input_value!r}"
                             if pr.error:
                                 msg += f"\n  Error: {pr.error}"
                             if pr.was_shrunk:
-                                msg += (
-                                    f"\n  Shrunk to: "
-                                    f"{pr.shrink_result.minimal!r}"
+                                msg += f"\n  Shrunk to: {pr.shrink_result.minimal!r}"
+                            result.assertions.append(
+                                AssertionResult(
+                                    passed=False,
+                                    message=msg,
+                                    assertion_type="property_test",
                                 )
-                            result.assertions.append(AssertionResult(
-                                passed=False,
-                                message=msg,
-                                assertion_type="property_test",
-                            ))
+                            )
                     if result.assertions:
-                        result.passed = all(
-                            a.passed for a in result.assertions
-                        )
+                        result.passed = all(a.passed for a in result.assertions)
                     else:
                         result.passed = True
                 return  # Skip trajectory / expect collection
@@ -543,7 +526,7 @@ class TestRunner:
                 result.trajectory.agent_name = instance.agent or suite_name
 
             # Collect assertion results
-            _active_expectations = getattr(instance, '_expectations', [])
+            _active_expectations = getattr(instance, "_expectations", [])
             instance._expectations = []
 
             for exp in _active_expectations:
@@ -583,6 +566,7 @@ class TestRunner:
                     teardown()
                 except Exception as e:
                     import logging
+
                     logging.warning("Error in teardown for %s: %s", display_name, e)
 
             _clear_active_test()
@@ -602,8 +586,7 @@ class TestRunner:
         test_methods = [
             name
             for name in dir(suite_class)
-            if name.startswith("test_")
-            and callable(getattr(suite_class, name, None))
+            if name.startswith("test_") and callable(getattr(suite_class, name, None))
         ]
 
         for method_name in test_methods:
@@ -633,6 +616,7 @@ class TestRunner:
     def _extract_adversarial_prompt(method: Any) -> str | None:
         """Try to extract a prompt string from a test method's source."""
         import re as _re
+
         try:
             source = inspect.getsource(method)
         except (OSError, TypeError):
@@ -651,8 +635,7 @@ class TestRunner:
         return None
 
     def _validate_trajectory(
-        self, trajectory: AgentTrajectory,
-        test_name: str, result: TestResult
+        self, trajectory: AgentTrajectory, test_name: str, result: TestResult
     ) -> None:
         """Validate trajectory data and add warnings for malformed/edge-case data."""
         # Check for empty trajectory
@@ -663,54 +646,63 @@ class TestRunner:
         # Check for None/empty final response
         if trajectory.completed and not trajectory.final_response:
             from agentbench.core.assertions import AssertionResult
-            result.assertions.append(AssertionResult(
-                passed=True,  # Not a failure, but informational
-                message=(
-                    "Agent completed but returned empty final response.\n"
-                    "  What happened: Agent marked as completed but final_response is empty.\n"
-                    "  Suggested fix: Ensure the agent returns a meaningful final response."
-                ),
-                assertion_type="trajectory_validation",
-            ))
+
+            result.assertions.append(
+                AssertionResult(
+                    passed=True,  # Not a failure, but informational
+                    message=(
+                        "Agent completed but returned empty final response.\n"
+                        "  What happened: Agent marked as completed but final_response is empty.\n"
+                        "  Suggested fix: Ensure the agent returns a meaningful final response."
+                    ),
+                    assertion_type="trajectory_validation",
+                )
+            )
 
         # Check for infinite loop detection (max steps)
         max_steps = self._max_steps
         if trajectory.step_count > max_steps:
             from agentbench.core.assertions import AssertionResult
-            result.assertions.append(AssertionResult(
-                passed=False,
-                message=(
-                    f"MAX STEPS EXCEEDED: Agent used "
-                    f"{trajectory.step_count} steps "
-                    f"(limit: {max_steps}).\n"
-                    f"  What went wrong: The agent may be in an infinite loop.\n"
-                    f"  Expected: Agent should complete within {max_steps} steps.\n"
-                    f"  What happened: Agent reached the step limit — "
-                    f"possible infinite loop.\n"
-                    f"  Suggested fix: Increase max_steps in config or "
-                    f"optimize the agent's decision loop."
-                ),
-                assertion_type="max_steps",
-                details={"steps": trajectory.step_count, "max_steps": max_steps},
-            ))
+
+            result.assertions.append(
+                AssertionResult(
+                    passed=False,
+                    message=(
+                        f"MAX STEPS EXCEEDED: Agent used "
+                        f"{trajectory.step_count} steps "
+                        f"(limit: {max_steps}).\n"
+                        f"  What went wrong: The agent may be in an infinite loop.\n"
+                        f"  Expected: Agent should complete within {max_steps} steps.\n"
+                        f"  What happened: Agent reached the step limit — "
+                        f"possible infinite loop.\n"
+                        f"  Suggested fix: Increase max_steps in config or "
+                        f"optimize the agent's decision loop."
+                    ),
+                    assertion_type="max_steps",
+                    details={"steps": trajectory.step_count, "max_steps": max_steps},
+                )
+            )
 
         # Check for malformed steps
         for i, step in enumerate(trajectory.steps):
             if step.action not in ("tool_call", "llm_response", "error", "retry"):
                 from agentbench.core.assertions import AssertionResult
-                result.assertions.append(AssertionResult(
-                    passed=False,
-                    message=(
-                        f"MALFORMED TRAJECTORY: Step {i} has unknown action '{step.action}'.\n"
-                        f"  What went wrong: Step data contains an unrecognized action type.\n"
-                        f"  Expected: Action should be one of: "
-                        f"tool_call, llm_response, error, retry.\n"
-                        f"  What happened: Got '{step.action}'.\n"
-                        f"  Suggested fix: Check the agent adapter to "
-                        f"ensure it records valid action types."
-                    ),
-                    assertion_type="trajectory_validation",
-                ))
+
+                result.assertions.append(
+                    AssertionResult(
+                        passed=False,
+                        message=(
+                            f"MALFORMED TRAJECTORY: Step {i} has unknown action '{step.action}'.\n"
+                            f"  What went wrong: Step data contains an unrecognized action type.\n"
+                            f"  Expected: Action should be one of: "
+                            f"tool_call, llm_response, error, retry.\n"
+                            f"  What happened: Got '{step.action}'.\n"
+                            f"  Suggested fix: Check the agent adapter to "
+                            f"ensure it records valid action types."
+                        ),
+                        assertion_type="trajectory_validation",
+                    )
+                )
 
     def _run_test(self, instance: AgentTest, method_name: str, suite_name: str) -> TestResult:
         """Run a single test method and collect results (legacy, non-parametric).
@@ -746,8 +738,7 @@ class TestRunner:
             suite_order = {s: i for i, s in enumerate(suites)}
             run_result.suite_results.sort(
                 key=lambda r: suite_order.get(
-                    next((s for s in suites if s.__name__ == r.suite_name), suites[0]),
-                    0
+                    next((s for s in suites if s.__name__ == r.suite_name), suites[0]), 0
                 )
             )
         else:

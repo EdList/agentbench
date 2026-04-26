@@ -33,6 +33,7 @@ from agentbench.core.test import AgentStep, AgentTest, AgentTrajectory
 # Fixtures
 # =====================================================================
 
+
 def _make_trajectory(steps: int = 5) -> AgentTrajectory:
     """Create a simple test trajectory with tool calls."""
     t = AgentTrajectory(
@@ -41,14 +42,16 @@ def _make_trajectory(steps: int = 5) -> AgentTrajectory:
         final_response="Done",
     )
     for i in range(steps):
-        t.steps.append(AgentStep(
-            step_number=i,
-            action="tool_call" if i % 2 == 0 else "llm_response",
-            tool_name=f"tool_{i}" if i % 2 == 0 else None,
-            tool_input={"arg": f"value_{i}"} if i % 2 == 0 else None,
-            tool_output=f"result_{i}" if i % 2 == 0 else None,
-            response=f"response_{i}" if i % 2 != 0 else None,
-        ))
+        t.steps.append(
+            AgentStep(
+                step_number=i,
+                action="tool_call" if i % 2 == 0 else "llm_response",
+                tool_name=f"tool_{i}" if i % 2 == 0 else None,
+                tool_input={"arg": f"value_{i}"} if i % 2 == 0 else None,
+                tool_output=f"result_{i}" if i % 2 == 0 else None,
+                response=f"response_{i}" if i % 2 != 0 else None,
+            )
+        )
     return t
 
 
@@ -313,6 +316,7 @@ class TestAdversarialDecorator:
         @adversarial()
         class DummyTest(AgentTest):
             agent = "test-agent"
+
             def test_bar(self):
                 pass
 
@@ -321,6 +325,7 @@ class TestAdversarialDecorator:
 
     def test_custom_mutators(self):
         custom = PromptMutator(seed=99)
+
         @adversarial(mutators=[custom])
         class DummyTest(AgentTest):
             def test_baz(self):
@@ -509,6 +514,7 @@ class TestAdversarialTestGenerator:
     def test_generate_class(self):
         class SampleTest(AgentTest):
             agent = "test"
+
             def test_basic(self):
                 self.run("Buy a shirt")
 
@@ -529,8 +535,7 @@ class TestAdversarialTestGenerator:
         )
         cls = gen.generate_class()
         test_methods = [
-            name for name in dir(cls)
-            if name.startswith("test_") and callable(getattr(cls, name))
+            name for name in dir(cls) if name.startswith("test_") and callable(getattr(cls, name))
         ]
         assert len(test_methods) > 0
 
@@ -578,6 +583,7 @@ class TestAdversarialSuiteDecorator:
         @adversarial_suite(strategies=["jailbreak"])
         class DummyTest(AgentTest):
             agent = "test-agent"
+
             def test_basic(self):
                 pass
 

@@ -35,14 +35,9 @@ class ScanStore:
                 report_json TEXT NOT NULL,
                 duration_ms INTEGER
             )""")
-            columns = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(scans)").fetchall()
-            }
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(scans)").fetchall()}
             if "principal" not in columns:
-                conn.execute(
-                    "ALTER TABLE scans ADD COLUMN principal TEXT NOT NULL DEFAULT ''"
-                )
+                conn.execute("ALTER TABLE scans ADD COLUMN principal TEXT NOT NULL DEFAULT ''")
             conn.execute("""CREATE TABLE IF NOT EXISTS domain_scores (
                 scan_id TEXT NOT NULL,
                 domain TEXT NOT NULL,
@@ -55,7 +50,10 @@ class ScanStore:
             )""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_scans_agent ON scans(agent_url)""")
             conn.execute("""CREATE INDEX IF NOT EXISTS idx_scans_created ON scans(created_at)""")
-            conn.execute("""CREATE INDEX IF NOT EXISTS idx_scans_principal_agent ON scans(principal, agent_url)""")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS "
+                "idx_scans_principal_agent ON scans(principal, agent_url)"
+            )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))
@@ -77,7 +75,8 @@ class ScanStore:
             conn.execute(
                 (
                     "INSERT INTO scans "
-                    "(id, principal, agent_url, created_at, overall_score, grade, report_json, duration_ms) "
+                    "(id, principal, agent_url, created_at, "
+                    "overall_score, grade, report_json, duration_ms) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
@@ -94,11 +93,12 @@ class ScanStore:
             for domain in report.domain_scores:
                 weight = _DOMAIN_WEIGHTS.get(domain.name.lower(), 0.0)
                 conn.execute(
-                (
-                    "INSERT INTO domain_scores "
-                    "(scan_id, domain, score, grade, weight, behaviors_total, behaviors_passed) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)"
-                ),
+                    (
+                        "INSERT INTO domain_scores "
+                        "(scan_id, domain, score, grade, weight, "
+                        "behaviors_total, behaviors_passed) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    ),
                     (
                         scan_id,
                         domain.name,
@@ -170,7 +170,8 @@ class ScanStore:
             else:
                 rows = conn.execute(
                     "SELECT id, created_at, overall_score, grade, report_json "
-                    "FROM scans WHERE agent_url = ? AND principal = ? ORDER BY created_at DESC LIMIT ?",
+                    "FROM scans WHERE agent_url = ? AND principal = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
                     (agent_url, principal, latest_n),
                 ).fetchall()
 
@@ -191,20 +192,24 @@ class ScanStore:
                 if curr_domain["name"] == prev_domain["name"]:
                     delta = curr_domain["score"] - prev_domain["score"]
                     if delta < -5:
-                        regressions.append({
-                            "domain": curr_domain["name"],
-                            "previous_score": prev_domain["score"],
-                            "current_score": curr_domain["score"],
-                            "delta": round(delta, 1),
-                            "severity": "high" if delta < -20 else "medium",
-                        })
+                        regressions.append(
+                            {
+                                "domain": curr_domain["name"],
+                                "previous_score": prev_domain["score"],
+                                "current_score": curr_domain["score"],
+                                "delta": round(delta, 1),
+                                "severity": "high" if delta < -20 else "medium",
+                            }
+                        )
                     elif delta > 5:
-                        improvements.append({
-                            "domain": curr_domain["name"],
-                            "previous_score": prev_domain["score"],
-                            "current_score": curr_domain["score"],
-                            "delta": round(delta, 1),
-                        })
+                        improvements.append(
+                            {
+                                "domain": curr_domain["name"],
+                                "previous_score": prev_domain["score"],
+                                "current_score": curr_domain["score"],
+                                "delta": round(delta, 1),
+                            }
+                        )
 
         overall_delta = current["overall_score"] - previous["overall_score"]
 
@@ -216,9 +221,7 @@ class ScanStore:
             "previous_scan_date": previous["created_at"],
             "overall_delta": round(overall_delta, 1),
             "overall_trend": (
-                "improved" if overall_delta > 5
-                else "regressed" if overall_delta < -5
-                else "stable"
+                "improved" if overall_delta > 5 else "regressed" if overall_delta < -5 else "stable"
             ),
             "regressions": regressions,
             "improvements": improvements,
@@ -259,8 +262,8 @@ class ScanStore:
 # Server-backed scan store (reads/writes from SQLAlchemy DB)
 # ---------------------------------------------------------------------------
 
-from sqlalchemy import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import Engine  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 
 class ServerScanStore:
@@ -427,20 +430,24 @@ class ServerScanStore:
                 if curr_domain["name"] == prev_domain["name"]:
                     delta = curr_domain["score"] - prev_domain["score"]
                     if delta < -5:
-                        regressions.append({
-                            "domain": curr_domain["name"],
-                            "previous_score": prev_domain["score"],
-                            "current_score": curr_domain["score"],
-                            "delta": round(delta, 1),
-                            "severity": "high" if delta < -20 else "medium",
-                        })
+                        regressions.append(
+                            {
+                                "domain": curr_domain["name"],
+                                "previous_score": prev_domain["score"],
+                                "current_score": curr_domain["score"],
+                                "delta": round(delta, 1),
+                                "severity": "high" if delta < -20 else "medium",
+                            }
+                        )
                     elif delta > 5:
-                        improvements.append({
-                            "domain": curr_domain["name"],
-                            "previous_score": prev_domain["score"],
-                            "current_score": curr_domain["score"],
-                            "delta": round(delta, 1),
-                        })
+                        improvements.append(
+                            {
+                                "domain": curr_domain["name"],
+                                "previous_score": prev_domain["score"],
+                                "current_score": curr_domain["score"],
+                                "delta": round(delta, 1),
+                            }
+                        )
 
         overall_delta = (current.overall_score or 0) - (previous.overall_score or 0)
 
@@ -452,9 +459,7 @@ class ServerScanStore:
             "previous_scan_date": previous.created_at.isoformat() if previous.created_at else "",
             "overall_delta": round(overall_delta, 1),
             "overall_trend": (
-                "improved" if overall_delta > 5
-                else "regressed" if overall_delta < -5
-                else "stable"
+                "improved" if overall_delta > 5 else "regressed" if overall_delta < -5 else "stable"
             ),
             "regressions": regressions,
             "improvements": improvements,
@@ -493,7 +498,7 @@ class ServerScanStore:
         return payload
 
     @staticmethod
-    def _job_to_row_dict(job: "ScanJob") -> dict[str, Any]:  # type: ignore[name-defined  # noqa: F821
+    def _job_to_row_dict(job: ScanJob) -> dict[str, Any]:  # type: ignore[name-defined  # noqa: F821
         """Convert a ScanJob ORM object to the dict format expected by consumers."""
         return {
             "id": job.scan_id or job.id,
@@ -507,7 +512,7 @@ class ServerScanStore:
         }
 
     @staticmethod
-    def _job_to_summary_dict(job: "ScanJob") -> dict[str, Any]:  # type: ignore[name-defined  # noqa: F821
+    def _job_to_summary_dict(job: ScanJob) -> dict[str, Any]:  # type: ignore[name-defined  # noqa: F821
         """Convert a ScanJob to the summary dict format (for list_scans)."""
         return {
             "id": job.scan_id or job.id,

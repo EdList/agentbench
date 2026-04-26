@@ -59,7 +59,9 @@ def _job_created_payload() -> dict:
     }
 
 
-def _terminal_payload(*, verdict: str, score: float, grade: str, scan_id: str, reasons: list[str] | None = None) -> dict:
+def _terminal_payload(
+    *, verdict: str, score: float, grade: str, scan_id: str, reasons: list[str] | None = None
+) -> dict:
     return {
         "job_id": "job_123",
         "status": "completed",
@@ -94,7 +96,9 @@ def test_gate_script_exits_zero_and_writes_outputs_on_pass(
     poll_responses = iter(
         [
             DummyResponse({**_job_created_payload(), "status": "running"}),
-            DummyResponse(_terminal_payload(verdict="pass", score=91.0, grade="A", scan_id="scan_123")),
+            DummyResponse(
+                _terminal_payload(verdict="pass", score=91.0, grade="A", scan_id="scan_123")
+            ),
         ]
     )
 

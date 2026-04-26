@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import math
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -36,9 +36,11 @@ def normalize_scoring_domain_name(value: str) -> str:
         )
     return normalized
 
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
+
 
 class HealthResponse(BaseModel):
     status: str = "ok"
@@ -49,6 +51,7 @@ class HealthResponse(BaseModel):
 # Auth
 # ---------------------------------------------------------------------------
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -58,13 +61,12 @@ class TokenResponse(BaseModel):
 # Runs
 # ---------------------------------------------------------------------------
 
+
 class RunCreateRequest(BaseModel):
     """Submit a new test run."""
 
     name: str | None = Field(None, description="Human-readable name for this run")
-    test_suite_code: str | None = Field(
-        None, description="Inline Python code for the test suite"
-    )
+    test_suite_code: str | None = Field(None, description="Inline Python code for the test suite")
     test_suite_path: str | None = Field(
         None, description="Path to test suite on the server filesystem"
     )
@@ -104,6 +106,7 @@ class RunListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Trajectories
 # ---------------------------------------------------------------------------
+
 
 class TrajectoryUploadRequest(BaseModel):
     """Upload a golden trajectory."""
@@ -151,6 +154,7 @@ class TrajectoryDiffResponse(BaseModel):
 # Generic
 # ---------------------------------------------------------------------------
 
+
 class ErrorResponse(BaseModel):
     detail: str
 
@@ -158,6 +162,7 @@ class ErrorResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Projects / Agents / Policies
 # ---------------------------------------------------------------------------
+
 
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Project name")
@@ -200,7 +205,9 @@ class SavedAgentListResponse(BaseModel):
 
 class ScanPolicyCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Saved scan policy name")
-    categories: list[str] | None = Field(default=None, description="Enabled categories; null means default scan categories")
+    categories: list[str] | None = Field(
+        default=None, description="Enabled categories; null means default scan categories"
+    )
     minimum_overall_score: float | None = Field(default=None, ge=0, le=100)
     minimum_domain_scores: dict[str, float] = Field(default_factory=dict)
     fail_on_critical_issues: bool = Field(default=True)
@@ -290,6 +297,7 @@ class ScanJobResponse(BaseModel):
 # Scans
 # ---------------------------------------------------------------------------
 
+
 class ScanRequest(BaseModel):
     """Submit a scan request against an agent endpoint."""
 
@@ -299,7 +307,10 @@ class ScanRequest(BaseModel):
     policy_id: str | None = Field(None, description="Optional saved scan policy id")
     categories: list[str] | None = Field(
         default=None,
-        description="Evaluation domains to run (safety, reliability, capability, robustness). Default: all",
+        description=(
+            "Evaluation domains to run "
+            "(safety, reliability, capability, robustness). Default: all"
+        ),
     )
 
     @field_validator("categories")
@@ -315,7 +326,7 @@ class ScanRequest(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def validate_target(self) -> "ScanRequest":
+    def validate_target(self) -> ScanRequest:
         if not self.agent_url and not self.agent_id:
             raise ValueError("Provide either agent_url or agent_id.")
         return self

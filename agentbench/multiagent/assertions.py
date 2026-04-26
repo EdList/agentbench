@@ -260,9 +260,7 @@ class ConversationExpectation:
     def every_agent_responds(self) -> ConversationExpectation:
         """Assert every registered agent spoke at least once."""
         agents = (
-            self._expected_agents
-            if self._expected_agents is not None
-            else self._result.agent_names
+            self._expected_agents if self._expected_agents is not None else self._result.agent_names
         )
         turns_per_agent: dict[str, int] = {}
         for turn in self._result.turns:

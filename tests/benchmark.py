@@ -47,14 +47,17 @@ def main():
     from agentbench.core.parametrize import parametrize
 
     for i in range(100):
+
         def make_test(idx):
             @parametrize("q", [f"q{j}" for j in range(10)])
             def test_n(self, q):
                 result = self.run(q)
                 # Minimal assertions
                 assert result is not None
+
             test_n.__name__ = f"test_{idx:03d}"
             return test_n
+
         setattr(BenchmarkSuite, f"test_{i:03d}", make_test(i))
 
     # Run the benchmark

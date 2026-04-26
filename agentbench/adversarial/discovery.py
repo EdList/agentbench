@@ -62,19 +62,23 @@ class AdversarialTestGenerator:
         # Mutator-based variants
         mutated = self._prompt_mutator.generate(base_prompt)
         for i, variant in enumerate(mutated):
-            variants.append({
-                "name": f"mutated_{i}",
-                "prompt": variant,
-            })
+            variants.append(
+                {
+                    "name": f"mutated_{i}",
+                    "prompt": variant,
+                }
+            )
 
         # Strategy-based variants
         for strategy in self._strategies:
             inputs = strategy.generate()
             for i, inp in enumerate(inputs):
-                variants.append({
-                    "name": f"{strategy.name}_{i}",
-                    "prompt": inp,
-                })
+                variants.append(
+                    {
+                        "name": f"{strategy.name}_{i}",
+                        "prompt": inp,
+                    }
+                )
 
         return variants
 
@@ -126,16 +130,18 @@ class AdversarialTestGenerator:
                         except Exception as non_assert_exc:
                             # Infrastructure / runtime error — mark as skipped
                             import pytest as _pytest  # type: ignore[import-untyped]
+
                             _pytest.skip(
                                 f"Adversarial variant skipped due to "
                                 f"{type(non_assert_exc).__name__}: "
                                 f"{non_assert_exc}"
                             )
+
                     test_fn.__doc__ = (
-                        f"Adversarial variant of {orig} "
-                        f"(strategy: {_sanitize_identifier(vname)})"
+                        f"Adversarial variant of {orig} (strategy: {_sanitize_identifier(vname)})"
                     )
                     return test_fn
+
                 methods[method_name] = _make_test(prompt, base_name)
 
         # Also add auto-generated tests for common failure modes
@@ -163,20 +169,24 @@ class AdversarialTestGenerator:
 
             # Try to extract string literals from the source
             prompt = self._extract_prompt_from_method(method)
-            results.append({
-                "method": attr_name,
-                "prompt": prompt or "default test prompt",
-            })
+            results.append(
+                {
+                    "method": attr_name,
+                    "prompt": prompt or "default test prompt",
+                }
+            )
 
         # If no test methods found, use strategy inputs
         if not results:
             for strategy in self._strategies:
                 inputs = strategy.generate()
                 for i, inp in enumerate(inputs):
-                    results.append({
-                        "method": f"strategy_{strategy.name}",
-                        "prompt": inp,
-                    })
+                    results.append(
+                        {
+                            "method": f"strategy_{strategy.name}",
+                            "prompt": inp,
+                        }
+                    )
 
         return results
 
@@ -189,6 +199,7 @@ class AdversarialTestGenerator:
 
         # Look for string literals in self.run("...") calls
         import re
+
         match = re.search(r'self\.run\(\s*["\'](.+?)["\']', source)
         if match:
             return match.group(1)
@@ -226,13 +237,16 @@ class AdversarialTestGenerator:
                     except Exception as non_assert_exc:
                         # Infrastructure / runtime error — mark as skipped
                         import pytest as _pytest  # type: ignore[import-untyped]
+
                         _pytest.skip(
                             f"Auto adversarial test skipped due to "
                             f"{type(non_assert_exc).__name__}: "
                             f"{non_assert_exc}"
                         )
+
                 test_fn.__doc__ = f"Auto adversarial test: {mn}"
                 return test_fn
+
             methods[method_name] = _make(prompt, mode_name)
 
         return methods
@@ -241,6 +255,7 @@ class AdversarialTestGenerator:
 # ---------------------------------------------------------------------------
 # @adversarial_suite class decorator
 # ---------------------------------------------------------------------------
+
 
 def adversarial_suite(
     *,
@@ -281,6 +296,7 @@ def adversarial_suite(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _sanitize_identifier(name: str) -> str:
     """Convert a string into a valid Python identifier."""
     result = []
@@ -297,6 +313,7 @@ def _sanitize_identifier(name: str) -> str:
 
     # Collapse multiple underscores
     import re
+
     identifier = re.sub(r"_+", "_", identifier)
 
     return identifier

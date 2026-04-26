@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from agentbench.server.auth import require_auth
 from agentbench.server.models import Project, get_db
-from agentbench.server.routes.scans import _create_scan_job, _resolve_scan_request, _scan_job_to_response, submit_scan
+from agentbench.server.routes.scans import (
+    _create_scan_job,
+    _resolve_scan_request,
+    _scan_job_to_response,
+    submit_scan,
+)
 from agentbench.server.schemas import (
     ErrorResponse,
     ProjectCreateRequest,
@@ -60,7 +65,9 @@ def list_projects(
         .all()
     )
     return ProjectListResponse(
-        projects=[ProjectResponse.model_validate(project, from_attributes=True) for project in rows],
+        projects=[
+            ProjectResponse.model_validate(project, from_attributes=True) for project in rows
+        ],
         total=len(rows),
     )
 

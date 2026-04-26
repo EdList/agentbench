@@ -57,6 +57,7 @@ class ShrinkResult:
 # Core shrink function
 # ---------------------------------------------------------------------------
 
+
 def shrink(
     value: Any,
     *,
@@ -117,6 +118,7 @@ def shrink(
 # ---------------------------------------------------------------------------
 # Default shrink strategies
 # ---------------------------------------------------------------------------
+
 
 def default_shrink_candidates(value: Any) -> list[Any]:
     """Return candidate shrinks for *value* based on its type."""

@@ -68,7 +68,9 @@ def _create_gate_job(config: dict[str, str]) -> dict[str, Any]:
     return response.json()
 
 
-def _poll_gate_job(config: dict[str, str], job_id: str, *, timeout_seconds: float, poll_interval_seconds: float) -> dict[str, Any]:
+def _poll_gate_job(
+    config: dict[str, str], job_id: str, *, timeout_seconds: float, poll_interval_seconds: float
+) -> dict[str, Any]:
     base_url = config["AGENTBENCH_BASE_URL"].rstrip("/")
     deadline = time.monotonic() + timeout_seconds
 
@@ -241,7 +243,8 @@ def main() -> int:
 
     print(
         "AgentBench gate verdict: "
-        f"{verdict.upper()} | score={payload.get('overall_score')} | grade={payload.get('overall_grade')} | job={job_id}"
+        f"{verdict.upper()} | score={payload.get('overall_score')} "
+        f"| grade={payload.get('overall_grade')} | job={job_id}"
     )
     if reasons:
         print("Reasons:")

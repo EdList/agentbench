@@ -236,9 +236,11 @@ class RolePlay:
         """
         results: list[dict[str, Any]] = []
         for role in roles:
-            results.append({
-                "name": role.name,
-                "fn": RolePlay.create_function(role),
-                "config": RolePlay.agent_config(role),
-            })
+            results.append(
+                {
+                    "name": role.name,
+                    "fn": RolePlay.create_function(role),
+                    "config": RolePlay.agent_config(role),
+                }
+            )
         return results

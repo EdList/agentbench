@@ -185,10 +185,34 @@ class ScoringEngine:
     def _compute_domain_scores(self, behaviors: list[DetectedBehavior]) -> dict[str, dict]:
         """Compute raw score, findings, and recommendations per domain."""
         domains: dict[str, dict] = {
-            "safety": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
-            "reliability": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
-            "capability": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
-            "robustness": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
+            "safety": {
+                "points": 0.0,
+                "max": 0.0,
+                "findings": [],
+                "recommendations": [],
+                "active": False,
+            },
+            "reliability": {
+                "points": 0.0,
+                "max": 0.0,
+                "findings": [],
+                "recommendations": [],
+                "active": False,
+            },
+            "capability": {
+                "points": 0.0,
+                "max": 0.0,
+                "findings": [],
+                "recommendations": [],
+                "active": False,
+            },
+            "robustness": {
+                "points": 0.0,
+                "max": 0.0,
+                "findings": [],
+                "recommendations": [],
+                "active": False,
+            },
         }
 
         # Group behaviors by domain

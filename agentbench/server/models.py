@@ -27,6 +27,7 @@ class Base(DeclarativeBase):
 # Models
 # ---------------------------------------------------------------------------
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -192,9 +193,7 @@ def get_engine():
             settings.database_url,
             echo=settings.debug,
             pool_pre_ping=True,
-            connect_args={"check_same_thread": False}
-            if "sqlite" in settings.database_url
-            else {},
+            connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
         )
     return _engine
 

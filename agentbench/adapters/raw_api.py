@@ -70,12 +70,20 @@ class RawAPIAdapter(AgentAdapter):
     ) -> AgentTrajectory:
         if self._func:
             return self._run_function(
-                prompt, trajectory, context,
-                failure_injections, latency_injections,
+                prompt,
+                trajectory,
+                context,
+                failure_injections,
+                latency_injections,
             )
         return self._run_http(
-            prompt, trajectory, failure_injections, latency_injections,
-            max_steps, timeout_seconds, context,
+            prompt,
+            trajectory,
+            failure_injections,
+            latency_injections,
+            max_steps,
+            timeout_seconds,
+            context,
         )
 
     def _run_function(

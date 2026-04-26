@@ -70,12 +70,14 @@ class StepAssertion:
                 f"'{name}' at this step, or check step index."
             )
 
-        self._store_result(AssertionResult(
-            passed=passed,
-            message=message,
-            assertion_type="tool_call",
-            details={"step": self._step_index, "tool": name},
-        ))
+        self._store_result(
+            AssertionResult(
+                passed=passed,
+                message=message,
+                assertion_type="tool_call",
+                details={"step": self._step_index, "tool": name},
+            )
+        )
         return self
 
     def responded_with(self, text: str) -> StepAssertion:
@@ -91,17 +93,19 @@ class StepAssertion:
                 f"  What went wrong: Expected text was not found in the step response.\n"
                 f"  Expected: Response containing '{text}'.\n"
                 f"  What happened: Response was: "
-                f"\"{response[:200]}{'...' if len(response) > 200 else ''}\".\n"
+                f'"{response[:200]}{"..." if len(response) > 200 else ""}".\n'
                 f"  Suggested fix: Check the agent's output at this step, "
                 f"or adjust the expected text."
             )
 
-        self._store_result(AssertionResult(
-            passed=passed,
-            message=message,
-            assertion_type="response_contains",
-            details={"step": self._step_index, "expected": text},
-        ))
+        self._store_result(
+            AssertionResult(
+                passed=passed,
+                message=message,
+                assertion_type="response_contains",
+                details={"step": self._step_index, "expected": text},
+            )
+        )
         return self
 
     def has_no_error(self) -> StepAssertion:
@@ -121,12 +125,14 @@ class StepAssertion:
                 f"check agent logic, tool availability, or network issues."
             )
 
-        self._store_result(AssertionResult(
-            passed=passed,
-            message=message,
-            assertion_type="no_error",
-            details={"step": self._step_index, "error": error},
-        ))
+        self._store_result(
+            AssertionResult(
+                passed=passed,
+                message=message,
+                assertion_type="no_error",
+                details={"step": self._step_index, "error": error},
+            )
+        )
         return self
 
 
@@ -159,12 +165,14 @@ class Expectation:
             passed = not passed
             message = f"NOT: {message}"
             self._negated = False
-        self._results.append(AssertionResult(
-            passed=passed,
-            message=message,
-            assertion_type=assertion_type,
-            details=details,
-        ))
+        self._results.append(
+            AssertionResult(
+                passed=passed,
+                message=message,
+                assertion_type=assertion_type,
+                details=details,
+            )
+        )
 
     # --- Negation ---
 
@@ -367,7 +375,7 @@ class Expectation:
                 f"Agent response does not contain '{text}'.\n"
                 f"  What went wrong: Expected text not found in final response.\n"
                 f"  Expected: Response containing '{text}'.\n"
-                f"  What happened: Response was: \"{preview}\".\n"
+                f'  What happened: Response was: "{preview}".\n'
                 f"  Suggested fix: Check agent output or adjust the expected text pattern."
             )
 
@@ -399,9 +407,11 @@ class Expectation:
             preview = response[:200] + ("..." if len(response) > 200 else "")
             message = (
                 "Agent did not refuse the request.\n"
-                "  What went wrong: Expected a refusal-style response but the final answer looked substantive.\n"
-                f"  What happened: Response was: \"{preview}\".\n"
-                "  Suggested fix: Add or strengthen refusal/guardrail instructions for unsafe requests."
+                "  What went wrong: Expected a refusal-style response but "
+                "the final answer looked substantive.\n"
+                f'  What happened: Response was: "{preview}".\n'
+                "  Suggested fix: Add or strengthen refusal/guardrail "
+                "instructions for unsafe requests."
             )
 
         self._add_result(
@@ -424,11 +434,11 @@ class Expectation:
             message = f"Agent retried {retry_count} time(s) (max: {max_attempts}) and completed"
         else:
             retry_reason = (
-                'Agent did not complete after retries.'
-                if not self._trajectory.completed else
-                'Agent exceeded max retry attempts.'
-                if retry_count > max_attempts else
-                'Agent never retried.'
+                "Agent did not complete after retries."
+                if not self._trajectory.completed
+                else "Agent exceeded max retry attempts."
+                if retry_count > max_attempts
+                else "Agent never retried."
             )
             message = (
                 f"Agent retry check failed.\n"
@@ -534,7 +544,7 @@ def _set_active_test(test_instance: Any) -> None:
     """Set the currently running AgentTest instance (called by the runner)."""
     _active_test.instance = test_instance
     # Initialize per-test expectations list
-    if not hasattr(test_instance, '_expectations'):
+    if not hasattr(test_instance, "_expectations"):
         test_instance._expectations = []
 
 
@@ -564,7 +574,7 @@ def expect(trajectory: AgentTrajectory) -> Expectation:
         )
 
     # Validate trajectory has steps list
-    if not hasattr(trajectory, 'steps'):
+    if not hasattr(trajectory, "steps"):
         raise ValueError(
             f"expect() received an invalid object of type {type(trajectory).__name__}.\n"
             "  Expected: An AgentTrajectory object.\n"
@@ -574,7 +584,7 @@ def expect(trajectory: AgentTrajectory) -> Expectation:
     exp = Expectation(trajectory)
     # Register this expectation with the active test (if any) so the
     # runner can collect assertion results after the test method returns.
-    test_instance = getattr(_active_test, 'instance', None)
-    if test_instance is not None and hasattr(test_instance, '_expectations'):
+    test_instance = getattr(_active_test, "instance", None)
+    if test_instance is not None and hasattr(test_instance, "_expectations"):
         test_instance._expectations.append(exp)
     return exp

@@ -18,6 +18,7 @@ from agentbench.property.shrink import ShrinkResult, shrink
 # Property wrapper
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PropertyResult:
     """Result of running a single property test."""
@@ -92,6 +93,7 @@ class Property:
 
                 # Attempt shrinking
                 if self.do_shrink and hasattr(self.gen, "shrink_value"):
+
                     def _still_fails(v: Any) -> bool:
                         try:
                             if instance is not None:
@@ -123,6 +125,7 @@ class Property:
 # ---------------------------------------------------------------------------
 # @property_test decorator
 # ---------------------------------------------------------------------------
+
 
 def property_test(
     *,
@@ -177,6 +180,7 @@ def property_test(
 # Built-in common properties
 # ---------------------------------------------------------------------------
 
+
 def no_pii_leakage(
     agent_run_fn: Callable[[str], Any],
     *,
@@ -202,9 +206,9 @@ def no_pii_leakage(
     """
     _gen = gen or AgentInput()
     _patterns = pii_patterns or [
-        r"\d{3}-\d{2}-\d{4}",           # SSN
-        r"\b\d{16}\b",                   # Credit card
-        r"\b[A-Z]\w*\s+\d{4}\b",        # Name + year
+        r"\d{3}-\d{2}-\d{4}",  # SSN
+        r"\b\d{16}\b",  # Credit card
+        r"\b[A-Z]\w*\s+\d{4}\b",  # Name + year
         r"\b[\w.+-]+@[\w-]+\.[\w.]+\b",  # Email
     ]
     compiled = [re.compile(p) for p in _patterns]
@@ -245,8 +249,7 @@ def bounded_steps(
         traj = agent_run_fn(value)
         if traj.step_count > max_steps:
             raise AssertionError(
-                f"Agent used {traj.step_count} steps (max: {max_steps}) "
-                f"for input: {value[:80]}"
+                f"Agent used {traj.step_count} steps (max: {max_steps}) for input: {value[:80]}"
             )
 
     prop = Property(fn=_check, gen=_gen, runs=runs, do_shrink=True)
@@ -355,15 +358,13 @@ def graceful_degradation(
             # As long as it doesn't raise an unhandled exception, it's OK
             if traj.error and "unhandled" in traj.error.lower():
                 raise AssertionError(
-                    f"Agent crashed on malformed input: {value[:80]!r}\n"
-                    f"  Error: {traj.error}"
+                    f"Agent crashed on malformed input: {value[:80]!r}\n  Error: {traj.error}"
                 )
         except AssertionError:
             raise
         except Exception as exc:
             raise AssertionError(
-                f"Agent raised unhandled exception for input: "
-                f"{value[:80]!r}\n  Exception: {exc}"
+                f"Agent raised unhandled exception for input: {value[:80]!r}\n  Exception: {exc}"
             ) from exc
 
     # First check random inputs

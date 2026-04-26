@@ -33,6 +33,7 @@ SAMPLE_TRAJECTORY = {
 
 # ─── TrajectoryStore: Init ───
 
+
 class TestTrajectoryStoreInit:
     def test_creates_base_dir(self, tmp_path):
         base = tmp_path / "my_trajs"
@@ -50,6 +51,7 @@ class TestTrajectoryStoreInit:
 
 
 # ─── TrajectoryStore: Save ───
+
 
 class TestTrajectoryStoreSave:
     def test_save_with_explicit_name(self, tmp_path):
@@ -95,6 +97,7 @@ class TestTrajectoryStoreSave:
 
 # ─── TrajectoryStore: Load ───
 
+
 class TestTrajectoryStoreLoad:
     def test_load_existing(self, tmp_path):
         store = TrajectoryStore(base_dir=tmp_path)
@@ -110,6 +113,7 @@ class TestTrajectoryStoreLoad:
 
 
 # ─── TrajectoryStore: List ───
+
 
 class TestTrajectoryStoreList:
     def test_list_empty(self, tmp_path):
@@ -133,6 +137,7 @@ class TestTrajectoryStoreList:
 
 # ─── TrajectoryStore: Delete ───
 
+
 class TestTrajectoryStoreDelete:
     def test_delete_existing(self, tmp_path):
         store = TrajectoryStore(base_dir=tmp_path)
@@ -149,6 +154,7 @@ class TestTrajectoryStoreDelete:
 
 
 # ─── TrajectoryStore: Path Traversal ───
+
 
 class TestTrajectoryStorePathTraversal:
     def test_sanitize_replaces_special_chars(self):
@@ -188,6 +194,7 @@ class TestTrajectoryStorePathTraversal:
 
 
 # ─── TrajectoryDiff: Compare ───
+
 
 class TestTrajectoryDiffCompare:
     def _make_traj(self, steps=None, response="ok", name="test"):
@@ -234,20 +241,24 @@ class TestTrajectoryDiffCompare:
 
     def test_different_tool_names_is_critical(self):
         golden = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "search",
-                "tool_input": {},
-                "tool_output": "r",
-            }],
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {},
+                    "tool_output": "r",
+                }
+            ],
         )
         current = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "database",
-                "tool_input": {},
-                "tool_output": "r",
-            }],
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "database",
+                    "tool_input": {},
+                    "tool_output": "r",
+                }
+            ],
         )
 
         diff = TrajectoryDiff()
@@ -285,20 +296,24 @@ class TestTrajectoryDiffCompare:
 
     def test_different_tool_input_is_warning(self):
         golden = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "search",
-                "tool_input": {"q": "old"},
-                "tool_output": "r",
-            }],
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {"q": "old"},
+                    "tool_output": "r",
+                }
+            ],
         )
         current = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "search",
-                "tool_input": {"q": "new"},
-                "tool_output": "r",
-            }],
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {"q": "new"},
+                    "tool_output": "r",
+                }
+            ],
         )
 
         diff = TrajectoryDiff()
@@ -312,12 +327,14 @@ class TestTrajectoryDiffCompare:
             steps=[{"action": "tool_call", "tool_name": "search", "tool_output": "ok"}],
         )
         current = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "search",
-                "tool_output": "ok",
-                "error": "crashed",
-            }],
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_output": "ok",
+                    "error": "crashed",
+                }
+            ],
         )
 
         diff = TrajectoryDiff()
@@ -352,20 +369,24 @@ class TestTrajectoryDiffCompare:
 
     def test_different_tool_output_is_warning(self):
         golden = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "search",
-                "tool_input": {"q": "x"},
-                "tool_output": "old result",
-            }]
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {"q": "x"},
+                    "tool_output": "old result",
+                }
+            ]
         )
         current = self._make_traj(
-            steps=[{
-                "action": "tool_call",
-                "tool_name": "search",
-                "tool_input": {"q": "x"},
-                "tool_output": "new result",
-            }]
+            steps=[
+                {
+                    "action": "tool_call",
+                    "tool_name": "search",
+                    "tool_input": {"q": "x"},
+                    "tool_output": "new result",
+                }
+            ]
         )
 
         diff = TrajectoryDiff()
@@ -418,21 +439,25 @@ class TestTrajectoryDiffCompare:
     def test_summary_counts(self):
         golden = {
             "name": "g",
-            "steps": [{
-                "action": "tool_call",
-                "tool_name": "a",
-                "tool_input": {"x": 1},
-                "tool_output": "r",
-            }],
+            "steps": [
+                {
+                    "action": "tool_call",
+                    "tool_name": "a",
+                    "tool_input": {"x": 1},
+                    "tool_output": "r",
+                }
+            ],
         }
         current = {
             "name": "c",
-            "steps": [{
-                "action": "tool_call",
-                "tool_name": "a",
-                "tool_input": {"x": 2},
-                "tool_output": "r",
-            }],
+            "steps": [
+                {
+                    "action": "tool_call",
+                    "tool_name": "a",
+                    "tool_input": {"x": 2},
+                    "tool_output": "r",
+                }
+            ],
         }
 
         diff = TrajectoryDiff()
@@ -465,21 +490,34 @@ class TestTrajectoryDiffCompare:
 
 # ─── DiffResult ───
 
+
 class TestDiffResult:
     def test_has_critical(self):
         result = DiffResult(golden_name="g", current_name="c")
-        result.step_diffs.append(StepDiff(
-            step_number=0, severity="critical", field="action",
-            golden_value="a", current_value="b", message="diff",
-        ))
+        result.step_diffs.append(
+            StepDiff(
+                step_number=0,
+                severity="critical",
+                field="action",
+                golden_value="a",
+                current_value="b",
+                message="diff",
+            )
+        )
         assert result.has_critical
 
     def test_has_warnings(self):
         result = DiffResult(golden_name="g", current_name="c")
-        result.step_diffs.append(StepDiff(
-            step_number=0, severity="warning", field="step_count",
-            golden_value=1, current_value=2, message="diff",
-        ))
+        result.step_diffs.append(
+            StepDiff(
+                step_number=0,
+                severity="warning",
+                field="step_count",
+                golden_value=1,
+                current_value=2,
+                message="diff",
+            )
+        )
         assert result.has_warnings
 
     def test_no_critical(self):
@@ -497,10 +535,16 @@ class TestDiffResult:
 
     def test_format_output_with_diffs(self):
         result = DiffResult(golden_name="g", current_name="c")
-        result.step_diffs.append(StepDiff(
-            step_number=0, severity="critical", field="tool_name",
-            golden_value="search", current_value="db", message="Different tool",
-        ))
+        result.step_diffs.append(
+            StepDiff(
+                step_number=0,
+                severity="critical",
+                field="tool_name",
+                golden_value="search",
+                current_value="db",
+                message="Different tool",
+            )
+        )
         result.summary = {"critical": 1, "warning": 0, "info": 0, "match": 0}
         output = result.format_output()
         assert "Summary" in output

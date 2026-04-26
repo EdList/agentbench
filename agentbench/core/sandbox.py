@@ -37,6 +37,7 @@ class SandboxManager:
         if self._client is None:
             try:
                 import docker
+
                 self._client = docker.from_env()
             except ImportError:
                 raise ImportError(

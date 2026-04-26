@@ -44,6 +44,7 @@ class AgentStep:
 
     def to_dict(self) -> dict[str, Any]:
         import json
+
         # Preserve complex types as JSON strings for clean serialization
         tool_output = self.tool_output
         if tool_output is not None and not isinstance(tool_output, (str, int, float, bool)):
@@ -189,9 +190,7 @@ class AgentTest:
         if inject_tool_failure:
             if isinstance(inject_tool_failure, str):
                 self._failure_injections.append(
-                    ToolFailureInjection(
-                        tool_name=inject_tool_failure, fail_times=fail_times
-                    )
+                    ToolFailureInjection(tool_name=inject_tool_failure, fail_times=fail_times)
                 )
             else:
                 self._failure_injections.append(
@@ -221,9 +220,7 @@ class AgentTest:
         start_time = time.time()
         try:
             effective_max_steps = (
-                max_steps
-                if max_steps is not None
-                else self._get_config().max_steps
+                max_steps if max_steps is not None else self._get_config().max_steps
             )
             effective_timeout = (
                 timeout_seconds

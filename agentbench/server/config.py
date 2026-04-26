@@ -25,18 +25,12 @@ class ServerConfig:
     host: str = field(default_factory=lambda: os.getenv("AGENTBENCH_HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: int(os.getenv("AGENTBENCH_PORT", "8000")))
     database_url: str = field(
-        default_factory=lambda: os.getenv(
-            "AGENTBENCH_DATABASE_URL", "sqlite:///./agentbench.db"
-        )
+        default_factory=lambda: os.getenv("AGENTBENCH_DATABASE_URL", "sqlite:///./agentbench.db")
     )
-    secret_key: str = field(
-        default_factory=lambda: os.getenv("AGENTBENCH_SECRET_KEY", "").strip()
-    )
+    secret_key: str = field(default_factory=lambda: os.getenv("AGENTBENCH_SECRET_KEY", "").strip())
     api_keys: list[str] = field(default_factory=_load_api_keys)
     cors_origins: list[str] = field(
-        default_factory=lambda: os.getenv(
-            "AGENTBENCH_CORS_ORIGINS", "*"
-        ).split(",")
+        default_factory=lambda: os.getenv("AGENTBENCH_CORS_ORIGINS", "*").split(",")
     )
     scanner_use_llm: bool = field(
         default_factory=lambda: os.getenv("AGENTBENCH_SCANNER_USE_LLM", "false").lower() == "true"
@@ -72,13 +66,9 @@ class ServerConfig:
             return
 
         if not self.secret_key:
-            raise ValueError(
-                "AGENTBENCH_SECRET_KEY must be set when AGENTBENCH_DEBUG is false."
-            )
+            raise ValueError("AGENTBENCH_SECRET_KEY must be set when AGENTBENCH_DEBUG is false.")
         if not self.api_keys:
-            raise ValueError(
-                "AGENTBENCH_API_KEYS must be set when AGENTBENCH_DEBUG is false."
-            )
+            raise ValueError("AGENTBENCH_API_KEYS must be set when AGENTBENCH_DEBUG is false.")
 
 
 # Module-level singleton — imported by other server modules.

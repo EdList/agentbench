@@ -15,6 +15,7 @@ from agentbench.scanner.store import ScanStore
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_report(
     overall_score: float = 85.0,
     overall_grade: str = "B",
@@ -89,18 +90,24 @@ class TestDBInit:
     def test_tables_created(self, store: ScanStore):
         """Required tables exist after init."""
         with store._connect() as conn:
-            tables = {r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()}
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
             assert "scans" in tables
             assert "domain_scores" in tables
 
     def test_indexes_created(self, store: ScanStore):
         """Required indexes exist after init."""
         with store._connect() as conn:
-            indexes = {r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            ).fetchall()}
+            indexes = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index'"
+                ).fetchall()
+            }
             assert "idx_scans_agent" in indexes
             assert "idx_scans_created" in indexes
 

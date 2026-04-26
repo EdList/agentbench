@@ -53,39 +53,135 @@ _MULTI_TURN_TEMPLATES = [
 
 _DOMAIN_NOUNS: dict[str, list[str]] = {
     "general": [
-        "data", "system", "process", "model", "report", "task", "project",
-        "document", "file", "record", "event", "user", "account", "setting",
-        "service", "resource", "feature", "component", "module", "function",
-        "network", "server", "database", "cache", "queue", "topic", "stream",
-        "pipeline", "workflow", "schedule", "notification", "alert", "metric",
+        "data",
+        "system",
+        "process",
+        "model",
+        "report",
+        "task",
+        "project",
+        "document",
+        "file",
+        "record",
+        "event",
+        "user",
+        "account",
+        "setting",
+        "service",
+        "resource",
+        "feature",
+        "component",
+        "module",
+        "function",
+        "network",
+        "server",
+        "database",
+        "cache",
+        "queue",
+        "topic",
+        "stream",
+        "pipeline",
+        "workflow",
+        "schedule",
+        "notification",
+        "alert",
+        "metric",
     ],
     "finance": [
-        "invoice", "payment", "transaction", "balance", "account", "refund",
-        "receipt", "order", "subscription", "charge", "fee", "tax", "budget",
-        "portfolio", "dividend", "interest", "loan", "credit", "debit",
+        "invoice",
+        "payment",
+        "transaction",
+        "balance",
+        "account",
+        "refund",
+        "receipt",
+        "order",
+        "subscription",
+        "charge",
+        "fee",
+        "tax",
+        "budget",
+        "portfolio",
+        "dividend",
+        "interest",
+        "loan",
+        "credit",
+        "debit",
     ],
     "healthcare": [
-        "patient", "diagnosis", "treatment", "medication", "appointment",
-        "record", "lab result", "prescription", "referral", "symptom",
-        "vital sign", "allergy", "procedure", "insurance claim",
+        "patient",
+        "diagnosis",
+        "treatment",
+        "medication",
+        "appointment",
+        "record",
+        "lab result",
+        "prescription",
+        "referral",
+        "symptom",
+        "vital sign",
+        "allergy",
+        "procedure",
+        "insurance claim",
     ],
     "ecommerce": [
-        "product", "cart", "order", "shipment", "return", "review",
-        "catalog", "inventory", "discount", "coupon", "wishlist",
-        "checkout", "payment", "address", "delivery",
+        "product",
+        "cart",
+        "order",
+        "shipment",
+        "return",
+        "review",
+        "catalog",
+        "inventory",
+        "discount",
+        "coupon",
+        "wishlist",
+        "checkout",
+        "payment",
+        "address",
+        "delivery",
     ],
 }
 
 _ADJS = [
-    "new", "old", "large", "small", "fast", "slow", "simple", "complex",
-    "important", "useful", "relevant", "recent", "active", "valid",
-    "specific", "detailed", "basic", "advanced", "primary", "secondary",
+    "new",
+    "old",
+    "large",
+    "small",
+    "fast",
+    "slow",
+    "simple",
+    "complex",
+    "important",
+    "useful",
+    "relevant",
+    "recent",
+    "active",
+    "valid",
+    "specific",
+    "detailed",
+    "basic",
+    "advanced",
+    "primary",
+    "secondary",
 ]
 
 _TOOL_NAMES = [
-    "search", "lookup", "calculate", "fetch", "send_email", "query_db",
-    "http_request", "read_file", "write_file", "run_code", "translate",
-    "summarize", "classify", "validate", "transform",
+    "search",
+    "lookup",
+    "calculate",
+    "fetch",
+    "send_email",
+    "query_db",
+    "http_request",
+    "read_file",
+    "write_file",
+    "run_code",
+    "translate",
+    "summarize",
+    "classify",
+    "validate",
+    "transform",
 ]
 
 
@@ -97,6 +193,7 @@ def _pick(pool: Sequence[str], rng: random.Random | None = None) -> str:
 # ---------------------------------------------------------------------------
 # Base generator mixin
 # ---------------------------------------------------------------------------
+
 
 class _GeneratorMixin:
     """Shared composition helpers (map / filter / chain) and shrinking stub."""
@@ -153,6 +250,7 @@ class _GeneratorMixin:
 # AgentInput — realistic agent prompts / queries / commands
 # ---------------------------------------------------------------------------
 
+
 class AgentInput(_GeneratorMixin):
     """Generate realistic agent input text.
 
@@ -206,9 +304,7 @@ class AgentInput(_GeneratorMixin):
             text = template.format(
                 noun=r.choice(nouns),
                 adj=r.choice(_ADJS),
-                cmd=r.choice(_COMMAND_TEMPLATES).format(
-                    noun=r.choice(nouns), adj=r.choice(_ADJS)
-                ),
+                cmd=r.choice(_COMMAND_TEMPLATES).format(noun=r.choice(nouns), adj=r.choice(_ADJS)),
             )
 
             # Ensure min/max length constraints
@@ -268,12 +364,14 @@ class AgentInput(_GeneratorMixin):
 
     def _clone(self) -> AgentInput:
         import copy
+
         return copy.copy(self)
 
 
 # ---------------------------------------------------------------------------
 # ToolCallGen — valid tool call sequences
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ToolCall:
@@ -330,9 +428,7 @@ class ToolCallGen(_GeneratorMixin):
             return result
         raise ValueError("Filter rejected all values after 10 attempts")
 
-    def generate_many(
-        self, n: int, *, rng: random.Random | None = None
-    ) -> list[list[ToolCall]]:
+    def generate_many(self, n: int, *, rng: random.Random | None = None) -> list[list[ToolCall]]:
         r = rng or self._rng
         return [self.generate(rng=r) for _ in range(n)]
 
@@ -365,9 +461,7 @@ class ToolCallGen(_GeneratorMixin):
         seen: set[int] = set()
         unique: list[list[ToolCall]] = []
         for c in candidates:
-            h = hash(tuple(
-                (tc.tool_name, tuple(sorted(tc.arguments.items()))) for tc in c
-            ))
+            h = hash(tuple((tc.tool_name, tuple(sorted(tc.arguments.items()))) for tc in c))
             if h not in seen:
                 seen.add(h)
                 unique.append(c)
@@ -375,12 +469,14 @@ class ToolCallGen(_GeneratorMixin):
 
     def _clone(self) -> ToolCallGen:
         import copy
+
         return copy.copy(self)
 
 
 # ---------------------------------------------------------------------------
 # ConversationGen — multi-turn conversation histories
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ConversationTurn:
@@ -466,12 +562,14 @@ class ConversationGen(_GeneratorMixin):
 
     def _clone(self) -> ConversationGen:
         import copy
+
         return copy.copy(self)
 
 
 # ---------------------------------------------------------------------------
 # TrajectoryGen — complete agent trajectories
 # ---------------------------------------------------------------------------
+
 
 class TrajectoryGen(_GeneratorMixin):
     """Generate complete :class:`~agentbench.core.test.AgentTrajectory` objects.
@@ -584,4 +682,5 @@ class TrajectoryGen(_GeneratorMixin):
 
     def _clone(self) -> TrajectoryGen:
         import copy
+
         return copy.copy(self)

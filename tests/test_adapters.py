@@ -18,11 +18,13 @@ from agentbench.core.test import (
 
 # ─── Helpers ───
 
+
 def _empty_trajectory() -> AgentTrajectory:
     return AgentTrajectory()
 
 
 # ─── RawAPIAdapter: Constructor ───
+
 
 class TestRawAPIAdapterInit:
     def test_function_mode(self):
@@ -70,6 +72,7 @@ class TestRawAPIAdapterInit:
 
 # ─── RawAPIAdapter: Function Mode ───
 
+
 class TestRawAPIAdapterFunctionMode:
     def test_basic_response(self):
         def agent(prompt, context):
@@ -98,6 +101,7 @@ class TestRawAPIAdapterFunctionMode:
 
     def test_empty_steps_with_response(self):
         """When steps list is empty but response exists, should record a step."""
+
         def agent(prompt, context):
             return {"response": "No steps needed", "steps": []}
 
@@ -109,6 +113,7 @@ class TestRawAPIAdapterFunctionMode:
 
     def test_response_without_steps_key(self):
         """When no steps key but response exists, should record a step."""
+
         def agent(prompt, context):
             return {"response": "Plain response"}
 
@@ -120,6 +125,7 @@ class TestRawAPIAdapterFunctionMode:
 
     def test_non_dict_return(self):
         """Function returns a string instead of dict."""
+
         def agent(prompt, context):
             return "just a string"
 
@@ -153,6 +159,7 @@ class TestRawAPIAdapterFunctionMode:
 
 # ─── RawAPIAdapter: Failure Injection ───
 
+
 class TestRawAPIAdapterFailureInjection:
     def test_failure_injected_for_matching_tool(self):
         def agent(prompt, context):
@@ -166,10 +173,7 @@ class TestRawAPIAdapterFailureInjection:
 
         adapter = RawAPIAdapter(func=agent)
         failures = [
-            ToolFailureInjection(
-                tool_name="search", fail_times=1,
-                error_message="Injected fail"
-            )
+            ToolFailureInjection(tool_name="search", fail_times=1, error_message="Injected fail")
         ]
         traj = adapter.run("Search", _empty_trajectory(), failure_injections=failures)
 
@@ -198,6 +202,7 @@ class TestRawAPIAdapterFailureInjection:
 
     def test_failure_injected_only_fail_times(self):
         """Failure should be injected only fail_times times."""
+
         def agent(prompt, context):
             return {
                 "response": "Done",
@@ -217,6 +222,7 @@ class TestRawAPIAdapterFailureInjection:
 
 
 # ─── RawAPIAdapter: Latency Injection ───
+
 
 class TestRawAPIAdapterLatencyInjection:
     def test_latency_injected(self):
@@ -259,6 +265,7 @@ class TestRawAPIAdapterLatencyInjection:
 
 
 # ─── RawAPIAdapter: HTTP Mode ───
+
 
 class TestRawAPIAdapterHTTPMode:
     @patch("agentbench.adapters.raw_api.httpx.Client")
@@ -318,7 +325,8 @@ class TestRawAPIAdapterHTTPMode:
         latencies = [ToolLatencyInjection(tool_name="search", delay_ms=500)]
 
         _traj = adapter.run(
-            "Test", _empty_trajectory(),
+            "Test",
+            _empty_trajectory(),
             failure_injections=failures,
             latency_injections=latencies,
         )
@@ -362,6 +370,7 @@ class TestRawAPIAdapterHTTPMode:
 
 # ─── RawAPIAdapter: _should_inject_failure (inherited from base) ───
 
+
 class TestRawAPIAdapterShouldInjectFailure:
     def test_no_injections_returns_none(self):
         adapter = RawAPIAdapter(func=lambda p, c: {})
@@ -388,6 +397,7 @@ class TestRawAPIAdapterShouldInjectFailure:
 
 
 # ─── RawAPIAdapter: _safe_step_kwargs (inherited from base) ───
+
 
 class TestSafeStepKwargs:
     def test_filters_invalid_keys(self):
@@ -420,6 +430,7 @@ class TestSafeStepKwargs:
 
 # ─── LangChainAdapter: Init & Tools ───
 
+
 class TestLangChainAdapterInit:
     def test_explicit_tools(self):
         executor = MagicMock()
@@ -443,15 +454,14 @@ class TestLangChainAdapterInit:
         # When tools raises, get_available_tools catches Exception
         # and returns []
         type(executor).tools = property(
-            lambda self: (
-                _ for _ in ()
-            ).throw(RuntimeError("no tools"))
+            lambda self: (_ for _ in ()).throw(RuntimeError("no tools"))
         )
         adapter = LangChainAdapter(executor)
         assert adapter.get_available_tools() == []
 
 
 # ─── LangChainAdapter: Run ───
+
 
 class TestLangChainAdapterRun:
     def test_successful_run(self):
@@ -495,6 +505,7 @@ class TestLangChainAdapterRun:
 
 
 # ─── LangChainAdapter: _TrajectoryCallback ───
+
 
 class TestTrajectoryCallback:
     def test_on_llm_end_records_step(self):
@@ -552,10 +563,7 @@ class TestTrajectoryCallback:
     def test_failure_injection_in_on_agent_action(self):
         traj = AgentTrajectory()
         failures = [
-            ToolFailureInjection(
-                tool_name="search", fail_times=1,
-                error_message="Injected!"
-            )
+            ToolFailureInjection(tool_name="search", fail_times=1, error_message="Injected!")
         ]
         cb = _TrajectoryCallback(
             trajectory=traj,
@@ -638,6 +646,7 @@ class TestTrajectoryCallback:
 
 # ─── LangChainAdapter: Latency & Failure Injection via run() ───
 
+
 class TestLangChainAdapterInjections:
     def test_latency_injection_via_run(self):
         """Verify latency injection is passed to callback."""
@@ -647,7 +656,8 @@ class TestLangChainAdapterInjections:
         latencies = [ToolLatencyInjection(tool_name="search", delay_ms=100)]
         adapter = LangChainAdapter(executor)
         traj = adapter.run(
-            "test", _empty_trajectory(),
+            "test",
+            _empty_trajectory(),
             latency_injections=latencies,
         )
         assert traj.completed
@@ -659,7 +669,8 @@ class TestLangChainAdapterInjections:
         failures = [ToolFailureInjection(tool_name="search", fail_times=1)]
         adapter = LangChainAdapter(executor)
         traj = adapter.run(
-            "test", _empty_trajectory(),
+            "test",
+            _empty_trajectory(),
             failure_injections=failures,
         )
         assert traj.completed

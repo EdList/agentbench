@@ -15,21 +15,32 @@ from agentbench.core.test import AgentTest
 runner = CliRunner()
 
 
-def _write_agent_test_file(tmp_path, filename: str, agent_name: str, response_prefix: str) -> None:
+def _write_agent_test_file(
+    tmp_path, filename: str, agent_name: str, response_prefix: str
+) -> None:
     test_file = tmp_path / filename
-    test_file.write_text(textwrap.dedent(f"""\
+    _agent_return = (
+        f'{{"response": "{response_prefix}: " + prompt, '
+        '"steps": [{"action": "llm_response", '
+        f'"response": "{response_prefix}: " + prompt}}]}}'
+    )
+    test_file.write_text(
+        textwrap.dedent(f"""\
         from agentbench.core.test import AgentTest
         from agentbench.adapters.raw_api import RawAPIAdapter
 
         def _agent_fn(prompt, context=None):
-            return {{"response": "{response_prefix}: " + prompt, "steps": [{{"action": "llm_response", "response": "{response_prefix}: " + prompt}}]}}
+            return {_agent_return}
 
-        class {agent_name.title().replace('-', '').replace('_', '')}Test(AgentTest):
+        class {agent_name.title().replace("-", "").replace("_", "")}Test(AgentTest):
             agent = "{agent_name}"
             adapter = RawAPIAdapter(func=_agent_fn)
-    """))
+    """)
+    )
+
 
 # ─── scaffold_project ───
+
 
 class TestScaffoldProject:
     def test_creates_raw_api_project(self, tmp_path):
@@ -115,6 +126,7 @@ class TestScaffoldProject:
 
 # ─── TEMPLATES dict ───
 
+
 class TestTemplates:
     def test_raw_api_template_exists(self):
         assert "raw_api" in TEMPLATES
@@ -135,11 +147,13 @@ class TestCliHelp:
 
 # ─── _find_adapter_in_path ───
 
+
 class TestFindAdapterInPath:
     def test_discovers_agent_in_file(self, tmp_path):
         """Write a test file with an AgentTest subclass and find it."""
         test_file = tmp_path / "test_my_agent.py"
-        test_file.write_text(textwrap.dedent("""\
+        test_file.write_text(
+            textwrap.dedent("""\
             from agentbench.core.test import AgentTest
             from agentbench.adapters.raw_api import RawAPIAdapter
 
@@ -149,7 +163,8 @@ class TestFindAdapterInPath:
             class FoundTest(AgentTest):
                 agent = "found-agent"
                 adapter = RawAPIAdapter(func=my_agent)
-        """))
+        """)
+        )
 
         result = _find_adapter_in_path(test_file)
         assert result is not None
@@ -158,7 +173,8 @@ class TestFindAdapterInPath:
 
     def test_discovers_agent_in_directory(self, tmp_path):
         test_file = tmp_path / "test_discovery.py"
-        test_file.write_text(textwrap.dedent("""\
+        test_file.write_text(
+            textwrap.dedent("""\
             from agentbench.core.test import AgentTest
             from agentbench.adapters.raw_api import RawAPIAdapter
 
@@ -168,7 +184,8 @@ class TestFindAdapterInPath:
             class DirTest(AgentTest):
                 agent = "dir-agent"
                 adapter = RawAPIAdapter(func=agent_fn)
-        """))
+        """)
+        )
 
         result = _find_adapter_in_path(tmp_path)
         assert result is not None
@@ -185,13 +202,15 @@ class TestFindAdapterInPath:
 
     def test_file_without_adapter_returns_none(self, tmp_path):
         test_file = tmp_path / "test_no_adapter.py"
-        test_file.write_text(textwrap.dedent("""\
+        test_file.write_text(
+            textwrap.dedent("""\
             from agentbench.core.test import AgentTest
 
             class NoAdapterTest(AgentTest):
                 agent = "no-adapter"
                 adapter = None
-        """))
+        """)
+        )
 
         result = _find_adapter_in_path(test_file)
         assert result is None
@@ -204,10 +223,12 @@ class TestFindAdapterInPath:
     def test_skips_base_class(self, tmp_path):
         """Should not return AgentTest itself."""
         test_file = tmp_path / "test_base.py"
-        test_file.write_text(textwrap.dedent("""\
+        test_file.write_text(
+            textwrap.dedent("""\
             from agentbench.core.test import AgentTest
             # Only the base class — should be skipped
-        """))
+        """)
+        )
 
         result = _find_adapter_in_path(test_file)
         assert result is None
@@ -221,7 +242,8 @@ class TestFindAdapterInPath:
 
     def test_multiple_test_classes_finds_first(self, tmp_path):
         test_file = tmp_path / "test_multi.py"
-        test_file.write_text(textwrap.dedent("""\
+        test_file.write_text(
+            textwrap.dedent("""\
             from agentbench.core.test import AgentTest
             from agentbench.adapters.raw_api import RawAPIAdapter
 
@@ -237,7 +259,8 @@ class TestFindAdapterInPath:
             class SecondTest(AgentTest):
                 agent = "second"
                 adapter = RawAPIAdapter(func=fn2)
-        """))
+        """)
+        )
 
         result = _find_adapter_in_path(test_file)
         assert result is not None
@@ -246,7 +269,8 @@ class TestFindAdapterInPath:
 
     def test_can_select_exact_agent_name(self, tmp_path):
         test_file = tmp_path / "test_multi.py"
-        test_file.write_text(textwrap.dedent("""\
+        test_file.write_text(
+            textwrap.dedent("""\
             from agentbench.core.test import AgentTest
             from agentbench.adapters.raw_api import RawAPIAdapter
 
@@ -262,7 +286,8 @@ class TestFindAdapterInPath:
             class SecondTest(AgentTest):
                 agent = "second"
                 adapter = RawAPIAdapter(func=fn2)
-        """))
+        """)
+        )
 
         result = _find_adapter_in_path(test_file, agent_name="second")
         assert result is not None
@@ -294,7 +319,9 @@ class TestRecordAndDiff:
         monkeypatch.chdir(tmp_path)
 
         golden_path = tmp_path / "golden.json"
-        record_result = runner.invoke(app, ["record", "beta-agent", "hello", "--output", str(golden_path)])
+        record_result = runner.invoke(
+            app, ["record", "beta-agent", "hello", "--output", str(golden_path)]
+        )
         assert record_result.exit_code == 0, record_result.output
 
         diff_result = runner.invoke(app, ["diff", str(golden_path), "--agent", str(tests_dir)])

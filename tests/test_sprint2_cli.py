@@ -16,11 +16,13 @@ runner = CliRunner()
 
 # ─── Fixtures ───
 
+
 @pytest.fixture()
 def sample_suite(tmp_path):
     """Create a minimal test suite file."""
     test_file = tmp_path / "test_demo.py"
-    test_file.write_text(textwrap.dedent("""\
+    test_file.write_text(
+        textwrap.dedent("""\
         from agentbench.core.test import AgentTest
         from agentbench.adapters.raw_api import RawAPIAdapter
 
@@ -40,7 +42,8 @@ def sample_suite(tmp_path):
                 \"\"\"Agent completes quickly.\"\"\"
                 result = self.run("hi")
                 expect(result).to_complete_within(steps=5)
-    """))
+    """)
+    )
     return tmp_path
 
 
@@ -117,6 +120,7 @@ def sample_json_report(tmp_path):
 
 # ─── List Command Tests ───
 
+
 class TestListCommand:
     def test_lists_suites_and_methods(self, sample_suite):
         result = runner.invoke(app, ["list", str(sample_suite)])
@@ -161,6 +165,7 @@ class TestListCommand:
 
 
 # ─── Report Command Tests ───
+
 
 class TestReportCommand:
     def test_generates_html_file(self, sample_json_report, tmp_path):
@@ -255,6 +260,7 @@ class TestReportHTMLContent:
 
 # ─── _render_html unit tests ───
 
+
 class TestRenderHTML:
     def test_all_passed_status(self):
         data = {"total_tests": 2, "passed": 2, "failed": 0, "duration_ms": 500, "suites": []}
@@ -280,18 +286,22 @@ class TestRenderHTML:
             "passed": 0,
             "failed": 1,
             "duration_ms": 100,
-            "suites": [{
-                "name": "<script>alert('xss')</script>",
-                "passed": 0,
-                "failed": 1,
-                "tests": [{
-                    "name": "test_evil",
-                    "passed": False,
-                    "duration_ms": 100,
-                    "error": "<img onerror=alert(1)>",
-                    "assertions": [],
-                }],
-            }],
+            "suites": [
+                {
+                    "name": "<script>alert('xss')</script>",
+                    "passed": 0,
+                    "failed": 1,
+                    "tests": [
+                        {
+                            "name": "test_evil",
+                            "passed": False,
+                            "duration_ms": 100,
+                            "error": "<img onerror=alert(1)>",
+                            "assertions": [],
+                        }
+                    ],
+                }
+            ],
         }
         html_output = _render_html(data)
         # Suite name and error should be escaped (the template has its own <script> tags for JS)
@@ -301,21 +311,20 @@ class TestRenderHTML:
 
 # ─── Watch Command Tests (import / arg validation only) ───
 
+
 class TestWatchCommand:
     def test_nonexistent_path_exits(self, tmp_path):
         result = runner.invoke(app, ["watch", str(tmp_path / "nope")])
         assert result.exit_code == 1
         # On CI (no watchdog), the import check fires first;
         # locally it may hit the path check. Either is a valid failure.
-        assert (
-            "does not exist" in result.output
-            or "watchdog" in result.output.lower()
-        )
+        assert "does not exist" in result.output or "watchdog" in result.output.lower()
 
     def test_watchdog_import_error_message(self, tmp_path, monkeypatch):
         """Verify graceful error when watchdog is not installed."""
         # Patch the watchdog import to fail
         import sys
+
         watchdog_mod = sys.modules.pop("watchdog", None)
         sys.modules["watchdog"] = None  # type: ignore
         sys.modules["watchdog.observers"] = None  # type: ignore
@@ -332,6 +341,7 @@ class TestWatchCommand:
 
 
 # ─── Integration: run → report pipeline ───
+
 
 class TestRunReportPipeline:
     def test_run_generates_valid_json_for_report(self, sample_suite, tmp_path):
@@ -355,7 +365,9 @@ class TestRunReportPipeline:
 
 
 class TestAuditRegressionCliFixes:
-    def test_run_auto_discovers_agentbench_yaml_and_uses_parallel_workers(self, sample_suite, monkeypatch):
+    def test_run_auto_discovers_agentbench_yaml_and_uses_parallel_workers(
+        self, sample_suite, monkeypatch
+    ):
         captured = {}
 
         class DummyRunner:
@@ -369,6 +381,7 @@ class TestAuditRegressionCliFixes:
                     total_failed = 0
                     total_duration_ms = 0.0
                     suite_results = []
+
                 return _Result()
 
         (sample_suite / "agentbench.yaml").write_text("max_steps: 99\nparallel_workers: 7\n")

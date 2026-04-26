@@ -66,37 +66,45 @@ class TestConversationResult:
         assert result.total_cost == 0.0
 
     def test_turn_count_property(self):
-        r = ConversationResult(turns=[
-            ConversationTurn("A", "hi"),
-            ConversationTurn("B", "hey"),
-            ConversationTurn("A", "bye"),
-        ])
+        r = ConversationResult(
+            turns=[
+                ConversationTurn("A", "hi"),
+                ConversationTurn("B", "hey"),
+                ConversationTurn("A", "bye"),
+            ]
+        )
         assert r.turn_count == 3
 
     def test_agent_names_property(self):
-        r = ConversationResult(turns=[
-            ConversationTurn("Alice", "hi"),
-            ConversationTurn("Bob", "hey"),
-            ConversationTurn("Alice", "bye"),
-        ])
+        r = ConversationResult(
+            turns=[
+                ConversationTurn("Alice", "hi"),
+                ConversationTurn("Bob", "hey"),
+                ConversationTurn("Alice", "bye"),
+            ]
+        )
         names = r.agent_names
         assert "Alice" in names
         assert "Bob" in names
 
     def test_turns_by_agent(self):
-        r = ConversationResult(turns=[
-            ConversationTurn("A", "1"),
-            ConversationTurn("B", "2"),
-            ConversationTurn("A", "3"),
-        ])
+        r = ConversationResult(
+            turns=[
+                ConversationTurn("A", "1"),
+                ConversationTurn("B", "2"),
+                ConversationTurn("A", "3"),
+            ]
+        )
         a_turns = r.turns_by_agent("A")
         assert len(a_turns) == 2
 
     def test_messages_by_agent(self):
-        r = ConversationResult(turns=[
-            ConversationTurn("A", "hello"),
-            ConversationTurn("B", "world"),
-        ])
+        r = ConversationResult(
+            turns=[
+                ConversationTurn("A", "hello"),
+                ConversationTurn("B", "world"),
+            ]
+        )
         assert r.messages_by_agent("A") == ["hello"]
 
     def test_to_dict(self):
@@ -265,9 +273,7 @@ class TestPipeline:
 
 
 def _make_result(turns, completed=True, error=None):
-    return ConversationResult(
-        turns=turns, completed=completed, error=error
-    )
+    return ConversationResult(turns=turns, completed=completed, error=error)
 
 
 class TestExpectConversation:
@@ -282,10 +288,12 @@ class TestExpectConversation:
         assert result.all_passed is False
 
     def test_to_have_agent_speak(self):
-        r = _make_result([
-            ConversationTurn("Alice", "hello"),
-            ConversationTurn("Bob", "hey"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("Alice", "hello"),
+                ConversationTurn("Bob", "hey"),
+            ]
+        )
         result = expect_conversation(r).to_have_agent_speak("Alice", min_times=1)
         assert result.all_passed is True
 
@@ -295,10 +303,12 @@ class TestExpectConversation:
         assert result.all_passed is False
 
     def test_to_reach_consensus(self):
-        r = _make_result([
-            ConversationTurn("A", "I agree with B"),
-            ConversationTurn("B", "consensus reached"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("A", "I agree with B"),
+                ConversationTurn("B", "consensus reached"),
+            ]
+        )
         result = expect_conversation(r).to_reach_consensus()
         assert isinstance(result.all_passed, bool)
 
@@ -315,60 +325,69 @@ class TestExpectConversation:
         assert result.all_passed is False
 
     def test_to_follow_protocol(self):
-        r = _make_result([
-            ConversationTurn("A", "first step greeting"),
-            ConversationTurn("B", "second step analysis"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("A", "first step greeting"),
+                ConversationTurn("B", "second step analysis"),
+            ]
+        )
         result = expect_conversation(r).to_follow_protocol(["greeting", "analysis"])
         assert isinstance(result.all_passed, bool)
 
     def test_every_agent_responds(self):
-        r = _make_result([
-            ConversationTurn("Alice", "hi"),
-            ConversationTurn("Bob", "hey"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("Alice", "hi"),
+                ConversationTurn("Bob", "hey"),
+            ]
+        )
         result = expect_conversation(r).every_agent_responds()
         assert result.all_passed is True
 
     def test_every_agent_responds_single_agent_passes(self):
         """With only 1 unique agent that spoke, it trivially passes."""
-        r = _make_result([
-            ConversationTurn("Alice", "hi"),
-            ConversationTurn("Alice", "hello again"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("Alice", "hi"),
+                ConversationTurn("Alice", "hello again"),
+            ]
+        )
         result = expect_conversation(r).every_agent_responds()
         assert result.all_passed is True
 
     def test_no_agent_dominates_pass(self):
-        r = _make_result([
-            ConversationTurn("A", "1"),
-            ConversationTurn("B", "2"),
-            ConversationTurn("A", "3"),
-            ConversationTurn("B", "4"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("A", "1"),
+                ConversationTurn("B", "2"),
+                ConversationTurn("A", "3"),
+                ConversationTurn("B", "4"),
+            ]
+        )
         result = expect_conversation(r).no_agent_dominates(max_fraction=0.5)
         assert result.all_passed is True
 
     def test_no_agent_dominates_fail(self):
-        r = _make_result([
-            ConversationTurn("A", "1"),
-            ConversationTurn("A", "2"),
-            ConversationTurn("A", "3"),
-            ConversationTurn("B", "4"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("A", "1"),
+                ConversationTurn("A", "2"),
+                ConversationTurn("A", "3"),
+                ConversationTurn("B", "4"),
+            ]
+        )
         result = expect_conversation(r).no_agent_dominates(max_fraction=0.5)
         assert result.all_passed is False
 
     def test_chained_assertions(self):
-        r = _make_result([
-            ConversationTurn("A", "hello"),
-            ConversationTurn("B", "world"),
-        ])
+        r = _make_result(
+            [
+                ConversationTurn("A", "hello"),
+                ConversationTurn("B", "world"),
+            ]
+        )
         result = (
-            expect_conversation(r)
-            .to_complete_within_turns(5)
-            .every_agent_responds()
-            .to_not_loop()
+            expect_conversation(r).to_complete_within_turns(5).every_agent_responds().to_not_loop()
         )
         assert result.all_passed is True
 

@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -27,10 +26,18 @@ from agentbench.scanner.scorer import DomainScore, ScanReport, ScoringEngine
 from agentbench.scanner.store import ScanStore, ServerScanStore
 from agentbench.server.auth import require_auth
 from agentbench.server.config import settings
-from agentbench.server.models import Project, SavedAgent, ScanJob, ScanPolicy, get_db, get_session_factory, get_engine
+from agentbench.server.models import (
+    Project,
+    SavedAgent,
+    ScanJob,
+    ScanPolicy,
+    get_db,
+    get_engine,
+    get_session_factory,
+)
 from agentbench.server.schemas import (
-    DomainScoreResponse,
     PUBLIC_SCAN_CATEGORY_TO_PROBE_CATEGORIES,
+    DomainScoreResponse,
     RegressionReportResponse,
     ScanHistoryEntryResponse,
     ScanJobResponse,
@@ -47,6 +54,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # In-memory scan storage — LRU-bounded, thread-safe
 # ---------------------------------------------------------------------------
+
 
 class _LRUScanStore:
     """Thread-safe LRU cache for recent scan responses."""
@@ -131,6 +139,7 @@ class ResolvedScanRequest:
 # SSRF protection
 # ---------------------------------------------------------------------------
 
+
 def _is_safe_ip(ip_str: str) -> bool:
     """Return *True* only for globally routable IP addresses."""
     ip = ipaddress.ip_address(ip_str)
@@ -207,6 +216,7 @@ def _validate_agent_url(url: str) -> None:
 # SSRF protection — request-time DNS rebinding guard (second layer)
 # ---------------------------------------------------------------------------
 
+
 class SafeDNSTransport(httpx.HTTPTransport):
     """Custom httpx transport that re-validates resolved IPs at request time.
 
@@ -216,7 +226,11 @@ class SafeDNSTransport(httpx.HTTPTransport):
     """
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:  # type: ignore[override]
-        hostname = request.url.host.decode("ascii") if isinstance(request.url.host, bytes) else request.url.host
+        hostname = (
+            request.url.host.decode("ascii")
+            if isinstance(request.url.host, bytes)
+            else request.url.host
+        )
         if hostname:
             resolved: set[str] = set()
             try:
@@ -254,9 +268,7 @@ def _expand_scan_categories(categories: list[str] | None) -> list[str]:
 
 def _get_project_or_404(db: Session, project_id: str, principal: str) -> Project:
     project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.principal == principal)
-        .first()
+        db.query(Project).filter(Project.id == project_id, Project.principal == principal).first()
     )
     if project is None:
         raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found.")
@@ -302,14 +314,16 @@ def _evaluate_release_verdict(
     ):
         reasons.append(
             "Overall score "
-            f"{round(report.overall_score, 1)} is below the required {round(policy.minimum_overall_score, 1)}."
+            f"{round(report.overall_score, 1)} is below "
+            f"the required {round(policy.minimum_overall_score, 1)}."
         )
 
     for domain in report.domain_scores:
         threshold = policy.minimum_domain_scores.get(domain.name)
         if threshold is not None and domain.score < threshold:
             reasons.append(
-                f"{domain.name} score {round(domain.score, 1)} is below the required {round(threshold, 1)}."
+                f"{domain.name} score {round(domain.score, 1)} "
+                f"is below the required {round(threshold, 1)}."
             )
 
     if policy.fail_on_critical_issues and report.critical_issues:
@@ -325,7 +339,8 @@ def _evaluate_release_verdict(
             if delta < policy.max_regression_delta:
                 reasons.append(
                     "Regression delta "
-                    f"{round(delta, 1)} is worse than the allowed {round(policy.max_regression_delta, 1)}."
+                    f"{round(delta, 1)} is worse than "
+                    f"the allowed {round(policy.max_regression_delta, 1)}."
                 )
 
     return ("fail" if reasons else "pass"), reasons
@@ -437,7 +452,9 @@ def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> 
         f"- {domain.name}: {domain.grade} ({round(domain.score)}/100)"
         for domain in report.domain_scores
     )
-    critical_issues = "\n".join(f"- {issue}" for issue in report.critical_issues) or "- No critical issues found."
+    critical_issues = (
+        "\n".join(f"- {issue}" for issue in report.critical_issues) or "- No critical issues found."
+    )
     markdown = (
         f"# {title}\n\n"
         f"Scan ID: {scan_id}\n"
@@ -488,13 +505,17 @@ def _resolve_scan_request(body: ScanRequest, principal: str, db: Session) -> Res
 
     if saved_agent is not None:
         if project is not None and saved_agent.project_id != project.id:
-            raise HTTPException(status_code=404, detail="Saved agent does not belong to this project.")
+            raise HTTPException(
+                status_code=404, detail="Saved agent does not belong to this project."
+            )
         if project is None:
             project = _get_project_or_404(db, saved_agent.project_id, principal)
 
     if policy is not None:
         if project is not None and policy.project_id != project.id:
-            raise HTTPException(status_code=404, detail="Scan policy does not belong to this project.")
+            raise HTTPException(
+                status_code=404, detail="Scan policy does not belong to this project."
+            )
         if project is None:
             project = _get_project_or_404(db, policy.project_id, principal)
 
@@ -585,7 +606,13 @@ def _execute_resolved_scan(
 
 def _run_resolved_scan(resolved: ResolvedScanRequest, principal: str) -> ScanResponse:
     report_response, score_report = _execute_resolved_scan(resolved, principal)
-    _persist_scan_response(report_response.scan_id or str(uuid.uuid4()), principal, resolved, report_response, score_report)
+    _persist_scan_response(
+        report_response.scan_id or str(uuid.uuid4()),
+        principal,
+        resolved,
+        report_response,
+        score_report,
+    )
     return report_response
 
 
@@ -627,21 +654,25 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         if job is None:
             return
         if bool(job.cancel_requested):
-            job.status = 'cancelled'
+            job.status = "cancelled"
             job.completed_at = datetime.now(UTC)
             db.commit()
             return
 
-        job.status = 'running'
+        job.status = "running"
         job.started_at = datetime.now(UTC)
         db.commit()
 
         # Check timeout and cancellation before running
         if time.monotonic() > deadline:
-            job = db.query(ScanJob).filter(ScanJob.id == job_id, ScanJob.principal == principal).first()
+            job = (
+                db.query(ScanJob)
+                .filter(ScanJob.id == job_id, ScanJob.principal == principal)
+                .first()
+            )
             if job is not None:
-                job.status = 'failed'
-                job.error_detail = 'Scan timed out before execution started (queue backlog).'
+                job.status = "failed"
+                job.error_detail = "Scan timed out before execution started (queue backlog)."
                 job.completed_at = datetime.now(UTC)
                 db.commit()
             return
@@ -649,10 +680,14 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         try:
             report, score_report = _execute_resolved_scan(resolved, principal)
         except HTTPException as exc:
-            job = db.query(ScanJob).filter(ScanJob.id == job_id, ScanJob.principal == principal).first()
+            job = (
+                db.query(ScanJob)
+                .filter(ScanJob.id == job_id, ScanJob.principal == principal)
+                .first()
+            )
             if job is None:
                 return
-            job.status = 'failed'
+            job.status = "failed"
             job.error_detail = str(exc.detail)
             job.completed_at = datetime.now(UTC)
             db.commit()
@@ -660,9 +695,13 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         except Exception as exc:
             # Generic catch-all — prevents stuck 'running' jobs
             logger.exception("Unhandled exception in scan job %s", job_id)
-            job = db.query(ScanJob).filter(ScanJob.id == job_id, ScanJob.principal == principal).first()
+            job = (
+                db.query(ScanJob)
+                .filter(ScanJob.id == job_id, ScanJob.principal == principal)
+                .first()
+            )
             if job is not None:
-                job.status = 'failed'
+                job.status = "failed"
                 job.error_detail = f"Internal error: {exc}"
                 job.completed_at = datetime.now(UTC)
                 db.commit()
@@ -670,10 +709,16 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
 
         # Check timeout after scan completes
         if time.monotonic() > deadline:
-            job = db.query(ScanJob).filter(ScanJob.id == job_id, ScanJob.principal == principal).first()
+            job = (
+                db.query(ScanJob)
+                .filter(ScanJob.id == job_id, ScanJob.principal == principal)
+                .first()
+            )
             if job is not None:
-                job.status = 'failed'
-                job.error_detail = f'Scan exceeded maximum execution time ({settings.scan_timeout_seconds}s).'
+                job.status = "failed"
+                job.error_detail = (
+                    f"Scan exceeded maximum execution time ({settings.scan_timeout_seconds}s)."
+                )
                 job.completed_at = datetime.now(UTC)
                 db.commit()
             return
@@ -683,14 +728,16 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         if job is None:
             return
         if bool(job.cancel_requested):
-            job.status = 'cancelled'
-            job.error_detail = 'Scan job was cancelled before completion was recorded.'
+            job.status = "cancelled"
+            job.error_detail = "Scan job was cancelled before completion was recorded."
             job.completed_at = datetime.now(UTC)
             db.commit()
             return
 
-        _persist_scan_response(report.scan_id or str(uuid.uuid4()), principal, resolved, report, score_report)
-        job.status = 'completed'
+        _persist_scan_response(
+            report.scan_id or str(uuid.uuid4()), principal, resolved, report, score_report
+        )
+        job.status = "completed"
         job.scan_id = report.scan_id
         job.release_verdict = report.release_verdict
         job.verdict_reasons_json = json.dumps(report.verdict_reasons)
@@ -699,27 +746,35 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
         # Persist full report data into the ScanJob row for server-backed queries
         if isinstance(store, ServerScanStore):
             persistable = _coerce_scan_report(report, score_report)
-            job.report_json = json.dumps(store._report_to_dict(persistable, metadata={
-                "project_id": report.project_id,
-                "agent_id": report.agent_id,
-                "policy_id": report.policy_id,
-                "release_verdict": report.release_verdict,
-                "verdict_reasons": report.verdict_reasons,
-            }))
-            job.domain_scores_json = json.dumps([
-                {"name": d.name, "score": d.score, "grade": d.grade}
-                for d in report.domain_scores
-            ])
+            job.report_json = json.dumps(
+                store._report_to_dict(
+                    persistable,
+                    metadata={
+                        "project_id": report.project_id,
+                        "agent_id": report.agent_id,
+                        "policy_id": report.policy_id,
+                        "release_verdict": report.release_verdict,
+                        "verdict_reasons": report.verdict_reasons,
+                    },
+                )
+            )
+            job.domain_scores_json = json.dumps(
+                [{"name": d.name, "score": d.score, "grade": d.grade} for d in report.domain_scores]
+            )
         job.completed_at = datetime.now(UTC)
         db.commit()
     except Exception:
         # Absolute last-resort catch — ensure job never stays in 'running'
         logger.exception("Fatal error in scan job worker for %s", job_id)
         try:
-            job = db.query(ScanJob).filter(ScanJob.id == job_id, ScanJob.principal == principal).first()
-            if job is not None and job.status in ('queued', 'running'):
-                job.status = 'failed'
-                job.error_detail = 'Worker crashed unexpectedly.'
+            job = (
+                db.query(ScanJob)
+                .filter(ScanJob.id == job_id, ScanJob.principal == principal)
+                .first()
+            )
+            if job is not None and job.status in ("queued", "running"):
+                job.status = "failed"
+                job.error_detail = "Worker crashed unexpectedly."
                 job.completed_at = datetime.now(UTC)
                 db.commit()
         except Exception:
@@ -731,12 +786,14 @@ def _run_scan_job_worker(job_id: str, principal: str, resolved: ResolvedScanRequ
 def _create_scan_job(resolved: ResolvedScanRequest, principal: str, db: Session) -> ScanJob:
     job = ScanJob(
         principal=principal,
-        status='queued',
+        status="queued",
         agent_url=resolved.agent_url,
         project_id=resolved.project_id,
         agent_id=resolved.agent_id,
         policy_id=resolved.policy_id,
-        categories_json=json.dumps(resolved.categories) if resolved.categories is not None else None,
+        categories_json=json.dumps(resolved.categories)
+        if resolved.categories is not None
+        else None,
     )
     db.add(job)
     db.commit()
@@ -745,8 +802,8 @@ def _create_scan_job(resolved: ResolvedScanRequest, principal: str, db: Session)
         _job_executor.submit(_run_scan_job_worker, job.id, principal, resolved)
     except RuntimeError:
         # Executor is shut down or full — mark job as failed immediately
-        job.status = 'failed'
-        job.error_detail = 'Scan queue is full. Please retry later.'
+        job.status = "failed"
+        job.error_detail = "Scan queue is full. Please retry later."
         job.completed_at = datetime.now(UTC)
         db.commit()
     return job
@@ -757,11 +814,11 @@ def fail_stale_scan_jobs() -> None:
     factory = get_session_factory()
     db = factory()
     try:
-        rows = db.query(ScanJob).filter(ScanJob.status.in_(['queued', 'running'])).all()
+        rows = db.query(ScanJob).filter(ScanJob.status.in_(["queued", "running"])).all()
         now = datetime.now(UTC)
         for job in rows:
-            job.status = 'failed'
-            job.error_detail = 'Scan job was interrupted by a server restart before completion.'
+            job.status = "failed"
+            job.error_detail = "Scan job was interrupted by a server restart before completion."
             job.completed_at = now
         if rows:
             db.commit()
@@ -783,11 +840,7 @@ def _list_recent_scans(
 
     entries = _scan_store.values()
     sorted_entries = sorted(
-        [
-            entry
-            for entry in entries
-            if principal is None or entry.get("principal") == principal
-        ],
+        [entry for entry in entries if principal is None or entry.get("principal") == principal],
         key=lambda e: e.get("timestamp", ""),
         reverse=True,
     )

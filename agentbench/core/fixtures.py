@@ -125,8 +125,7 @@ class Fixture:
     def __init__(self, func: Callable, *, scope: str = "test") -> None:
         if scope not in ("test", "suite", "session"):
             raise ValueError(
-                f"Invalid fixture scope '{scope}'. "
-                "Must be one of: 'test', 'suite', 'session'."
+                f"Invalid fixture scope '{scope}'. Must be one of: 'test', 'suite', 'session'."
             )
         self._func = func
         self._scope = scope
@@ -145,6 +144,7 @@ class Fixture:
         the yield is setup, everything after is teardown.
         """
         import inspect
+
         if inspect.isgeneratorfunction(self._func):
             gen = self._func()
             value = next(gen)
@@ -190,7 +190,9 @@ def fixture(func: Callable | None = None, *, scope: str = "test") -> Fixture:
     if func is not None:
         # Called as @fixture without arguments
         return Fixture(func, scope=scope)
+
     # Called as @fixture(scope=...) with arguments
     def decorator(f: Callable) -> Fixture:
         return Fixture(f, scope=scope)
+
     return decorator

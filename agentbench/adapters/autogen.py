@@ -181,9 +181,7 @@ class AutoGenAdapter(AgentAdapter):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _install_message_collector(
-        self, captured_messages: list[dict[str, Any]]
-    ) -> None:
+    def _install_message_collector(self, captured_messages: list[dict[str, Any]]) -> None:
         """Install a hook to capture messages from the AutoGen conversation.
 
         Uses the ``register_reply`` mechanism or falls back to patching
@@ -301,9 +299,7 @@ class AutoGenAdapter(AgentAdapter):
                         tc_name = tc.get("function", {}).get("name", "unknown")
 
                         try:
-                            tc_args = json.loads(
-                                tc.get("function", {}).get("arguments", "{}")
-                            )
+                            tc_args = json.loads(tc.get("function", {}).get("arguments", "{}"))
                         except (json.JSONDecodeError, TypeError):
                             tc_args = {"raw_arguments": tc.get("function", {}).get("arguments", "")}
 

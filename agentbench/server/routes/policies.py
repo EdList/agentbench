@@ -21,9 +21,7 @@ router = APIRouter(prefix="/projects/{project_id}/policies", tags=["policies"])
 
 def _get_project_or_404(db: Session, project_id: str, principal: str) -> Project:
     project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.principal == principal)
-        .first()
+        db.query(Project).filter(Project.id == project_id, Project.principal == principal).first()
     )
     if project is None:
         raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found.")

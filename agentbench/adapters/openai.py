@@ -100,7 +100,7 @@ class OpenAIAdapter(AgentAdapter):
         try:
             assistant = self._client.beta.assistants.retrieve(self._assistant_id)
             names: list[str] = []
-            for tool in (assistant.tools or []):
+            for tool in assistant.tools or []:
                 # tool can be a FunctionTool, CodeInterpreterTool, etc.
                 tool_type = getattr(tool, "type", None)
                 if tool_type == "function":
@@ -329,10 +329,12 @@ class OpenAIAdapter(AgentAdapter):
                     error=fail_msg,
                     latency_ms=(time.time() - start_time) * 1000,
                 )
-                tool_outputs.append({
-                    "tool_call_id": tc.id,
-                    "output": json.dumps({"error": fail_msg}),
-                })
+                tool_outputs.append(
+                    {
+                        "tool_call_id": tc.id,
+                        "output": json.dumps({"error": fail_msg}),
+                    }
+                )
                 continue
 
             # --- Latency injection ---
@@ -357,10 +359,12 @@ class OpenAIAdapter(AgentAdapter):
             # For the adapter's purposes, we submit a placeholder that
             # indicates the tool was called.  Consumers can override
             # behavior by subclassing and overriding this method.
-            tool_outputs.append({
-                "tool_call_id": tc.id,
-                "output": json.dumps({"result": f"tool_call_{tool_name}_executed"}),
-            })
+            tool_outputs.append(
+                {
+                    "tool_call_id": tc.id,
+                    "output": json.dumps({"result": f"tool_call_{tool_name}_executed"}),
+                }
+            )
 
         # Submit all tool outputs back to the run
         if tool_outputs:
@@ -440,7 +444,7 @@ class OpenAIAdapter(AgentAdapter):
                     # If they weren't handled (e.g. code_interpreter tools),
                     # record them here.
                     tool_calls_detail = getattr(step_details, "tool_calls", [])
-                    for tc_detail in (tool_calls_detail or []):
+                    for tc_detail in tool_calls_detail or []:
                         tc_type = getattr(tc_detail, "type", None)
                         if tc_type == "function":
                             # Already handled in _resolve_tool_calls — skip.
@@ -499,7 +503,7 @@ class OpenAIAdapter(AgentAdapter):
                 message_id=message_id,
             )
             parts: list[str] = []
-            for content_block in (message.content or []):
+            for content_block in message.content or []:
                 text = getattr(content_block, "text", None)
                 if text:
                     value = getattr(text, "value", None)
@@ -520,7 +524,7 @@ class OpenAIAdapter(AgentAdapter):
             for msg in messages.data:
                 if msg.role == "assistant":
                     parts: list[str] = []
-                    for content_block in (msg.content or []):
+                    for content_block in msg.content or []:
                         text = getattr(content_block, "text", None)
                         if text:
                             value = getattr(text, "value", None)

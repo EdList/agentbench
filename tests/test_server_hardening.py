@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import os
-import time
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Set debug mode before any server imports
 os.environ["AGENTBENCH_DEBUG"] = "true"
@@ -18,7 +17,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from agentbench.server.models import Base
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -44,6 +42,7 @@ def _db(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # 1. LRU scan store eviction
 # ---------------------------------------------------------------------------
+
 
 class TestLRUScanStore:
     def test_lru_eviction_at_cap(self):
@@ -107,6 +106,7 @@ class TestLRUScanStore:
 # 2. ThreadPoolExecutor — bounded concurrency
 # ---------------------------------------------------------------------------
 
+
 class TestBoundedJobPool:
     def test_job_uses_thread_pool_not_raw_thread(self):
         """_create_scan_job submits to the executor, not raw threading.Thread."""
@@ -114,16 +114,19 @@ class TestBoundedJobPool:
 
         assert hasattr(scans_mod, "_job_executor")
         from concurrent.futures import ThreadPoolExecutor
+
         assert isinstance(scans_mod._job_executor, ThreadPoolExecutor)
 
     def test_queue_full_rejection(self, _db, monkeypatch):
         """If the executor is shut down, the job is marked as failed immediately."""
         from concurrent.futures import ThreadPoolExecutor
+
         import agentbench.server.routes.scans as scans_mod
-        from agentbench.server.models import ScanJob
 
         engine, factory = _db
-        monkeypatch.setattr(scans_mod, "store", scans_mod.ScanStore(db_path=Path("/tmp/test_rejection.db")))
+        monkeypatch.setattr(
+            scans_mod, "store", scans_mod.ScanStore(db_path=Path("/tmp/test_rejection.db"))
+        )
 
         # Shut down the executor to trigger RuntimeError
         real_executor = scans_mod._job_executor
@@ -134,9 +137,12 @@ class TestBoundedJobPool:
         try:
             db = factory()
             resolved = scans_mod.ResolvedScanRequest(
-                project_id=None, agent_id=None, policy_id=None,
+                project_id=None,
+                agent_id=None,
+                policy_id=None,
                 agent_url="https://example.com/agent",
-                categories=None, policy=None,
+                categories=None,
+                policy=None,
             )
             job = scans_mod._create_scan_job(resolved, "test-user", db)
             assert job.status == "failed"
@@ -150,13 +156,14 @@ class TestBoundedJobPool:
 # 3. Scan-level timeout
 # ---------------------------------------------------------------------------
 
+
 class TestScanTimeout:
     def test_timeout_config_is_used(self, monkeypatch):
         """Worker uses settings.scan_timeout_seconds for deadline."""
-        import agentbench.server.routes.scans as scans_mod
 
         # Just verify the setting exists and is an int
         from agentbench.server.config import settings
+
         assert isinstance(settings.scan_timeout_seconds, int)
         assert settings.scan_timeout_seconds > 0
 
@@ -183,9 +190,12 @@ class TestScanTimeout:
         time.sleep(0.01)  # Ensure time passes
 
         resolved = scans_mod.ResolvedScanRequest(
-            project_id=None, agent_id=None, policy_id=None,
+            project_id=None,
+            agent_id=None,
+            policy_id=None,
             agent_url="https://example.com/agent",
-            categories=None, policy=None,
+            categories=None,
+            policy=None,
         )
         scans_mod._run_scan_job_worker(job.id, "test", resolved)
 
@@ -199,11 +209,12 @@ class TestScanTimeout:
 # 4. Dual-write consistency — persist before cache
 # ---------------------------------------------------------------------------
 
+
 class TestDualWriteConsistency:
     def test_persist_failure_does_not_cache(self, monkeypatch):
         """If store.save_scan raises, _scan_store should NOT contain the entry."""
         import agentbench.server.routes.scans as scans_mod
-        from agentbench.server.schemas import DomainScoreResponse, ScanResponse
+        from agentbench.server.schemas import ScanResponse
 
         # Mock the store to raise
         mock_store = MagicMock()
@@ -222,9 +233,12 @@ class TestDualWriteConsistency:
             timestamp=datetime.now(UTC).isoformat(),
         )
         resolved = scans_mod.ResolvedScanRequest(
-            project_id=None, agent_id=None, policy_id=None,
+            project_id=None,
+            agent_id=None,
+            policy_id=None,
             agent_url="https://example.com/agent",
-            categories=None, policy=None,
+            categories=None,
+            policy=None,
         )
         scans_mod._scan_store.clear()
 
@@ -238,6 +252,7 @@ class TestDualWriteConsistency:
 # ---------------------------------------------------------------------------
 # 5. WAL mode on SQLite ScanStore
 # ---------------------------------------------------------------------------
+
 
 class TestWALMode:
     def test_wal_mode_enabled(self, tmp_path):
@@ -262,6 +277,7 @@ class TestWALMode:
 # ---------------------------------------------------------------------------
 # 6. Generic exception handler in worker
 # ---------------------------------------------------------------------------
+
 
 class TestWorkerExceptionSafety:
     def test_unhandled_exception_marks_failed(self, _db, monkeypatch):
@@ -290,9 +306,12 @@ class TestWorkerExceptionSafety:
         monkeypatch.setattr(scans_mod.settings, "scan_timeout_seconds", 300)
 
         resolved = scans_mod.ResolvedScanRequest(
-            project_id=None, agent_id=None, policy_id=None,
+            project_id=None,
+            agent_id=None,
+            policy_id=None,
             agent_url="https://example.com/agent",
-            categories=None, policy=None,
+            categories=None,
+            policy=None,
         )
         scans_mod._run_scan_job_worker(job.id, "test", resolved)
 
@@ -306,10 +325,12 @@ class TestWorkerExceptionSafety:
 # 7. DB-polling cancellation (no in-memory cancel events)
 # ---------------------------------------------------------------------------
 
+
 class TestDBPollingCancellation:
     def test_no_cancel_events_dict(self):
         """_job_cancel_events no longer exists."""
         import agentbench.server.routes.scans as scans_mod
+
         assert not hasattr(scans_mod, "_job_cancel_events")
 
     def test_cancel_via_db_column(self, _db, monkeypatch):
@@ -331,9 +352,12 @@ class TestDBPollingCancellation:
         db.commit()
 
         resolved = scans_mod.ResolvedScanRequest(
-            project_id=None, agent_id=None, policy_id=None,
+            project_id=None,
+            agent_id=None,
+            policy_id=None,
             agent_url="https://example.com/agent",
-            categories=None, policy=None,
+            categories=None,
+            policy=None,
         )
         scans_mod._run_scan_job_worker(job.id, "test", resolved)
 
@@ -345,6 +369,7 @@ class TestDBPollingCancellation:
 # ---------------------------------------------------------------------------
 # 8. Periodic reaper
 # ---------------------------------------------------------------------------
+
 
 class TestPeriodicReaper:
     def test_reaper_cleanup_on_startup(self, _db, monkeypatch):

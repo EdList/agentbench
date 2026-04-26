@@ -145,6 +145,7 @@ def diff_trajectory(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _traj_to_response(traj: Trajectory) -> TrajectoryResponse:
     return TrajectoryResponse(
         id=traj.id,
