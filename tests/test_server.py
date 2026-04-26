@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from collections.abc import Generator
@@ -27,7 +28,7 @@ auth_settings.secret_key = "test-secret-key-for-agentbench-32bytes"
 # Fixtures
 # ---------------------------------------------------------------------------
 
-from agentbench.server.models import Base  # noqa: E402
+import agentbench.server.models as server_models  # noqa: E402
 
 
 @pytest.fixture()
@@ -37,7 +38,7 @@ def db_engine():
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
     )
-    Base.metadata.create_all(bind=engine)
+    server_models.Base.metadata.create_all(bind=engine)
     return engine
 
 
@@ -179,6 +180,32 @@ class TestRuns:
         assert resp.status_code == 201
         data = resp.json()
         assert data["status"] == "pending"
+
+    def test_submit_run_persists_test_suite_payload(self, client: TestClient, db_session: Session):
+        resp = client.post(
+            "/api/v1/runs",
+            json={
+                "name": "launch-smoke",
+                "test_suite_code": "print('hello')",
+                "config": {"timeout_seconds": 12, "parallel": 2},
+            },
+            headers=HEADERS,
+        )
+        assert resp.status_code == 201
+
+        run_id = resp.json()["id"]
+        run = db_session.query(server_models.Run).filter(server_models.Run.id == run_id).one()
+        assert run.test_suite_id is not None
+
+        suite = (
+            db_session.query(server_models.TestSuite)
+            .filter(server_models.TestSuite.id == run.test_suite_id)
+            .one()
+        )
+        assert suite.name == "launch-smoke"
+        assert suite.code == "print('hello')"
+        assert suite.path is None
+        assert json.loads(suite.config_json) == {"timeout_seconds": 12, "parallel": 2}
 
     def test_submit_run_requires_code_or_path(self, client: TestClient):
         resp = client.post(

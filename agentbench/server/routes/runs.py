@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from agentbench.server.auth import require_auth
-from agentbench.server.models import Run, get_db
+from agentbench.server.models import Run, TestSuite, get_db
 from agentbench.server.schemas import (
     ErrorResponse,
     RunCreateRequest,
@@ -45,8 +45,18 @@ def submit_run(
         )
 
     run_id = str(uuid.uuid4())
+    suite = TestSuite(
+        name=body.name or f"submitted-run-{run_id[:8]}",
+        code=body.test_suite_code,
+        path=body.test_suite_path,
+        config_json=json.dumps(body.config or {}),
+    )
+    db.add(suite)
+    db.flush()
+
     run = Run(
         id=run_id,
+        test_suite_id=suite.id,
         principal=principal,
         status="pending",
         total_tests=0,

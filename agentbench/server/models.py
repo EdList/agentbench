@@ -138,6 +138,7 @@ class TestSuite(Base):
     description = Column(Text, nullable=True)
     code = Column(Text, nullable=True)  # Inline test suite code
     path = Column(String(1024), nullable=True)  # Path to test suite on disk
+    config_json = Column(Text, nullable=False, default="{}", server_default="{}")
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 

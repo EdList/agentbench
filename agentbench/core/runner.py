@@ -6,6 +6,7 @@ import importlib
 import importlib.util
 import inspect
 import logging
+import signal
 import threading
 import time
 import traceback
@@ -25,6 +26,14 @@ from agentbench.multiagent.test import MultiAgentTest
 from agentbench.property.properties import Property
 
 logger = logging.getLogger(__name__)
+
+
+class _TestTimedOut(BaseException):
+    """Internal sentinel used to interrupt a test when its timeout expires."""
+
+
+def _raise_test_timeout(_signum: int, _frame: Any) -> None:
+    raise _TestTimedOut()
 
 
 @dataclass
@@ -400,43 +409,74 @@ class TestRunner:
 
         # Determine timeout for this test
         timeout_seconds = self._config.get("timeout_seconds", self._default_timeout)
+        test_error: str | None = None
 
-        # Use a threading-based timeout mechanism
-        test_error: list[str | None] = [None]
-        test_done = threading.Event()
+        can_use_signal_timeout = (
+            threading.current_thread() is threading.main_thread()
+            and hasattr(signal, "setitimer")
+        )
 
-        def _execute():
+        if can_use_signal_timeout:
+            previous_handler = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, _raise_test_timeout)
+            signal.setitimer(signal.ITIMER_REAL, max(float(timeout_seconds), 0.0))
             try:
                 self._execute_test_body(
                     instance, method_name, display_name, param_info, suite_name, result
                 )
+            except _TestTimedOut:
+                result.passed = False
+                result.error = (
+                    f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
+                    f"  What went wrong: The test did not finish within the allowed time.\n"
+                    f"  Expected: Test completes within {timeout_seconds}s.\n"
+                    f"  What happened: Test is still running after "
+                    f"{timeout_seconds}s (possible infinite loop or agent hang).\n"
+                    f"  Suggested fix: Increase 'timeout_seconds' in "
+                    f"config, optimize the agent, or check for infinite loops."
+                )
             except Exception as exc:
-                test_error[0] = f"{type(exc).__name__}: {exc}"
+                test_error = f"{type(exc).__name__}: {exc}"
                 traceback.print_exc()
             finally:
-                test_done.set()
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                signal.signal(signal.SIGALRM, previous_handler)
+        else:
+            # Fallback for platforms/threads where signal-based interruption is unavailable.
+            test_error_box: list[str | None] = [None]
+            test_done = threading.Event()
 
-        worker = threading.Thread(target=_execute, daemon=True)
-        worker.start()
+            def _execute() -> None:
+                try:
+                    self._execute_test_body(
+                        instance, method_name, display_name, param_info, suite_name, result
+                    )
+                except Exception as exc:
+                    test_error_box[0] = f"{type(exc).__name__}: {exc}"
+                    traceback.print_exc()
+                finally:
+                    test_done.set()
 
-        # Wait for test to complete or timeout
-        if not test_done.wait(timeout=timeout_seconds):
-            # Test timed out
-            result.passed = False
-            result.error = (
-                f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
-                f"  What went wrong: The test did not finish within the allowed time.\n"
-                f"  Expected: Test completes within {timeout_seconds}s.\n"
-                f"  What happened: Test is still running after "
-                f"{timeout_seconds}s (possible infinite loop or agent hang).\n"
-                f"  Suggested fix: Increase 'timeout_seconds' in "
-                f"config, optimize the agent, or check for infinite loops."
-            )
+            worker = threading.Thread(target=_execute, daemon=True)
+            worker.start()
+
+            if not test_done.wait(timeout=timeout_seconds):
+                result.passed = False
+                result.error = (
+                    f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
+                    f"  What went wrong: The test did not finish within the allowed time.\n"
+                    f"  Expected: Test completes within {timeout_seconds}s.\n"
+                    f"  What happened: Test is still running after "
+                    f"{timeout_seconds}s (possible infinite loop or agent hang).\n"
+                    f"  Suggested fix: Increase 'timeout_seconds' in "
+                    f"config, optimize the agent, or check for infinite loops."
+                )
+            test_error = test_error_box[0]
 
         # If the test itself recorded an error (not timeout)
-        if test_error[0] is not None and result.error is None:
+        if test_error is not None and result.error is None:
             result.passed = False
-            result.error = test_error[0]
+            result.error = test_error
 
         result.duration_ms = (time.time() - test_start) * 1000
         return result

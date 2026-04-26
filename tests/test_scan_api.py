@@ -529,6 +529,7 @@ class TestSafeDNSTransport:
         scans_mod._run_scan("https://example.com/agent", None)
 
         assert client_ctor.call_args.kwargs["follow_redirects"] is False
+        assert "max_response_size" not in client_ctor.call_args.kwargs
 
 
 class TestScanCategoryExpansion:

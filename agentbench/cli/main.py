@@ -48,6 +48,10 @@ def _find_adapter_in_path(path: Path, agent_name: str | None = None) -> Any:
                     instance = obj()
                     if not instance.adapter:
                         continue
+                    # Preserve discovery metadata so `agentbench scan` can
+                    # regenerate a runnable suite that reuses the same base class.
+                    setattr(instance, "_agentbench_source_file", str(py_file))
+                    setattr(instance, "_agentbench_source_class", obj.__name__)
                     if requested_name is not None and instance.agent == requested_name:
                         return instance
                     if first_match is None:
@@ -797,7 +801,65 @@ def scan(
 
     # --- Step 4: Generate ---
     console.print("\n[bold]Step 4:[/bold] Generating test file…")
-    generator = TestGenerator()
+
+    generator_kwargs: dict[str, Any] = {}
+    source_file = getattr(agent, "_agentbench_source_file", None)
+    source_class = getattr(agent, "_agentbench_source_class", None)
+
+    if source_file and source_class:
+        generator_kwargs.update(
+            {
+                "base_class_name": source_class,
+                "header_extra": (
+                    "import importlib.util as _ab_importlib_util\n\n"
+                    f"_ab_spec = _ab_importlib_util.spec_from_file_location(\n"
+                    f"    'agentbench_scanned_source', {source_file!r}\n"
+                    ")\n"
+                    "if _ab_spec is None or _ab_spec.loader is None:\n"
+                    "    raise RuntimeError('Could not load scanned source suite.')\n"
+                    "_ab_source_module = _ab_importlib_util.module_from_spec(_ab_spec)\n"
+                    "_ab_spec.loader.exec_module(_ab_source_module)\n"
+                    f"{source_class} = getattr(_ab_source_module, {source_class!r})"
+                ),
+            }
+        )
+    elif path.startswith("http://") or path.startswith("https://"):
+        generator_kwargs.update(
+            {
+                "header_extra": "from agentbench.adapters.raw_api import RawAPIAdapter",
+                "class_preamble": (
+                    f"agent = {path!r}\n"
+                    f"adapter = RawAPIAdapter(endpoint={path!r})"
+                ),
+            }
+        )
+    elif ":" in path:
+        module_path, var_name = path.rsplit(":", 1)
+        generator_kwargs.update(
+            {
+                "header_extra": (
+                    "import importlib as _ab_importlib\n"
+                    "from agentbench.adapters.raw_api import RawAPIAdapter\n\n"
+                    "_ab_scanned_obj = getattr(\n"
+                    f"    _ab_importlib.import_module({module_path!r}), {var_name!r}\n"
+                    ")"
+                ),
+                "class_preamble": (
+                    f"agent = getattr(_ab_scanned_obj, 'agent', {path!r})\n"
+                    "if (\n"
+                    "    hasattr(_ab_scanned_obj, 'adapter')\n"
+                    "    and getattr(_ab_scanned_obj, 'adapter') is not None\n"
+                    "):\n"
+                    "    adapter = _ab_scanned_obj.adapter\n"
+                    "elif callable(_ab_scanned_obj):\n"
+                    "    adapter = RawAPIAdapter(func=_ab_scanned_obj)\n"
+                    "else:\n"
+                    "    raise RuntimeError('Imported scan target is not runnable by AgentBench.')"
+                ),
+            }
+        )
+
+    generator = TestGenerator(**generator_kwargs)
     code = generator.generate(behaviors)
     console.print(f"  [green]✓[/green] Generated {len(behaviors)} test method(s)")
 
@@ -822,28 +884,29 @@ def scan(
     if not no_run:
         console.print("\n[bold]Step 5:[/bold] Running generated tests…")
         try:
-            import shutil
             import subprocess
 
-            pytest_bin = shutil.which("pytest") or shutil.which("py.test")
-            if pytest_bin is None:
-                console.print(
-                    "[yellow]pytest not found. Install it with: pip install pytest[/yellow]\n"
-                    f"[dim]Run manually with: pytest {output_path}[/dim]"
-                )
-            else:
-                result = subprocess.run(
-                    [pytest_bin, str(output_path), "-v"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
+            result = subprocess.run(
+                [sys.executable, "-m", "agentbench.cli.main", "run", str(output_path)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.stdout:
                 console.print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout)
+            if result.stderr:
+                console.print(result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr)
+            if result.returncode != 0:
+                raise typer.Exit(result.returncode)
+        except typer.Exit:
+            raise
         except Exception as exc:
-            console.print(f"[yellow]Could not run tests: {exc}[/yellow]")
+            console.print(f"[yellow]Could not run generated tests: {exc}[/yellow]")
+            raise typer.Exit(1) from exc
     else:
         console.print(
-            f"\n[dim]Skipping test run (--no-run). Run manually with: pytest {output_path}[/dim]"
+            "\n[dim]Skipping test run (--no-run). "
+            f"Run manually with: agentbench run {output_path}[/dim]"
         )
 
 

@@ -123,6 +123,18 @@ class TestGenerateTestMethod:
         assert "to_not_expose" in method
         assert "secret" in method
 
+    def test_instruction_leak_sentinel_generates_real_leak_check(self):
+        gen = TestGenerator()
+        b = _behavior(
+            category="persona",
+            test_type="response_not_contains",
+            expected="no_instruction_leak",
+        )
+        method = gen.generate_test_method(b, 2)
+        assert "forbidden_patterns" in method
+        assert "system prompt" in method
+        assert "assert not any" in method
+
     def test_consistency_type(self):
         gen = TestGenerator()
         b = _behavior(
@@ -132,6 +144,8 @@ class TestGenerateTestMethod:
         method = gen.generate_test_method(b, 3)
         assert "t1 = self.run" in method
         assert "t2 = self.run" in method
+        assert "final_response" in method
+        assert "Responses to identical prompts should remain consistent" in method
 
     def test_error_handling_type(self):
         gen = TestGenerator()

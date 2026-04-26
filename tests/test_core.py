@@ -425,6 +425,32 @@ class TestAgentTimeout:
         assert "Expected" in error
         assert "Suggested fix" in error
 
+    def test_timeout_does_not_allow_late_state_mutation(self):
+        """A timed-out test must not keep mutating parent-process state after returning."""
+
+        late_events: list[str] = []
+
+        class SlowMutationSuite(AgentTest):
+            agent = "slow-mutation"
+            adapter = RawAPIAdapter(func=lambda p, c=None: {"response": "ok", "steps": []})
+
+            def test_slow_mutation(self):
+                import time
+
+                time.sleep(0.2)
+                late_events.append("mutated-after-timeout")
+
+        runner = TestRunner(config={"timeout_seconds": 0.05})
+        result = runner.run_suite(SlowMutationSuite)
+
+        assert not result.all_passed
+        assert "TIMEOUT" in (result.results[0].error or "")
+
+        import time
+
+        time.sleep(0.3)
+        assert late_events == []
+
 
 # ─── Edge Case: Agent Crash ───
 

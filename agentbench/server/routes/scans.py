@@ -1096,7 +1096,6 @@ def _run_scan(
         timeout=30.0,
         transport=transport,
         follow_redirects=False,
-        max_response_size=5 * 1024 * 1024,  # 5 MB max response
     )
 
     # Wrap the agent URL in a simple callable for the prober
