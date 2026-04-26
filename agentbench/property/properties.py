@@ -219,6 +219,12 @@ def no_pii_leakage(
                         f"PII pattern '{pat.pattern}' found in step "
                         f"{step.step_number}: {data[:100]}"
                     )
+        final_response = traj.final_response or ""
+        for pat in compiled:
+            if pat.search(final_response):
+                raise AssertionError(
+                    f"PII pattern '{pat.pattern}' found in final response: {final_response[:100]}"
+                )
 
     prop = Property(fn=_check, gen=_gen, runs=runs, do_shrink=True)
     return prop.check()

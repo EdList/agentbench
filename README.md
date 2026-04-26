@@ -61,9 +61,9 @@ That's it. Edit the generated `test_agent.py` with your agent details and you're
 
 | | | |
 |:---|:---|:---|
-| 🎯 **Behavioral Assertions** <br>Test what the agent *does*, not just what it says | 🔌 **6 Framework Adapters** <br>LangChain, OpenAI, CrewAI, AutoGen, LangGraph, raw API | 📼 **Trajectory Diffing** <br>Record golden runs, catch regressions |
+| 🎯 **Behavioral Assertions** <br>Test what the agent *does*, not just what it says | 🔌 **Raw API + LangChain Ready** <br>Best-tested adapter path today, with additional adapters still maturing | 📼 **Trajectory Diffing** <br>Record golden runs, catch regressions |
 | 🧑‍⚖️ **LLM-as-Judge** <br>Use LLMs to evaluate subjective quality | 💉 **Failure Injection** <br>Simulate broken APIs, timeouts, rate limits | ⚡ **Parallel Execution** <br>Run suites fast with built-in concurrency |
-| 🔄 **CI/CD Integration** <br>JSON reports, exit codes, GitHub Action, GitLab CI | ☁️ **Cloud API** <br>FastAPI server with JWT auth & trajectory storage | 🐳 **Docker Sandbox** <br>Isolated execution with resource limits (optional) |
+| 🔄 **CI/CD Integration** <br>JSON reports, exit codes, GitHub Action, GitLab CI | ☁️ **Cloud API** <br>FastAPI server for scans, reports, and release gates | 🧪 **Experimental Surfaces** <br>Adversarial, property-based, and multi-agent tooling are still maturing |
 
 ---
 
@@ -118,13 +118,15 @@ class CheckoutAgentTest(AgentTest):
 
 | Framework | Adapter | Status |
 |-----------|---------|--------|
-| HTTP API | `RawAPIAdapter` | ✅ Ready |
-| Python function | `RawAPIAdapter(func=...)` | ✅ Ready |
-| LangChain | `LangChainAdapter` | ✅ Ready |
-| OpenAI Assistants | `OpenAIAdapter` | ✅ Ready |
-| CrewAI | `CrewAIAdapter` | ✅ Ready |
-| AutoGen | `AutoGenAdapter` | ✅ Ready |
-| LangGraph | `LangGraphAdapter` | ✅ Ready |
+| HTTP API | `RawAPIAdapter` | ✅ Recommended |
+| Python function | `RawAPIAdapter(func=...)` | ✅ Recommended |
+| LangChain | `LangChainAdapter` | ✅ Recommended |
+| OpenAI Assistants | `OpenAIAdapter` | 🧪 Experimental |
+| CrewAI | `CrewAIAdapter` | 🧪 Experimental |
+| AutoGen | `AutoGenAdapter` | 🧪 Experimental |
+| LangGraph | `LangGraphAdapter` | 🧪 Experimental |
+
+The launch-ready adapter path today is **Raw API + LangChain**. The additional adapters are available in the repo, but should be treated as experimental until they have fuller contract coverage.
 
 ---
 
@@ -179,7 +181,7 @@ pip install agentbench[server]
 agentbench serve --port 8000
 ```
 
-See `agentbench/server/` for the FastAPI scaffold with JWT auth, test run management, and trajectory storage.
+See `agentbench/server/` for the FastAPI scaffold with authenticated scan execution, report history, and release-gate workflows. Shared report links are intended for teammates who already have AgentBench access.
 
 ---
 

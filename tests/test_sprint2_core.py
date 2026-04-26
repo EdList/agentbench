@@ -676,3 +676,72 @@ class TestAllFeaturesCombined:
         assert result.all_passed
         for r in result.results:
             assert r.assertion_count >= 3  # to_complete + to_use_tool + to_respond_with
+
+
+class TestAuditRegressionFixes:
+    def test_setup_class_state_is_available_to_test_instances(self):
+        class SharedStateSuite(AgentTest):
+            agent = "shared-state"
+            adapter = _echo_adapter()
+
+            def setup_class(self):
+                self.shared_resource = "configured-in-setup-class"
+
+            def test_uses_shared_state(self):
+                assert self.shared_resource == "configured-in-setup-class"
+                result = self.run("hello")
+                expect(result).to_complete()
+
+        runner = TestRunner()
+        result = runner.run_suite(SharedStateSuite)
+
+        assert result.all_passed
+
+    def test_runner_allows_a_trajectory_at_the_exact_max_step_boundary(self):
+        def boundary_agent(prompt: str, context=None):
+            return {
+                "response": "done",
+                "steps": [
+                    {"action": "llm_response", "response": f"step-{i}"}
+                    for i in range(50)
+                ],
+            }
+
+        class BoundarySuite(AgentTest):
+            agent = "boundary"
+            adapter = RawAPIAdapter(func=boundary_agent)
+
+            def test_boundary(self):
+                result = self.run("boundary")
+                expect(result).to_complete()
+
+        runner = TestRunner(config={"max_steps": 50})
+        result = runner.run_suite(BoundarySuite)
+
+        assert result.all_passed
+
+    def test_step_assertion_failures_propagate_to_runner_results(self):
+        def tool_agent(prompt: str, context=None):
+            return {
+                "response": "done",
+                "steps": [
+                    {"action": "tool_call", "tool_name": "search", "tool_output": "ok"},
+                    {"action": "llm_response", "response": "done"},
+                ],
+            }
+
+        class StepAssertionSuite(AgentTest):
+            agent = "step-assertion"
+            adapter = RawAPIAdapter(func=tool_agent)
+
+            def test_step_contract(self):
+                result = self.run("find stuff")
+                expect(result).step(0).used_tool("payment_api")
+
+        runner = TestRunner()
+        result = runner.run_suite(StepAssertionSuite)
+
+        assert not result.all_passed
+        assert result.results[0].assertion_count == 1
+        assert result.results[0].assertions[0].assertion_type == "tool_call"
+        assert result.results[0].assertions[0].passed is False

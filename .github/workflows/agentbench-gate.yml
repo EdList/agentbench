@@ -1,0 +1,88 @@
+name: AgentBench Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: agentbench-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agentbench-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run AgentBench project gate
+        id: agentbench
+        uses: ./
+        with:
+          base_url: ${{ vars.AGENTBENCH_BASE_URL }}
+          project_id: ${{ vars.AGENTBENCH_PROJECT_ID }}
+          agent_id: ${{ vars.AGENTBENCH_AGENT_ID }}
+          policy_id: ${{ vars.AGENTBENCH_POLICY_ID }}
+          fail_on_warn: ${{ vars.AGENTBENCH_FAIL_ON_WARN || 'false' }}
+          timeout_seconds: ${{ vars.AGENTBENCH_TIMEOUT_SECONDS || '900' }}
+          poll_interval_seconds: ${{ vars.AGENTBENCH_POLL_INTERVAL_SECONDS || '5' }}
+          api_key: ${{ secrets.AGENTBENCH_API_KEY }}
+
+      - name: Post AgentBench PR comment
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        env:
+          AGENTBENCH_COMMENT_BODY: ${{ steps.agentbench.outputs.pr_comment_body }}
+        with:
+          script: |
+            const body = process.env.AGENTBENCH_COMMENT_BODY?.trim();
+            if (!body) {
+              core.info('No AgentBench comment body available; skipping PR comment.');
+              return;
+            }
+
+            const marker = '<!-- agentbench:gate -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+              core.info(`Updated AgentBench PR comment ${existing.id}.`);
+            } else {
+              const created = await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+              core.info(`Created AgentBench PR comment ${created.data.id}.`);
+            }
+
+      - name: Fallback AgentBench summary for request/config failures
+        if: always() && steps.agentbench.outputs.step_summary_markdown == ''
+        run: |
+          {
+            echo "## AgentBench Gate"
+            echo
+            echo "The AgentBench helper did not emit structured outputs. Check the gate step logs for details."
+          } >> "$GITHUB_STEP_SUMMARY"

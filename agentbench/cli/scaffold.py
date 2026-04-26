@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-TEMPLATES: dict[str, dict[str, str]] = {
-    "raw_api": {
-        "test_agent.py": '''"""Agent behavioral tests — edit this to test your agent."""
+RAW_API_TEMPLATE = '''"""Agent behavioral tests — edit this to test your agent."""
 
 from agentbench import AgentTest, expect
 from agentbench.adapters import RawAPIAdapter
@@ -43,28 +41,38 @@ class MyAgentTest(AgentTest):
         result = self.run("What is 2 + 2?")
         expect(result).to_have_no_errors()
         expect(result).to_complete()
-''',
-    },
-    "langchain": {
-        "test_agent.py": '''"""Agent behavioral tests for a LangChain agent."""
+'''
+
+LANGCHAIN_TEMPLATE = '''"""Agent behavioral tests for a LangChain agent."""
 
 from agentbench import AgentTest, expect
 from agentbench.adapters.langchain import LangChainAdapter
 
-# Replace with your actual LangChain agent setup
-# from langchain_openai import ChatOpenAI
-# from langchain.agents import AgentExecutor, create_openai_tools_agent
-# llm = ChatOpenAI(model="gpt-4o-mini")
-# agent_executor = AgentExecutor(agent=..., tools=[...])
 
-# adapter = LangChainAdapter(agent_executor)
+class _PlaceholderTool:
+    def __init__(self, name: str):
+        self.name = name
 
-from agentbench.adapters import RawAPIAdapter
 
-def placeholder_agent(prompt: str, context=None) -> dict:
-    return {"response": f"LangChain response: {prompt}", "steps": []}
+class _PlaceholderExecutor:
+    """Replace this with your real AgentExecutor or Runnable."""
 
-adapter = RawAPIAdapter(func=placeholder_agent)
+    tools = [_PlaceholderTool("search")]
+
+    def invoke(self, inputs, config=None):
+        prompt = inputs.get("input", "")
+        callbacks = (config or {}).get("callbacks", [])
+        for callback in callbacks:
+            on_tool_start = getattr(callback, "on_tool_start", None)
+            if callable(on_tool_start):
+                on_tool_start({"name": "search"}, prompt, tool_input={"input": prompt})
+            on_tool_end = getattr(callback, "on_tool_end", None)
+            if callable(on_tool_end):
+                on_tool_end(f"search result for {prompt}")
+        return {"output": f"LangChain placeholder response: {prompt}"}
+
+
+adapter = LangChainAdapter(_PlaceholderExecutor())
 
 
 class LangChainAgentTest(AgentTest):
@@ -79,41 +87,39 @@ class LangChainAgentTest(AgentTest):
     def test_uses_tools(self):
         """Agent should use appropriate tools."""
         result = self.run("Search for Python tutorials")
-        # expect(result).to_use_tool("search")
+        expect(result).to_use_tool("search")
         expect(result).to_complete()
+'''
 
-    def test_handles_errors(self):
-        """Agent should handle errors gracefully."""
-        result = self.run(
-            "Search for something",
-            inject_tool_failure="search",
-            fail_times=2,
-        )
-        expect(result).to_retry(max_attempts=3)
-''',
-    },
+TEMPLATES: dict[str, dict[str, str]] = {
+    "raw_api": {"test_agent.py": RAW_API_TEMPLATE},
+    "langchain": {"test_agent.py": LANGCHAIN_TEMPLATE},
 }
+SUPPORTED_SCAFFOLD_FRAMEWORKS = tuple(TEMPLATES.keys())
 
 
 def scaffold_project(output_path: Path, name: str, framework: str) -> None:
     """Create a new AgentBench test project with boilerplate files."""
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Get template for framework (fallback to raw_api)
-    template = TEMPLATES.get(framework, TEMPLATES["raw_api"])
-    effective_framework = framework if framework in TEMPLATES else "raw_api"
+    if framework not in TEMPLATES:
+        supported = ", ".join(SUPPORTED_SCAFFOLD_FRAMEWORKS)
+        raise ValueError(
+            f"Unsupported scaffold framework '{framework}'. Supported scaffold frameworks: {supported}."
+        )
 
-    # Write template files
+    template = TEMPLATES[framework]
+
     for filename, content in template.items():
         (output_path / filename).write_text(content)
 
-    # Write config
     config_content = f"""# AgentBench configuration
 # Docs: https://github.com/agentbench/agentbench
 
 max_steps: 50
 timeout_seconds: 120
-default_adapter: {effective_framework}
+parallel_workers: 1
+default_adapter: {framework}
 
 sandbox:
   enabled: false  # Enable for Docker-based isolation
@@ -125,8 +131,5 @@ judge:
 """
     (output_path / "agentbench.yaml").write_text(config_content)
 
-    # Write requirements
     (output_path / "requirements.txt").write_text("agentbench\n")
-
-    # Create trajectories dir
     (output_path / ".agentbench" / "trajectories").mkdir(parents=True, exist_ok=True)

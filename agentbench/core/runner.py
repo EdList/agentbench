@@ -20,6 +20,8 @@ from agentbench.core.assertions import (
 )
 from agentbench.core.fixtures import FixtureRegistry
 from agentbench.core.test import AgentTest, AgentTrajectory
+from agentbench.multiagent.test import MultiAgentTest
+from agentbench.property.properties import Property, PropertyResult
 
 
 @dataclass
@@ -151,10 +153,10 @@ class TestRunner:
         # Fixture registry for scope management
         self._fixture_registry = FixtureRegistry.get()
 
-    def discover_suites(self, path: Path | str) -> list[type[AgentTest]]:
-        """Discover AgentTest subclasses in the given path."""
+    def discover_suites(self, path: Path | str) -> list[type]:
+        """Discover AgentTest and MultiAgentTest subclasses in the given path."""
         path = Path(path)
-        suites: list[type[AgentTest]] = []
+        suites: list[type] = []
 
         if path.is_file() and path.suffix == ".py":
             suites.extend(self._find_suites_in_file(path))
@@ -162,10 +164,18 @@ class TestRunner:
             for py_file in sorted(path.rglob("test_*.py")):
                 suites.extend(self._find_suites_in_file(py_file))
 
+        # Check for adversarial suite attachments and expand
+        additional: list[type] = []
+        for suite in list(suites):
+            adversarial_suite_cls = getattr(suite, '_adversarial_suite', None)
+            if adversarial_suite_cls is not None:
+                additional.append(adversarial_suite_cls)
+        suites.extend(additional)
+
         return suites
 
-    def _find_suites_in_file(self, path: Path) -> list[type[AgentTest]]:
-        """Find AgentTest subclasses in a Python file."""
+    def _find_suites_in_file(self, path: Path) -> list[type]:
+        """Find AgentTest and MultiAgentTest subclasses in a Python file."""
         suites = []
         try:
             spec = importlib.util.spec_from_file_location(path.stem, path)
@@ -175,27 +185,38 @@ class TestRunner:
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, AgentTest) and obj is not AgentTest:
                         suites.append(obj)
+                    elif issubclass(obj, MultiAgentTest) and obj is not MultiAgentTest:
+                        suites.append(obj)
         except Exception as e:
             import logging
             logging.warning("Could not load %s: %s", path, e)
         return suites
 
     def _discover_test_methods(
-        self, suite_class: type[AgentTest]
+        self, suite_class: type
     ) -> list[tuple[str, str, dict | None]]:
         """Discover test methods and their parametrize metadata.
 
         Returns:
             List of (method_name, display_name, param_info) where param_info
-            is None for a plain test or a dict with 'arg_name' and 'value' for
-            a parametrized iteration.
+            is None for a plain test or a dict with metadata for parametrized,
+            property-based, or adversarial variant iterations.
         """
-        temp_instance = suite_class()
-        test_methods = [
-            name
-            for name, method in inspect.getmembers(temp_instance, predicate=inspect.ismethod)
-            if name.startswith("test_")
-        ]
+        # Try to create temp instance for method discovery
+        try:
+            temp_instance = suite_class()
+        except Exception:
+            temp_instance = None
+
+        test_methods: list[str] = []
+        if temp_instance is not None:
+            test_methods = [
+                name
+                for name, method in inspect.getmembers(
+                    temp_instance, predicate=inspect.ismethod
+                )
+                if name.startswith("test_")
+            ]
 
         # Apply filter if specified
         if self._filter:
@@ -221,13 +242,67 @@ class TestRunner:
             else:
                 expanded.append((method_name, method_name, None))
 
+        # --- Discover Property-based test attributes ---
+        discovered_names = {name for name, _, _ in expanded}
+        for attr_name in dir(suite_class):
+            if not attr_name.startswith("test_"):
+                continue
+            attr = getattr(suite_class, attr_name, None)
+            if attr is None:
+                continue
+            is_prop = isinstance(attr, Property)
+            has_meta = hasattr(attr, "_agentbench_property")
+            if (is_prop or has_meta) and attr_name not in discovered_names:
+                expanded.append((attr_name, attr_name, {"property_test": True}))
+
+        # --- Adversarial variant expansion ---
+        if getattr(suite_class, '_adversarial_enabled', False):
+            config = getattr(suite_class, '_adversarial_config', {})
+            mutators = config.get('mutators', [])
+            count = config.get('count', 5)
+
+            original_methods = getattr(
+                suite_class, '_adversarial_original_methods', {}
+            )
+
+            for method_name in test_methods:
+                # Skip methods that are already adversarial variants
+                if '_adversarial_' in method_name:
+                    continue
+
+                # Extract a base prompt from the original method
+                base_prompt = "default test prompt"
+                if method_name in original_methods:
+                    extracted = self._extract_adversarial_prompt(
+                        original_methods[method_name]
+                    )
+                    if extracted:
+                        base_prompt = extracted
+
+                for mutator in mutators:
+                    variants = mutator.generate(base_prompt)[:count]
+                    for i, variant_prompt in enumerate(variants):
+                        variant_name = f"{method_name}_adversarial_{i}"
+                        param = {
+                            "adversarial_variant": True,
+                            "original_method": method_name,
+                            "variant_prompt": variant_prompt,
+                        }
+                        expanded.append((variant_name, variant_name, param))
+
         return expanded
 
-    def run_suite(self, suite_class: type[AgentTest]) -> TestSuiteResult:
+    def run_suite(self, suite_class: type) -> TestSuiteResult:
         """Run all test methods in a suite."""
         suite_name = suite_class.__name__
         suite_result = TestSuiteResult(suite_name=suite_name)
         suite_start = time.time()
+
+        # Handle MultiAgentTest subclasses with a simpler execution path
+        if issubclass(suite_class, MultiAgentTest):
+            return self._run_multi_agent_suite(
+                suite_class, suite_result, suite_start
+            )
 
         # Discover test methods (with parametrize expansion)
         test_items = self._discover_test_methods(suite_class)
@@ -239,12 +314,18 @@ class TestRunner:
 
             # setup_class hook
             self._run_class_hook(class_instance, "setup_class")
+            shared_class_state = {
+                key: value
+                for key, value in class_instance.__dict__.items()
+                if key not in {"trajectory", "_expectations"}
+            }
 
             try:
                 with ThreadPoolExecutor(max_workers=self._parallel) as executor:
                     futures = {}
                     for idx, (method_name, display_name, param_info) in enumerate(test_items):
                         instance = suite_class()
+                        instance.__dict__.update(shared_class_state)
                         future = executor.submit(
                             self._run_single_test,
                             instance, method_name,
@@ -270,11 +351,17 @@ class TestRunner:
 
             # setup_class hook
             self._run_class_hook(class_instance, "setup_class")
+            shared_class_state = {
+                key: value
+                for key, value in class_instance.__dict__.items()
+                if key not in {"trajectory", "_expectations"}
+            }
 
             try:
                 for method_name, display_name, param_info in test_items:
                     # Create a fresh instance for each test to prevent state leakage
                     instance = suite_class()
+                    instance.__dict__.update(shared_class_state)
                     result = self._run_single_test(
                         instance, method_name,
                         display_name, param_info,
@@ -391,11 +478,59 @@ class TestRunner:
                     setup()
 
             # Execute the test method
-            method = getattr(instance, method_name)
-            if param_info:
-                method(**{param_info["arg_name"]: param_info["value"]})
+            if param_info and param_info.get("property_test"):
+                # ── Property-based test ──
+                prop = getattr(type(instance), method_name, None)
+                if prop is None:
+                    prop = getattr(instance.__class__, method_name, None)
+                if isinstance(prop, Property):
+                    prop_results = prop.check(instance=instance)
+                    for pr in prop_results:
+                        if pr.passed:
+                            result.assertions.append(AssertionResult(
+                                passed=True,
+                                message=(
+                                    f"Property passed for input: "
+                                    f"{pr.input_value!r}"
+                                ),
+                                assertion_type="property_test",
+                            ))
+                        else:
+                            msg = (
+                                f"Property failed for input: "
+                                f"{pr.input_value!r}"
+                            )
+                            if pr.error:
+                                msg += f"\n  Error: {pr.error}"
+                            if pr.was_shrunk:
+                                msg += (
+                                    f"\n  Shrunk to: "
+                                    f"{pr.shrink_result.minimal!r}"
+                                )
+                            result.assertions.append(AssertionResult(
+                                passed=False,
+                                message=msg,
+                                assertion_type="property_test",
+                            ))
+                    if result.assertions:
+                        result.passed = all(
+                            a.passed for a in result.assertions
+                        )
+                    else:
+                        result.passed = True
+                return  # Skip trajectory / expect collection
+
+            elif param_info and param_info.get("adversarial_variant"):
+                # ── Adversarial variant ──
+                instance.run(param_info["variant_prompt"])
+
             else:
-                method()
+                # ── Normal test method ──
+                method = getattr(instance, method_name)
+                if param_info:
+                    method(**{param_info["arg_name"]: param_info["value"]})
+                else:
+                    method()
 
             # Validate trajectory data
             if instance.trajectory is not None:
@@ -452,6 +587,69 @@ class TestRunner:
 
             _clear_active_test()
 
+    def _run_multi_agent_suite(
+        self,
+        suite_class: type,
+        suite_result: TestSuiteResult,
+        suite_start: float,
+    ) -> TestSuiteResult:
+        """Run a MultiAgentTest suite with simplified execution.
+
+        MultiAgentTest doesn't share the setup/teardown/expect infrastructure
+        of AgentTest, so we discover test methods, create fresh instances, and
+        treat assertion failures as test failures.
+        """
+        test_methods = [
+            name
+            for name in dir(suite_class)
+            if name.startswith("test_")
+            and callable(getattr(suite_class, name, None))
+        ]
+
+        for method_name in test_methods:
+            instance = suite_class()
+            result = TestResult(
+                test_name=method_name,
+                suite_name=suite_result.suite_name,
+            )
+            test_start = time.time()
+            try:
+                method = getattr(instance, method_name)
+                method()
+                result.passed = True
+            except AssertionError as e:
+                result.passed = False
+                result.error = str(e)
+            except Exception as e:
+                result.passed = False
+                result.error = f"{type(e).__name__}: {e}"
+            result.duration_ms = (time.time() - test_start) * 1000
+            suite_result.results.append(result)
+
+        suite_result.total_duration_ms = (time.time() - suite_start) * 1000
+        return suite_result
+
+    @staticmethod
+    def _extract_adversarial_prompt(method: Any) -> str | None:
+        """Try to extract a prompt string from a test method's source."""
+        import re as _re
+        try:
+            source = inspect.getsource(method)
+        except (OSError, TypeError):
+            return None
+
+        # Look for self.run("...") calls
+        match = _re.search(r'self\.run\(\s*["\'](.+?)["\']', source)
+        if match:
+            return match.group(1)
+
+        # Look for any string constant
+        match = _re.search(r'["\']([a-zA-Z][^"\']{10,})["\']', source)
+        if match:
+            return match.group(1)
+
+        return None
+
     def _validate_trajectory(
         self, trajectory: AgentTrajectory,
         test_name: str, result: TestResult
@@ -477,7 +675,7 @@ class TestRunner:
 
         # Check for infinite loop detection (max steps)
         max_steps = self._max_steps
-        if trajectory.step_count >= max_steps:
+        if trajectory.step_count > max_steps:
             from agentbench.core.assertions import AssertionResult
             result.assertions.append(AssertionResult(
                 passed=False,

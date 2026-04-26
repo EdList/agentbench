@@ -1,0 +1,85 @@
+name: AgentBench Gate
+description: Run an AgentBench project gate from GitHub Actions and emit CI-friendly outputs.
+author: AgentBench
+inputs:
+  base_url:
+    description: Base URL of the AgentBench server, for example https://agentbench.example.com
+    required: true
+  api_key:
+    description: API key for authenticating to AgentBench
+    required: true
+  project_id:
+    description: AgentBench project id
+    required: true
+  agent_id:
+    description: Saved agent id to evaluate
+    required: true
+  policy_id:
+    description: Saved scan policy id to apply
+    required: true
+  fail_on_warn:
+    description: When true, warn verdicts fail the action just like fail verdicts
+    required: false
+    default: "false"
+  timeout_seconds:
+    description: Maximum time to wait for the AgentBench scan job to finish
+    required: false
+    default: "900"
+  poll_interval_seconds:
+    description: Seconds between scan-job status polls
+    required: false
+    default: "5"
+outputs:
+  job_id:
+    description: Scan job id returned by AgentBench
+    value: ${{ steps.gate.outputs.job_id }}
+  scan_id:
+    description: Scan id returned by AgentBench
+    value: ${{ steps.gate.outputs.scan_id }}
+  release_verdict:
+    description: Release verdict returned by AgentBench
+    value: ${{ steps.gate.outputs.release_verdict }}
+  permalink:
+    description: Relative AgentBench scan permalink
+    value: ${{ steps.gate.outputs.permalink }}
+  report_url:
+    description: Absolute AgentBench report URL
+    value: ${{ steps.gate.outputs.report_url }}
+  overall_score:
+    description: Overall AgentBench score
+    value: ${{ steps.gate.outputs.overall_score }}
+  overall_grade:
+    description: Overall AgentBench grade
+    value: ${{ steps.gate.outputs.overall_grade }}
+  fail_on_warn:
+    description: Whether warn verdicts were treated as failures
+    value: ${{ steps.gate.outputs.fail_on_warn }}
+  should_fail:
+    description: Whether the helper determined the run should fail CI
+    value: ${{ steps.gate.outputs.should_fail }}
+  verdict_reasons_json:
+    description: JSON array of verdict reasons
+    value: ${{ steps.gate.outputs.verdict_reasons_json }}
+  pr_comment_body:
+    description: Markdown body suitable for a sticky PR comment
+    value: ${{ steps.gate.outputs.pr_comment_body }}
+  step_summary_markdown:
+    description: Markdown summary emitted for GitHub step summaries
+    value: ${{ steps.gate.outputs.step_summary_markdown }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: python -m pip install --quiet httpx
+    - id: gate
+      shell: bash
+      env:
+        AGENTBENCH_BASE_URL: ${{ inputs.base_url }}
+        AGENTBENCH_API_KEY: ${{ inputs.api_key }}
+        AGENTBENCH_PROJECT_ID: ${{ inputs.project_id }}
+        AGENTBENCH_AGENT_ID: ${{ inputs.agent_id }}
+        AGENTBENCH_POLICY_ID: ${{ inputs.policy_id }}
+        AGENTBENCH_FAIL_ON_WARN: ${{ inputs.fail_on_warn }}
+        AGENTBENCH_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+        AGENTBENCH_POLL_INTERVAL_SECONDS: ${{ inputs.poll_interval_seconds }}
+      run: python "$GITHUB_ACTION_PATH/scripts/agentbench_gate.py"

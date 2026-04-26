@@ -71,6 +71,14 @@ nav .container{display:flex;align-items:center;justify-content:space-between;gap
 .url-error.show{display:block}
 .form-meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-top:12px}
 .form-helper{color:var(--text-muted);font-size:.85rem}
+.saved-config{display:grid;gap:12px;margin-bottom:12px;padding:14px;border-radius:16px;background:hsl(220 15% 100%/.03);border:1px solid hsl(220 15% 100%/.06)}
+.saved-config[hidden]{display:none!important}
+.saved-grid{display:grid;gap:12px}
+.saved-field{display:grid;gap:6px}
+.saved-field label{font-size:.82rem;font-weight:700;color:var(--text-secondary)}
+.saved-field select{min-height:46px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);padding:0 12px;font-size:.94rem;outline:none}
+.saved-field select:disabled{opacity:.6;cursor:not-allowed}
+.saved-note{color:var(--text-muted);font-size:.82rem}
 .form-examples{display:flex;flex-wrap:wrap;gap:8px}
 .example-chip{border:1px solid var(--border);background:transparent;color:var(--text-secondary);border-radius:999px;padding:8px 12px;font-size:.8rem;font-weight:600;cursor:pointer;transition:border-color var(--transition),background var(--transition),color var(--transition);min-height:36px}
 .example-chip:hover{border-color:var(--border-hover);background:var(--surface);color:var(--text)}
@@ -157,6 +165,20 @@ nav .container{display:flex;align-items:center;justify-content:space-between;gap
 .behaviors-row strong{color:var(--text)}
 .summary-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin:0 auto 36px;max-width:720px;line-height:1.7;color:var(--text-secondary)}
 .summary-box strong{color:var(--text)}
+.release-verdict{display:none;max-width:720px;margin:0 auto 24px;padding:20px 24px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface)}
+.release-verdict.show{display:block}
+.release-verdict.pass{border-color:hsl(142 71% 45%/.35);background:hsl(142 71% 45%/.08)}
+.release-verdict.fail{border-color:hsl(0 84% 60%/.35);background:hsl(0 84% 60%/.08)}
+.release-verdict.warn{border-color:hsl(38 92% 50%/.35);background:hsl(38 92% 50%/.08)}
+.release-verdict-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.release-verdict-header strong{color:var(--text);font-size:1rem}
+.release-verdict-badge{display:inline-flex;align-items:center;justify-content:center;min-width:72px;padding:6px 10px;border-radius:999px;font-size:.8rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.release-verdict.pass .release-verdict-badge{color:hsl(142 71% 75%);background:hsl(142 71% 45%/.16)}
+.release-verdict.fail .release-verdict-badge{color:hsl(0 84% 82%);background:hsl(0 84% 60%/.16)}
+.release-verdict.warn .release-verdict-badge{color:hsl(38 92% 78%);background:hsl(38 92% 50%/.16)}
+.release-verdict p{margin:0;color:var(--text-secondary);line-height:1.6}
+.release-verdict ul{margin:12px 0 0 18px;color:var(--text-secondary)}
+.release-verdict li+li{margin-top:6px}
 .critical-list{max-width:720px;margin:0 auto 40px;display:flex;flex-direction:column;gap:12px}
 .critical-issue{background:var(--danger-bg);border:1px solid hsl(0 84% 60%/.25);border-radius:var(--radius);padding:16px 20px;display:flex;align-items:flex-start;gap:12px;color:hsl(0 84% 80%);font-weight:500}
 .critical-issue svg{flex-shrink:0;margin-top:2px;color:var(--danger)}
@@ -178,6 +200,17 @@ nav .container{display:flex;align-items:center;justify-content:space-between;gap
 .domain-section li::before{content:'›';position:absolute;left:0;color:var(--text-muted)}
 .domain-section li.recommendation::before{content:'→';color:var(--text-muted)}
 .actions{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:8px}
+.action-status{min-height:22px;margin-top:14px;text-align:center;color:var(--text-secondary);font-size:.86rem}
+.action-status.success{color:var(--success)}
+.action-status.error{color:var(--danger)}
+.share-surface{display:none;max-width:720px;margin:18px auto 0;padding:18px;border-radius:18px;background:linear-gradient(180deg,hsl(220 15% 10%),var(--surface));border:1px solid hsl(220 15% 100%/.06)}
+.share-surface.show{display:block}
+.share-surface h3{font-size:1rem;font-weight:700;margin-bottom:6px}
+.share-surface p{color:var(--text-secondary);font-size:.88rem;margin-bottom:14px}
+.share-row{display:flex;gap:10px;align-items:center;background:hsl(220 15% 100%/.03);border:1px solid var(--border);border-radius:14px;padding:8px}
+.share-row input{flex:1;background:transparent;border:none;color:var(--text);font-size:.9rem;outline:none}
+.share-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.share-meta{margin-top:10px;color:var(--text-muted);font-size:.8rem}
 .btn{border:none;border-radius:8px;padding:12px 28px;font-size:.95rem;font-weight:600;cursor:pointer;transition:background var(--transition),transform 100ms;min-height:44px}
 .btn:active{transform:scale(.97)}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
@@ -187,12 +220,21 @@ nav .container{display:flex;align-items:center;justify-content:space-between;gap
 .history-section{max-width:720px;margin:32px auto 0}
 .history-section h3{font-size:1.1rem;font-weight:600;margin-bottom:16px;color:var(--text-secondary)}
 .history-timeline{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
-.history-entry{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;transition:border-color var(--transition);cursor:default}
-.history-entry:hover{border-color:var(--border-hover)}
+.history-entry{display:flex;align-items:center;gap:14px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px;transition:border-color var(--transition),transform var(--transition),box-shadow var(--transition),background var(--transition);cursor:pointer;text-align:left;color:var(--text)}
+.history-entry:hover{border-color:var(--border-hover);transform:translateY(-1px)}
+.history-entry.active{border-color:var(--primary);background:hsl(220 91% 55%/.08);box-shadow:0 0 0 1px hsl(220 91% 55%/.16)}
+.history-entry.current{cursor:default}
+.history-entry.current:hover{transform:none}
 .history-entry .he-score{font-size:1.3rem;font-weight:800;min-width:48px;text-align:center}
 .history-entry .he-info{flex:1}
 .history-entry .he-date{font-size:.82rem;color:var(--text-muted)}
 .history-entry .he-grade{font-size:.85rem;font-weight:600;margin-left:4px}
+.he-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:.72rem;font-weight:700;background:hsl(220 15% 100%/.04);color:var(--text-secondary);border:1px solid hsl(220 15% 100%/.06)}
+.history-selection{display:none;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin-bottom:14px;border-radius:16px;background:hsl(220 91% 55%/.08);border:1px solid hsl(220 91% 55%/.18)}
+.history-selection.show{display:flex}
+.history-selection strong{display:block;font-size:.92rem}
+.history-selection span{display:block;color:var(--text-secondary);font-size:.84rem}
+.history-selection button{flex-shrink:0}
 .he-trend{font-size:1.1rem;font-weight:700;min-width:28px;text-align:center}
 .he-trend.up{color:var(--success)}.he-trend.down{color:var(--danger)}.he-trend.flat{color:var(--text-muted)}
 .regression-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:16px}
@@ -216,6 +258,7 @@ footer a{color:var(--text-secondary)}
 footer a:hover{color:var(--text)}
 @media(min-width:768px){
   .hero{grid-template-columns:minmax(0,1.1fr) minmax(340px,.9fr)}
+  .saved-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .trust-items,.pain-grid,.info-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .step-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .domains-grid{grid-template-columns:repeat(2,1fr)}
@@ -278,6 +321,23 @@ footer a:hover{color:var(--text)}
             <span class="proof-chip"><strong>History</strong> + regression tracking</span>
           </div>
           <div class="scan-form">
+            <div class="saved-config" id="savedConfig" hidden aria-live="polite">
+              <div class="saved-grid">
+                <div class="saved-field">
+                  <label for="projectSelect">Project</label>
+                  <select id="projectSelect" aria-label="Project"></select>
+                </div>
+                <div class="saved-field">
+                  <label for="savedAgentSelect">Saved agent</label>
+                  <select id="savedAgentSelect" aria-label="Saved agent" disabled></select>
+                </div>
+                <div class="saved-field">
+                  <label for="policySelect">Scan policy</label>
+                  <select id="policySelect" aria-label="Scan policy" disabled></select>
+                </div>
+              </div>
+              <div class="saved-note" id="savedConfigNote">Select a saved project setup to run a release-gate scan without pasting a raw URL.</div>
+            </div>
             <div class="input-group" role="search">
               <input type="url" id="agentUrl" placeholder="https://your-agent.example.com" spellcheck="false" autocomplete="off" aria-label="Agent URL">
               <button class="btn-scan" id="scanBtn" onclick="startScan()" aria-label="Start scan">Scan my agent</button>
@@ -465,16 +525,47 @@ footer a:hover{color:var(--text)}
         <span><strong id="behFailed">0</strong> failed</span>
       </div>
     </div>
+    <section class="release-verdict" id="releaseVerdictBox" aria-live="polite">
+      <div class="release-verdict-header">
+        <strong>Release verdict</strong>
+        <span class="release-verdict-badge" id="releaseVerdict">Not set</span>
+      </div>
+      <p id="releaseVerdictSummary">This scan does not have a saved policy attached yet.</p>
+      <ul id="releaseVerdictReasons"></ul>
+    </section>
     <div class="summary-box" id="summaryBox"></div>
     <div class="critical-list" id="criticalList"></div>
     <div class="domains-grid" id="domainsGrid"></div>
     <div class="actions">
       <button class="btn btn-outline" onclick="resetApp()">Scan Another</button>
-      <button class="btn btn-primary" onclick="downloadReport()">Download Report</button>
+      <button class="btn btn-primary" onclick="downloadReport()">Download JSON</button>
+      <button class="btn btn-outline" onclick="downloadHtmlReport()">Export HTML</button>
+      <button class="btn btn-outline" onclick="copyShareSummary()">Copy Summary</button>
       <button class="btn btn-outline" id="btnRegression" onclick="showRegression()" style="display:none">View Regression Report</button>
     </div>
+    <div class="action-status" id="actionStatus" aria-live="polite"></div>
+    <section class="share-surface" id="shareSurface" aria-live="polite">
+      <h3>Share this scan with your team</h3>
+      <p id="shareSurfaceDescription">Copy a private permalink for teammates with AgentBench access, or paste a ready-made update into Slack, Linear, or your PR.</p>
+      <div class="share-row">
+        <input id="sharePermalink" type="text" readonly aria-label="Shareable report link">
+        <button class="btn btn-outline" type="button" onclick="copyPermalink()">Copy Link</button>
+      </div>
+      <div class="share-actions">
+        <button class="btn btn-outline" type="button" onclick="copyShareMarkdown()">Copy for PR</button>
+        <button class="btn btn-outline" type="button" onclick="copyShareSlack()">Copy for Slack</button>
+      </div>
+      <div class="share-meta" id="shareMeta"></div>
+    </section>
     <div class="history-section" id="historySection" style="display:none">
       <h3>Scan History</h3>
+      <div class="history-selection" id="historySelection" aria-live="polite">
+        <div>
+          <strong id="historySelectionTitle">Viewing latest scan</strong>
+          <span id="historySelectionMeta">Click any earlier run to inspect it without losing regression context.</span>
+        </div>
+        <button class="btn btn-outline" id="historyLatestBtn" type="button" onclick="showLatestHistoryScan()">Back to Latest</button>
+      </div>
       <div class="history-timeline" id="historyTimeline"></div>
       <div id="regressionContainer"></div>
     </div>
@@ -503,7 +594,15 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
   ? 'http://localhost:8000' : '';
 let lastReport = null;
 let currentAgentUrl = '';
+let currentScanJobId = '';
+let selectedHistoryScanId = '';
+let latestHistoryScanId = '';
+let historyEntries = [];
+let sharePayload = null;
 let abortController = null;
+let savedProjects = [];
+let savedAgents = [];
+let savedPolicies = [];
 
 function show(id) {
   document.querySelectorAll('.state').forEach(s => s.classList.remove('active'));
@@ -522,6 +621,134 @@ function domainIcon(name) {
   return icons[name] || icons.Capability;
 }
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function resolveApiKey() {
+  try {
+    if (window.AGENTBENCH_API_KEY) return window.AGENTBENCH_API_KEY;
+    const params = new URLSearchParams(window.location.search);
+    const queryKey = params.get('api_key');
+    if (queryKey) {
+      window.localStorage?.setItem('agentbench_api_key', queryKey);
+      return queryKey;
+    }
+    const storedKey = window.localStorage?.getItem('agentbench_api_key');
+    if (storedKey) return storedKey;
+  } catch (e) {}
+  return '';
+}
+function apiHeaders(includeJson = false) {
+  const headers = {};
+  const apiKey = resolveApiKey();
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  if (includeJson) headers['Content-Type'] = 'application/json';
+  return headers;
+}
+function populateSavedSelect(selectId, items, valueKey, labelKey, placeholder) {
+  const select = document.getElementById(selectId);
+  select.innerHTML = '';
+  const placeholderOption = document.createElement('option');
+  placeholderOption.value = '';
+  placeholderOption.textContent = placeholder;
+  select.appendChild(placeholderOption);
+  items.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item[valueKey];
+    option.textContent = item[labelKey];
+    select.appendChild(option);
+  });
+  select.disabled = items.length === 0;
+}
+function syncSelectedAgentIntoInput() {
+  const agentId = document.getElementById('savedAgentSelect').value;
+  const input = document.getElementById('agentUrl');
+  const note = document.getElementById('savedConfigNote');
+  const agent = savedAgents.find(item => item.id === agentId);
+  if (!agent) {
+    note.textContent = savedProjects.length
+      ? 'Select a saved project setup to run a release-gate scan without pasting a raw URL.'
+      : 'Paste a public endpoint URL to scan your agent.';
+    return;
+  }
+  input.value = agent.agent_url;
+  note.textContent = 'Using saved agent "' + agent.name + '" at ' + agent.agent_url + '.';
+}
+async function loadProjectResources(projectId) {
+  savedAgents = [];
+  savedPolicies = [];
+  populateSavedSelect('savedAgentSelect', [], 'id', 'name', 'Choose a saved agent');
+  populateSavedSelect('policySelect', [], 'id', 'name', 'Choose a scan policy');
+  if (!projectId) return;
+  const [agentsRes, policiesRes] = await Promise.all([
+    fetch(API_BASE + '/api/v1/projects/' + encodeURIComponent(projectId) + '/agents', {headers: apiHeaders()}),
+    fetch(API_BASE + '/api/v1/projects/' + encodeURIComponent(projectId) + '/policies', {headers: apiHeaders()}),
+  ]);
+  if (!agentsRes.ok || !policiesRes.ok) throw new Error('saved-config-load-failed');
+  const agentsData = await agentsRes.json();
+  const policiesData = await policiesRes.json();
+  savedAgents = agentsData.agents || [];
+  savedPolicies = policiesData.policies || [];
+  populateSavedSelect('savedAgentSelect', savedAgents, 'id', 'name', 'Choose a saved agent');
+  populateSavedSelect('policySelect', savedPolicies, 'id', 'name', 'Choose a scan policy');
+  const note = document.getElementById('savedConfigNote');
+  if (!savedAgents.length) note.textContent = 'No saved agents are configured for this project yet. You can still paste a raw URL.';
+  if (!savedPolicies.length) note.textContent = 'No saved scan policies are configured for this project yet. You can still scan with a raw URL.';
+  if (savedAgents.length === 1) {
+    document.getElementById('savedAgentSelect').value = savedAgents[0].id;
+    syncSelectedAgentIntoInput();
+  }
+  if (savedPolicies.length === 1) {
+    document.getElementById('policySelect').value = savedPolicies[0].id;
+  }
+}
+async function loadSavedConfigurations() {
+  const container = document.getElementById('savedConfig');
+  const note = document.getElementById('savedConfigNote');
+  try {
+    const res = await fetch(API_BASE + '/api/v1/projects', {headers: apiHeaders()});
+    if (!res.ok) return;
+    const data = await res.json();
+    savedProjects = data.projects || [];
+    if (!savedProjects.length) return;
+    container.hidden = false;
+    populateSavedSelect('projectSelect', savedProjects, 'id', 'name', 'Choose a project');
+    document.getElementById('projectSelect').value = savedProjects[0].id;
+    await loadProjectResources(savedProjects[0].id);
+  } catch (e) {
+    container.hidden = true;
+    note.textContent = 'Saved project setup is unavailable right now. You can still paste a raw URL.';
+  }
+}
+function clearShareSurface() {
+  sharePayload = null;
+  document.getElementById('shareSurface').classList.remove('show');
+  document.getElementById('sharePermalink').value = '';
+  document.getElementById('shareMeta').textContent = '';
+}
+function updateQueryParams(scanId = '') {
+  const url = new URL(window.location.href);
+  if (scanId) url.searchParams.set('scan_id', scanId); else url.searchParams.delete('scan_id');
+  url.searchParams.delete('agent_url');
+  const next = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '');
+  window.history.replaceState({}, '', next);
+}
+async function copyTextWithFallback(text, successMessage) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      setActionStatus(successMessage, 'success');
+      return true;
+    }
+    throw new Error('clipboard-unavailable');
+  } catch (e) {
+    try {
+      window.prompt('Copy AgentBench content', text);
+      setActionStatus('Opened a copy-ready dialog.', 'success');
+      return false;
+    } catch (promptError) {
+      setActionStatus('Could not copy content. Try the JSON or HTML export instead.', 'error');
+      return false;
+    }
+  }
+}
 function fillExample(url) {
   const input = document.getElementById('agentUrl');
   input.value = url;
@@ -534,9 +761,52 @@ function validateUrl(url) {
   catch { return 'Please enter a valid URL (e.g. https://your-agent.example.com).'; }
 }
 
+function sleepWithSignal(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      window.clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort, {once:true});
+    }
+  });
+}
+
+async function pollScanJob(jobId, signal) {
+  while (true) {
+    const res = await fetch(API_BASE + '/api/v1/scans/jobs/' + encodeURIComponent(jobId), {headers: apiHeaders(), signal});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const job = await res.json();
+    if (job.status === 'completed') return job;
+    if (job.status === 'failed') throw new Error('JOB_FAILED:' + (job.error_detail || 'Scan job failed.'));
+    if (job.status === 'cancelled') throw new DOMException('Aborted', 'AbortError');
+    await sleepWithSignal(800, signal);
+  }
+}
+
+async function loadCompletedScan(job, signal) {
+  if (!job.scan_id) throw new Error('JOB_FAILED:Scan completed without a scan id.');
+  const res = await fetch(API_BASE + '/api/v1/scans/' + encodeURIComponent(job.scan_id), {headers: apiHeaders(), signal});
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.json();
+}
+
 async function startScan() {
-  const url = document.getElementById('agentUrl').value.trim();
-  const err = validateUrl(url);
+  const urlInput = document.getElementById('agentUrl');
+  const url = urlInput.value.trim();
+  const projectId = document.getElementById('projectSelect')?.value || '';
+  const agentId = document.getElementById('savedAgentSelect')?.value || '';
+  const policyId = document.getElementById('policySelect')?.value || '';
+  const selectedAgent = savedAgents.find(item => item.id === agentId);
+  const scanUrl = selectedAgent?.agent_url || url;
+  const requiresUrlValidation = !selectedAgent;
+  const err = requiresUrlValidation ? validateUrl(scanUrl) : '';
   if (err) {
     const el = document.getElementById('urlError');
     el.textContent = err; el.classList.add('show');
@@ -544,6 +814,11 @@ async function startScan() {
     return;
   }
   document.getElementById('urlError').classList.remove('show');
+  selectedHistoryScanId = '';
+  latestHistoryScanId = '';
+  historyEntries = [];
+  clearShareSurface();
+  updateQueryParams();
   show('scanning');
   const btn = document.getElementById('scanBtn');
   const cancelBtn = document.getElementById('cancelBtn');
@@ -570,16 +845,32 @@ async function startScan() {
   const pctTimer = setInterval(() => { pct = Math.min(pct + Math.random()*3, 92); pctEl.textContent = Math.round(pct)+'%'; }, 200);
 
   try {
-    const res = await fetch(API_BASE + '/api/v1/scans', {
+    const requestBody = selectedAgent
+      ? {project_id: projectId, agent_id: agentId, ...(policyId ? {policy_id: policyId} : {})}
+      : {
+          agent_url: scanUrl,
+          ...(projectId ? {project_id: projectId} : {}),
+          ...(policyId ? {policy_id: policyId} : {}),
+          categories: null,
+        };
+    const res = await fetch(API_BASE + '/api/v1/scans/jobs', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({agent_url:url, categories:null}),
+      headers: apiHeaders(true),
+      body: JSON.stringify(requestBody),
       signal: abortController.signal
     });
     if (!res.ok) throw new Error('HTTP '+res.status);
-    const data = await res.json();
+    const createdJob = await res.json();
+    currentScanJobId = createdJob.job_id || '';
+    const completedJob = await pollScanJob(currentScanJobId, abortController.signal);
+    const data = await loadCompletedScan(completedJob, abortController.signal);
     lastReport = data;
-    currentAgentUrl = url;
+    currentAgentUrl = scanUrl;
+    if (selectedAgent) urlInput.value = scanUrl;
+    if (data.scan_id) {
+      selectedHistoryScanId = data.scan_id;
+      latestHistoryScanId = data.scan_id;
+    }
     clearInterval(stepTimer); clearInterval(pctTimer);
     stepEls[currentStep].classList.remove('active');
     stepEls[currentStep].classList.add('done');
@@ -590,18 +881,117 @@ async function startScan() {
     if (e.name === 'AbortError') { show('landing'); }
     else {
       document.getElementById('errorMessage').textContent =
-        e.message === 'HTTP 422' ? 'Invalid agent URL. Please check the address and try again.' :
+        e.message === 'HTTP 422' ? 'Invalid agent setup. Check the endpoint or saved selection and try again.' :
         e.message === 'HTTP 429' ? 'Too many scans. Please wait a moment and try again.' :
         e.message === 'HTTP 503' ? 'Scan service is temporarily unavailable. Please try again shortly.' :
+        e.message.startsWith('JOB_FAILED:') ? e.message.replace('JOB_FAILED:', '') :
         'Could not connect to agent. Make sure the URL is correct and the agent is running.';
       show('error');
     }
-  } finally { btn.disabled = false; cancelBtn.style.display = 'none'; abortController = null; }
+  } finally { btn.disabled = false; cancelBtn.style.display = 'none'; abortController = null; currentScanJobId = ''; }
 }
 
-function cancelScan() { if (abortController) abortController.abort(); }
+function cancelScan() {
+  if (currentScanJobId) {
+    fetch(API_BASE + '/api/v1/scans/jobs/' + encodeURIComponent(currentScanJobId) + '/cancel', {
+      method: 'POST',
+      headers: apiHeaders(true),
+    }).catch(() => {});
+  }
+  if (abortController) abortController.abort();
+}
 
-function showResults(data) {
+function formatHistoryDate(ts) {
+  return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+function updateHistorySelection() {
+  const selection = document.getElementById('historySelection');
+  const title = document.getElementById('historySelectionTitle');
+  const meta = document.getElementById('historySelectionMeta');
+  const latestBtn = document.getElementById('historyLatestBtn');
+  const active = historyEntries.find(s => s.id === selectedHistoryScanId) || historyEntries[0];
+  if (!active) {
+    selection.classList.remove('show');
+    return;
+  }
+  const isLatest = active.id === latestHistoryScanId;
+  title.textContent = isLatest ? 'Viewing latest scan' : 'Viewing historical scan';
+  meta.textContent = isLatest
+    ? 'Click any earlier run to inspect it without losing regression context.'
+    : 'Showing ' + active.grade + ' · ' + Math.round(active.overall_score) + '/100 from ' + formatHistoryDate(active.created_at) + '.';
+  latestBtn.style.display = isLatest ? 'none' : '';
+  selection.classList.add('show');
+}
+
+async function loadSharePayload(scanId) {
+  if (!scanId) {
+    clearShareSurface();
+    return;
+  }
+  try {
+    const res = await fetch(API_BASE + '/api/v1/scans/' + encodeURIComponent(scanId) + '/share', {headers: apiHeaders()});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    sharePayload = {
+      ...data,
+      absolute_permalink: new URL(data.permalink, window.location.origin).toString(),
+    };
+    currentAgentUrl = data.agent_url || currentAgentUrl;
+    document.getElementById('sharePermalink').value = sharePayload.absolute_permalink;
+    document.getElementById('shareMeta').textContent = sharePayload.title;
+    document.getElementById('shareSurfaceDescription').textContent = sharePayload.scan_id === latestHistoryScanId
+      ? 'Copy a private permalink for teammates with AgentBench access, or paste a ready-made update into Slack, Linear, or your PR.'
+      : 'You are viewing a historical scan. Share this exact run with teammates who already have AgentBench access using the permalink below.';
+    document.getElementById('shareSurface').classList.add('show');
+    updateQueryParams(scanId);
+  } catch (e) {
+    clearShareSurface();
+  }
+}
+
+function copyPermalink() {
+  if (!sharePayload) return;
+  copyTextWithFallback(sharePayload.absolute_permalink, 'Copied a shareable report link.');
+}
+
+function copyShareMarkdown() {
+  if (!sharePayload) return;
+  copyTextWithFallback(sharePayload.markdown, 'Copied PR-ready scan details.');
+}
+
+function copyShareSlack() {
+  if (!sharePayload) return;
+  copyTextWithFallback(sharePayload.slack_text, 'Copied Slack-ready scan update.');
+}
+
+async function openHistoryScan(scanId) {
+  if (!scanId) return;
+  try {
+    const res = await fetch(API_BASE + '/api/v1/scans/' + encodeURIComponent(scanId), {headers: apiHeaders()});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    selectedHistoryScanId = scanId;
+    showResults(data, {reloadHistory:false});
+    await loadHistory(currentAgentUrl);
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({top: document.getElementById('results').offsetTop - 32, behavior: prefersReduced ? 'auto' : 'smooth'});
+  } catch (e) {
+    const meta = document.getElementById('historySelectionMeta');
+    meta.textContent = 'Could not load that historical scan. Please try again.';
+    document.getElementById('historySelection').classList.add('show');
+  }
+}
+
+function showLatestHistoryScan() {
+  if (!latestHistoryScanId || latestHistoryScanId === selectedHistoryScanId) return;
+  openHistoryScan(latestHistoryScanId);
+}
+
+function showResults(data, options = {}) {
+  const {reloadHistory = true} = options;
+  lastReport = data;
+  setActionStatus('');
   show('results');
   const color = gradeColor(data.overall_grade);
   const circ = 2 * Math.PI * 85;
@@ -616,6 +1006,28 @@ function showResults(data) {
   document.getElementById('behTested').textContent = data.behaviors_tested ?? '—';
   document.getElementById('behPassed').textContent = data.behaviors_passed ?? '—';
   document.getElementById('behFailed').textContent = data.behaviors_failed ?? '—';
+  const verdictBox = document.getElementById('releaseVerdictBox');
+  const verdictBadge = document.getElementById('releaseVerdict');
+  const verdictSummary = document.getElementById('releaseVerdictSummary');
+  const verdictReasons = document.getElementById('releaseVerdictReasons');
+  const verdict = (data.release_verdict || '').toLowerCase();
+  verdictBox.className = 'release-verdict';
+  verdictReasons.innerHTML = '';
+  if (verdict) {
+    verdictBox.classList.add('show', verdict);
+    verdictBadge.textContent = verdict.charAt(0).toUpperCase() + verdict.slice(1);
+    verdictSummary.textContent = verdict === 'pass'
+      ? 'This scan passed its saved release policy.'
+      : verdict === 'warn'
+      ? 'This scan triggered a policy warning and should be reviewed before release.'
+      : 'This scan failed its saved release policy.';
+    (data.verdict_reasons || []).forEach(reason => {
+      verdictReasons.innerHTML += '<li>' + escHtml(reason) + '</li>';
+    });
+  } else {
+    verdictBadge.textContent = 'Not set';
+    verdictSummary.textContent = 'This scan does not have a saved policy attached yet.';
+  }
   document.getElementById('summaryBox').innerHTML = '<strong>Executive Summary</strong><br>' + (data.summary || 'No summary available.');
   const cl = document.getElementById('criticalList');
   cl.innerHTML = '';
@@ -634,7 +1046,8 @@ function showResults(data) {
     grid.appendChild(card);
     setTimeout(() => { card.classList.add('visible'); card.querySelector('.bar').style.width = d.score+'%'; }, 200 + i * 150);
   });
-  loadHistory(currentAgentUrl);
+  if (reloadHistory) loadHistory(currentAgentUrl);
+  else updateHistorySelection();
 }
 
 function animateNumber(elId, from, to, duration) {
@@ -648,13 +1061,64 @@ function animateNumber(elId, from, to, duration) {
   requestAnimationFrame(tick);
 }
 
-function downloadReport() {
-  if (!lastReport) return;
-  const blob = new Blob([JSON.stringify(lastReport,null,2)], {type:'application/json'});
+function setActionStatus(message = '', kind = '') {
+  const el = document.getElementById('actionStatus');
+  el.textContent = message;
+  el.className = 'action-status' + (kind ? ' ' + kind : '');
+}
+
+function triggerDownload(content, type, filename) {
+  const blob = new Blob([content], {type});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'agentbench-report-'+new Date().toISOString().slice(0,10)+'.json';
-  a.click(); URL.revokeObjectURL(a.href);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function buildShareSummary() {
+  if (!lastReport) return '';
+  const topIssues = (lastReport.critical_issues || []).slice(0, 3).map(issue => '- ' + issue).join('\n') || '- No critical issues found.';
+  const domains = (lastReport.domain_scores || []).map(domain => '- ' + domain.name + ': ' + domain.grade + ' (' + Math.round(domain.score) + '/100)').join('\n');
+  return [
+    'AgentBench scan summary',
+    'Scan ID: ' + (lastReport.scan_id || 'Unknown'),
+    'Overall: ' + lastReport.overall_grade + ' (' + Math.round(lastReport.overall_score) + '/100)',
+    'Behaviors: ' + (lastReport.behaviors_passed ?? 0) + '/' + (lastReport.behaviors_tested ?? 0) + ' passed',
+    '',
+    'Domain scores:',
+    domains,
+    '',
+    'Critical issues:',
+    topIssues,
+    '',
+    'Summary:',
+    lastReport.summary || 'No summary available.'
+  ].join('\n');
+}
+
+function buildHtmlReport() {
+  if (!lastReport) return '';
+  const issueItems = (lastReport.critical_issues || []).map(issue => '<li>' + escHtml(issue) + '</li>').join('') || '<li>No critical issues found.</li>';
+  const domainCards = (lastReport.domain_scores || []).map(domain => '<section style="border:1px solid #d9e2f2;border-radius:14px;padding:16px;margin:12px 0;background:#fff"><h2 style="margin:0 0 8px;font-size:18px">' + escHtml(domain.name) + ' — ' + escHtml(domain.grade) + ' (' + Math.round(domain.score) + '/100)</h2><p style="margin:0 0 8px;color:#475569"><strong>Findings:</strong> ' + escHtml((domain.findings || []).join(' • ') || 'None') + '</p><p style="margin:0;color:#475569"><strong>Recommendations:</strong> ' + escHtml((domain.recommendations || []).join(' • ') || 'None') + '</p></section>').join('');
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>AgentBench Report</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Inter,Arial,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:32px}main{max-width:880px;margin:0 auto;background:#f8fafc}header{background:linear-gradient(135deg,#1d4ed8,#0f172a);color:#fff;padding:28px;border-radius:20px}h1{margin:0 0 8px;font-size:32px}p{line-height:1.6}ul{padding-left:20px}.pill{display:inline-block;padding:6px 12px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-weight:700;margin-right:8px;margin-top:8px}.summary{background:#fff;border:1px solid #d9e2f2;border-radius:16px;padding:20px;margin:18px 0}.muted{color:#475569}</style></head><body><main><header><h1>AgentBench Report</h1><p>Scan ID: ' + escHtml(lastReport.scan_id || 'Unknown') + '</p><span class="pill">Overall ' + escHtml(lastReport.overall_grade) + ' · ' + Math.round(lastReport.overall_score) + '/100</span><span class="pill">Behaviors ' + (lastReport.behaviors_passed ?? 0) + '/' + (lastReport.behaviors_tested ?? 0) + ' passed</span></header><section class="summary"><h2 style="margin-top:0">Executive Summary</h2><p class="muted">' + escHtml(lastReport.summary || 'No summary available.') + '</p><h3>Critical issues</h3><ul>' + issueItems + '</ul></section>' + domainCards + '</main></body></html>';
+}
+
+function downloadReport() {
+  if (!lastReport) return;
+  triggerDownload(JSON.stringify(lastReport,null,2), 'application/json', 'agentbench-report-'+new Date().toISOString().slice(0,10)+'.json');
+  setActionStatus('Downloaded JSON report.', 'success');
+}
+
+function downloadHtmlReport() {
+  if (!lastReport) return;
+  triggerDownload(buildHtmlReport(), 'text/html', 'agentbench-report-'+new Date().toISOString().slice(0,10)+'.html');
+  setActionStatus('Exported HTML report.', 'success');
+}
+
+async function copyShareSummary() {
+  if (!lastReport) return;
+  await copyTextWithFallback(buildShareSummary(), 'Copied a shareable summary for Slack / PRs.');
 }
 
 async function loadHistory(agentUrl) {
@@ -662,24 +1126,65 @@ async function loadHistory(agentUrl) {
   const timeline = document.getElementById('historyTimeline');
   const btnReg = document.getElementById('btnRegression');
   try {
-    const res = await fetch(API_BASE+'/api/v1/scans/history/'+encodeURIComponent(agentUrl), {headers:{'X-API-Key':'demo'}});
+    const res = await fetch(API_BASE+'/api/v1/scans/history/'+encodeURIComponent(agentUrl), {headers: apiHeaders()});
     if (!res.ok) return;
     const scans = await res.json();
     if (!scans.length) return;
+    historyEntries = scans;
+    latestHistoryScanId = scans[0].id;
+    if (!selectedHistoryScanId || !scans.some(s => s.id === selectedHistoryScanId)) {
+      selectedHistoryScanId = latestHistoryScanId;
+    }
     section.style.display = '';
     btnReg.style.display = '';
     timeline.innerHTML = '';
     let prevScore = null;
     scans.forEach(s => {
-      const trend = prevScore === null ? '' :
-        s.overall_score > prevScore+5 ? '<span class="he-trend up">↑</span>' :
-        s.overall_score < prevScore-5 ? '<span class="he-trend down">↓</span>' :
-        '<span class="he-trend flat">→</span>';
-      const c = gradeColor(s.grade);
-      const date = new Date(s.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      timeline.innerHTML += '<div class="history-entry">'+trend+'<div class="he-score" style="color:'+c+'">'+Math.round(s.overall_score)+'</div><div class="he-info"><span class="he-grade" style="color:'+c+'">'+s.grade+'</span><div class="he-date">'+date+'</div></div></div>';
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      const isActive = s.id === selectedHistoryScanId;
+      const isLatest = s.id === latestHistoryScanId;
+      entry.className = 'history-entry' + (isActive ? ' active' : '') + (isLatest ? ' current' : '');
+      entry.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      entry.onclick = () => openHistoryScan(s.id);
+
+      const trend = document.createElement('span');
+      if (prevScore === null) {
+        trend.className = 'he-trend flat';
+        trend.textContent = '•';
+      } else if (s.overall_score > prevScore + 5) {
+        trend.className = 'he-trend up';
+        trend.textContent = '↑';
+      } else if (s.overall_score < prevScore - 5) {
+        trend.className = 'he-trend down';
+        trend.textContent = '↓';
+      } else {
+        trend.className = 'he-trend flat';
+        trend.textContent = '→';
+      }
+
+      const score = document.createElement('div');
+      score.className = 'he-score';
+      score.style.color = gradeColor(s.grade);
+      score.textContent = Math.round(s.overall_score);
+
+      const info = document.createElement('div');
+      info.className = 'he-info';
+      info.innerHTML = '<span class="he-grade" style="color:'+gradeColor(s.grade)+'">'+escHtml(s.grade)+'</span><div class="he-date">'+escHtml(formatHistoryDate(s.created_at))+'</div>';
+
+      const badge = document.createElement('span');
+      badge.className = 'he-badge';
+      badge.textContent = isLatest ? 'Latest' : (isActive ? 'Viewing' : 'Open');
+
+      entry.appendChild(trend);
+      entry.appendChild(score);
+      entry.appendChild(info);
+      entry.appendChild(badge);
+      timeline.appendChild(entry);
       prevScore = s.overall_score;
     });
+    updateHistorySelection();
+    await loadSharePayload(selectedHistoryScanId);
   } catch(e) {}
 }
 
@@ -687,7 +1192,7 @@ async function showRegression() {
   const container = document.getElementById('regressionContainer');
   container.innerHTML = '<p style="color:var(--text-muted)">Loading regression report…</p>';
   try {
-    const res = await fetch(API_BASE+'/api/v1/scans/regression/'+encodeURIComponent(currentAgentUrl), {headers:{'X-API-Key':'demo'}});
+    const res = await fetch(API_BASE+'/api/v1/scans/regression/'+encodeURIComponent(currentAgentUrl), {headers: apiHeaders()});
     if (!res.ok) { container.innerHTML = '<p style="color:var(--text-muted)">Not enough history for regression analysis.</p>'; return; }
     const data = await res.json();
     const trendLabel = data.overall_trend==='improved'?'Improved':data.overall_trend==='regressed'?'Regressed':'Stable';
@@ -708,15 +1213,54 @@ function resetApp() {
   document.getElementById('gaugeFill').style.strokeDashoffset = '534.07';
   document.getElementById('scoreNum').textContent = '0';
   document.getElementById('scoreGrade').textContent = '—';
-  lastReport = null; currentAgentUrl = '';
+  setActionStatus('');
+  lastReport = null; currentAgentUrl = ''; currentScanJobId = '';
+  selectedHistoryScanId = '';
+  latestHistoryScanId = '';
+  historyEntries = [];
+  clearShareSurface();
+  updateQueryParams();
   document.getElementById('historySection').style.display = 'none';
+  document.getElementById('historySelection').classList.remove('show');
   document.getElementById('btnRegression').style.display = 'none';
   document.getElementById('regressionContainer').innerHTML = '';
   document.getElementById('historyTimeline').innerHTML = '';
 }
 
+async function bootFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const scanId = params.get('scan_id');
+  if (!scanId) return;
+  try {
+    selectedHistoryScanId = scanId;
+    latestHistoryScanId = scanId;
+    const res = await fetch(API_BASE + '/api/v1/scans/' + encodeURIComponent(scanId), {headers: apiHeaders()});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    showResults(data, {reloadHistory:false});
+    await loadSharePayload(scanId);
+    if (currentAgentUrl) {
+      document.getElementById('agentUrl').value = currentAgentUrl;
+      await loadHistory(currentAgentUrl);
+    }
+  } catch (e) {
+    document.getElementById('errorMessage').textContent = 'Could not load the shared AgentBench report.';
+    show('error');
+  }
+}
+
 document.getElementById('agentUrl').addEventListener('keydown', e => { if (e.key === 'Enter') startScan(); });
 document.getElementById('agentUrl').addEventListener('input', () => { document.getElementById('urlError').classList.remove('show'); });
+document.getElementById('projectSelect').addEventListener('change', async e => {
+  try {
+    await loadProjectResources(e.target.value);
+  } catch (err) {
+    document.getElementById('savedConfigNote').textContent = 'Could not load saved agents or policies for that project.';
+  }
+});
+document.getElementById('savedAgentSelect').addEventListener('change', syncSelectedAgentIntoInput);
+loadSavedConfigurations();
+bootFromQuery();
 </script>
 </body>
 </html>

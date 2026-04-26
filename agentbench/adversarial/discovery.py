@@ -112,11 +112,25 @@ class AdversarialTestGenerator:
                 # Create a closure capturing the prompt
                 def _make_test(p: str, orig: str) -> Callable:
                     def test_fn(self: Any) -> None:
-                        # If the original method accepted a prompt, pass it
+                        # If self.run(p) completes, the test passes — the
+                        # agent handled the adversarial input gracefully.
+                        # AssertionError means the test found a real issue
+                        # (e.g. the agent produced unsafe output).
+                        # Non-AssertionError (connection error, timeout, …)
+                        # is stored as a skip/error rather than a silent pass.
                         try:
                             self.run(p)
-                        except Exception:
-                            pass  # adversarial tests may crash — that's OK
+                        except AssertionError:
+                            # Real issue — let it propagate
+                            raise
+                        except Exception as non_assert_exc:
+                            # Infrastructure / runtime error — mark as skipped
+                            import pytest as _pytest  # type: ignore[import-untyped]
+                            _pytest.skip(
+                                f"Adversarial variant skipped due to "
+                                f"{type(non_assert_exc).__name__}: "
+                                f"{non_assert_exc}"
+                            )
                     test_fn.__doc__ = (
                         f"Adversarial variant of {orig} "
                         f"(strategy: {_sanitize_identifier(vname)})"
@@ -206,8 +220,17 @@ class AdversarialTestGenerator:
                 def test_fn(self: Any) -> None:
                     try:
                         self.run(p)
-                    except Exception:
-                        pass
+                    except AssertionError:
+                        # Real issue — let it propagate
+                        raise
+                    except Exception as non_assert_exc:
+                        # Infrastructure / runtime error — mark as skipped
+                        import pytest as _pytest  # type: ignore[import-untyped]
+                        _pytest.skip(
+                            f"Auto adversarial test skipped due to "
+                            f"{type(non_assert_exc).__name__}: "
+                            f"{non_assert_exc}"
+                        )
                 test_fn.__doc__ = f"Auto adversarial test: {mn}"
                 return test_fn
             methods[method_name] = _make(prompt, mode_name)

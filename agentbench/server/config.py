@@ -1,4 +1,4 @@
-"""Server configuration — loaded from environment variables with sensible defaults."""
+"""Server configuration — loaded from environment variables."""
 
 from __future__ import annotations
 
@@ -7,6 +7,16 @@ import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+_DEV_SECRET = "dev-secret-change-me"
+_DEV_API_KEY = "dev-key"
+
+
+def _load_api_keys() -> list[str]:
+    """Load API keys from ``AGENTBENCH_API_KEYS`` without injecting prod defaults."""
+    raw = os.getenv("AGENTBENCH_API_KEYS", "")
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
 
 @dataclass
 class ServerConfig:
@@ -20,46 +30,55 @@ class ServerConfig:
         )
     )
     secret_key: str = field(
-        default_factory=lambda: os.getenv("AGENTBENCH_SECRET_KEY", "dev-secret-change-me")
+        default_factory=lambda: os.getenv("AGENTBENCH_SECRET_KEY", "").strip()
     )
-    api_keys: list[str] = field(
-        default_factory=lambda: _load_api_keys()
-    )
+    api_keys: list[str] = field(default_factory=_load_api_keys)
     cors_origins: list[str] = field(
         default_factory=lambda: os.getenv(
             "AGENTBENCH_CORS_ORIGINS", "*"
         ).split(",")
     )
+    scanner_use_llm: bool = field(
+        default_factory=lambda: os.getenv("AGENTBENCH_SCANNER_USE_LLM", "false").lower() == "true"
+    )
     debug: bool = field(
         default_factory=lambda: os.getenv("AGENTBENCH_DEBUG", "false").lower() == "true"
     )
+    scan_store_mode: str = field(
+        default_factory=lambda: os.getenv("AGENTBENCH_SCAN_STORE_MODE", "local")
+    )
+    scan_max_workers: int = field(
+        default_factory=lambda: int(os.getenv("AGENTBENCH_SCAN_MAX_WORKERS", "4"))
+    )
+    scan_timeout_seconds: int = field(
+        default_factory=lambda: int(os.getenv("AGENTBENCH_SCAN_TIMEOUT_SECONDS", "300"))
+    )
+    scan_memory_cap: int = field(
+        default_factory=lambda: int(os.getenv("AGENTBENCH_SCAN_MEMORY_CAP", "1000"))
+    )
 
     def __post_init__(self) -> None:
-        if not self.debug:
-            if self.secret_key == "dev-secret-change-me":
+        if self.debug:
+            if not self.secret_key:
                 logger.warning(
-                    "ServerConfig: using default secret_key in production mode. "
-                    "Set AGENTBENCH_SECRET_KEY to a secure value."
+                    "ServerConfig: AGENTBENCH_SECRET_KEY not set in debug mode; using dev secret."
                 )
-            if self.api_keys == ["dev-key"]:
+                self.secret_key = _DEV_SECRET
+            if not self.api_keys:
                 logger.warning(
-                    "ServerConfig: using default api_key in production mode. "
-                    "Set AGENTBENCH_API_KEYS to a secure value."
+                    "ServerConfig: AGENTBENCH_API_KEYS not set in debug mode; using dev API key."
                 )
+                self.api_keys = [_DEV_API_KEY]
+            return
 
-
-def _load_api_keys() -> list[str]:
-    """Load API keys from the environment.
-
-    Keys are comma-separated in ``AGENTBENCH_API_KEYS``.
-    A default key ``dev-key`` is always present in debug mode.
-    """
-    raw = os.getenv("AGENTBENCH_API_KEYS", "")
-    keys = [k.strip() for k in raw.split(",") if k.strip()]
-    # Always include a usable dev key when no keys are configured
-    if not keys:
-        keys = ["dev-key"]
-    return keys
+        if not self.secret_key:
+            raise ValueError(
+                "AGENTBENCH_SECRET_KEY must be set when AGENTBENCH_DEBUG is false."
+            )
+        if not self.api_keys:
+            raise ValueError(
+                "AGENTBENCH_API_KEYS must be set when AGENTBENCH_DEBUG is false."
+            )
 
 
 # Module-level singleton — imported by other server modules.

@@ -352,3 +352,52 @@ class TestRunReportPipeline:
         assert html_report.exists()
         html_content = html_report.read_text()
         assert "<!DOCTYPE html>" in html_content
+
+
+class TestAuditRegressionCliFixes:
+    def test_run_auto_discovers_agentbench_yaml_and_uses_parallel_workers(self, sample_suite, monkeypatch):
+        captured = {}
+
+        class DummyRunner:
+            def __init__(self, config=None):
+                captured.update(config or {})
+
+            def run(self, path):
+                class _Result:
+                    total_tests = 1
+                    total_passed = 1
+                    total_failed = 0
+                    total_duration_ms = 0.0
+                    suite_results = []
+                return _Result()
+
+        (sample_suite / "agentbench.yaml").write_text("max_steps: 99\nparallel_workers: 7\n")
+        monkeypatch.setattr("agentbench.core.runner.TestRunner", DummyRunner)
+
+        result = runner.invoke(app, ["run", str(sample_suite)])
+
+        assert result.exit_code == 0
+        assert captured["max_steps"] == 99
+        assert captured["parallel"] == 7
+
+    def test_init_rejects_unsupported_scaffold_framework(self, tmp_path):
+        target = tmp_path / "unsupported-project"
+        result = runner.invoke(
+            app,
+            ["init", "demo", "--framework", "openai", "--path", str(target)],
+        )
+
+        assert result.exit_code == 1
+        assert "Unsupported scaffold framework" in result.output
+
+    def test_init_langchain_scaffold_uses_langchain_adapter(self, tmp_path):
+        target = tmp_path / "langchain-project"
+        result = runner.invoke(
+            app,
+            ["init", "demo", "--framework", "langchain", "--path", str(target)],
+        )
+
+        assert result.exit_code == 0
+        content = (target / "test_agent.py").read_text()
+        assert "LangChainAdapter" in content
+        assert "RawAPIAdapter" not in content

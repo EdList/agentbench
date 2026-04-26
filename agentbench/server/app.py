@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,21 +10,53 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from agentbench.server.config import settings
-from agentbench.server.routes import runs, scans, trajectories
+from agentbench.server.models import create_tables
+from agentbench.server.routes import agents, policies, projects, runs, scans, trajectories
 from agentbench.server.schemas import HealthResponse
 
 __all__ = ["app", "create_app"]
 
 _SITE_DIR = Path(__file__).resolve().parent.parent.parent / "site"
 
+# Stale-job reaper interval (seconds)
+_REAPER_INTERVAL = 120
+
 
 def create_app() -> FastAPI:
     """Application factory — allows custom config for testing."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        import asyncio
+
+        create_tables()
+        scans.fail_stale_scan_jobs()
+
+        # Periodic stale-job reaper
+        async def _reaper_loop():
+            while True:
+                await asyncio.sleep(_REAPER_INTERVAL)
+                try:
+                    scans.fail_stale_scan_jobs()
+                except Exception:
+                    pass  # Don't crash the reaper
+
+        reaper_task = asyncio.create_task(_reaper_loop())
+        try:
+            yield
+        finally:
+            reaper_task.cancel()
+            try:
+                await reaper_task
+            except asyncio.CancelledError:
+                pass
+
     application = FastAPI(
         title="AgentBench API",
         version="0.1.0",
         description="Cloud API for running and managing AgentBench test suites.",
         debug=settings.debug,
+        lifespan=lifespan,
     )
 
     # CORS
@@ -53,6 +86,9 @@ def create_app() -> FastAPI:
     from fastapi import APIRouter
 
     v1 = APIRouter(prefix="/api/v1")
+    v1.include_router(projects.router)
+    v1.include_router(agents.router)
+    v1.include_router(policies.router)
     v1.include_router(runs.router)
     v1.include_router(trajectories.router)
     v1.include_router(scans.router)

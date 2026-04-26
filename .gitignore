@@ -22,6 +22,8 @@ env/
 .coverage
 htmlcov/
 .pytest_cache/
+playwright-report/
+test-results/
 
 # Environment
 .env
@@ -33,6 +35,7 @@ docker-compose.override.yml
 # Trajectories (local dev)
 .trajectories/
 .agentbench/
+node_modules/
 
 # OS
 .DS_Store

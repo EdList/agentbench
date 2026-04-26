@@ -1,4 +1,4 @@
-"""Trajectory-related API routes: upload, list, and diff trajectories."""
+"""Trajectory-related API routes: upload, list, diff stored trajectories."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ def upload_trajectory(
     traj_id = str(uuid.uuid4())
     traj = Trajectory(
         id=traj_id,
+        principal=principal,
         name=body.name,
         data=json.dumps(body.data),
         prompt=body.prompt or body.data.get("prompt"),
@@ -63,9 +64,10 @@ def list_trajectories(
     db: Session = Depends(get_db),
 ) -> TrajectoryListResponse:
     """List stored trajectories."""
-    total = db.query(Trajectory).count()
+    total = db.query(Trajectory).filter(Trajectory.principal == principal).count()
     rows = (
         db.query(Trajectory)
+        .filter(Trajectory.principal == principal)
         .order_by(Trajectory.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -91,15 +93,17 @@ def diff_trajectory(
 
     Uses the same ``TrajectoryDiff`` logic from ``agentbench.storage.trajectory``.
     """
-    # Find the named trajectory
-    target = db.query(Trajectory).filter(Trajectory.name == name).first()
+    target = (
+        db.query(Trajectory)
+        .filter(Trajectory.name == name, Trajectory.principal == principal)
+        .first()
+    )
     if target is None:
         raise HTTPException(status_code=404, detail=f"Trajectory {name!r} not found.")
 
-    # Find the latest trajectory (by created_at) that isn't the target
     latest = (
         db.query(Trajectory)
-        .filter(Trajectory.id != target.id)
+        .filter(Trajectory.id != target.id, Trajectory.principal == principal)
         .order_by(Trajectory.created_at.desc())
         .first()
     )
@@ -112,7 +116,6 @@ def diff_trajectory(
     golden_data = json.loads(target.data)
     current_data = json.loads(latest.data)
 
-    # Use the core diff engine
     from agentbench.storage.trajectory import TrajectoryDiff
 
     differ = TrajectoryDiff()

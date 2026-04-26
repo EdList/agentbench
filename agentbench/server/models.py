@@ -45,11 +45,69 @@ class Project(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
+    principal = Column(String(255), nullable=False, index=True, default="")
     owner_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     owner = relationship("User", back_populates="projects")
     test_suites = relationship("TestSuite", back_populates="project", lazy="selectin")
+    saved_agents = relationship("SavedAgent", back_populates="project", lazy="selectin")
+    scan_policies = relationship("ScanPolicy", back_populates="project", lazy="selectin")
+
+
+class SavedAgent(Base):
+    __tablename__ = "saved_agents"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    principal = Column(String(255), nullable=False, index=True, default="")
+    name = Column(String(255), nullable=False)
+    agent_url = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    project = relationship("Project", back_populates="saved_agents")
+
+
+class ScanPolicy(Base):
+    __tablename__ = "scan_policies"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
+    principal = Column(String(255), nullable=False, index=True, default="")
+    name = Column(String(255), nullable=False)
+    categories_json = Column(Text, nullable=True)
+    minimum_overall_score = Column(Float, nullable=True)
+    minimum_domain_scores_json = Column(Text, nullable=False, default="{}", server_default="{}")
+    fail_on_critical_issues = Column(Integer, nullable=False, default=1, server_default="1")
+    max_regression_delta = Column(Float, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    project = relationship("Project", back_populates="scan_policies")
+
+
+class ScanJob(Base):
+    __tablename__ = "scan_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    principal = Column(String(255), nullable=False, index=True, default="")
+    status = Column(String(50), nullable=False, default="queued", server_default="queued")
+    cancel_requested = Column(Integer, nullable=False, default=0, server_default="0")
+    agent_url = Column(Text, nullable=False)
+    project_id = Column(String, nullable=True, index=True)
+    agent_id = Column(String, nullable=True, index=True)
+    policy_id = Column(String, nullable=True, index=True)
+    categories_json = Column(Text, nullable=True)
+    scan_id = Column(String, nullable=True, index=True)
+    release_verdict = Column(String(50), nullable=True)
+    verdict_reasons_json = Column(Text, nullable=False, default="[]", server_default="[]")
+    overall_score = Column(Float, nullable=True)
+    overall_grade = Column(String(10), nullable=True)
+    error_detail = Column(Text, nullable=True)
+    report_json = Column(Text, nullable=True)
+    domain_scores_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
 
 
 class TestSuite(Base):
@@ -72,6 +130,7 @@ class Run(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     test_suite_id = Column(String, ForeignKey("test_suites.id"), nullable=True)
+    principal = Column(String(255), nullable=False, index=True, default="")
     status = Column(
         String(50), default="pending", server_default="pending"
     )  # pending, running, completed, failed
@@ -105,6 +164,7 @@ class Trajectory(Base):
     __tablename__ = "trajectories"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    principal = Column(String(255), nullable=False, index=True, default="")
     name = Column(String(255), nullable=False, index=True)
     data = Column(Text, nullable=False)  # JSON blob of full trajectory
     prompt = Column(Text, nullable=True)
@@ -131,6 +191,7 @@ def get_engine():
         _engine = _create_engine(
             settings.database_url,
             echo=settings.debug,
+            pool_pre_ping=True,
             connect_args={"check_same_thread": False}
             if "sqlite" in settings.database_url
             else {},

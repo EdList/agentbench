@@ -101,6 +101,18 @@ class TestGenerateTestMethod:
         assert "to_respond_with" in method
         assert "hello world" in method
 
+    def test_response_contains_pipe_expected_generates_any_of_assertion(self):
+        gen = TestGenerator()
+        b = _behavior(
+            test_type="response_contains",
+            expected="search|code|analyze",
+        )
+        method = gen.generate_test_method(b, 1)
+        assert "any(" in method
+        assert "search" in method
+        assert "code" in method
+        assert "analyze" in method
+
     def test_response_not_contains_type(self):
         gen = TestGenerator()
         b = _behavior(

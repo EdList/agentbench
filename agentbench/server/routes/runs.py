@@ -35,18 +35,19 @@ def submit_run(
     """Submit a new test run.
 
     Accepts either inline ``test_suite_code`` or a ``test_suite_path`` on the
-    server.  The run is created in ``pending`` status — a background worker
+    server. The run is created in ``pending`` status — a background worker
     (not yet implemented) would pick it up and execute the suite.
     """
     if not body.test_suite_code and not body.test_suite_path:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Provide either test_suite_code or test_suite_path.",
         )
 
     run_id = str(uuid.uuid4())
     run = Run(
         id=run_id,
+        principal=principal,
         status="pending",
         total_tests=0,
         passed=0,
@@ -81,9 +82,10 @@ def list_runs(
     db: Session = Depends(get_db),
 ) -> RunListResponse:
     """List recent runs, ordered by creation time descending."""
-    total = db.query(Run).count()
+    total = db.query(Run).filter(Run.principal == principal).count()
     rows = (
         db.query(Run)
+        .filter(Run.principal == principal)
         .order_by(Run.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -130,7 +132,7 @@ def get_run(
     db: Session = Depends(get_db),
 ) -> RunResponse:
     """Retrieve a single run by ID, including its results."""
-    run = db.query(Run).filter(Run.id == run_id).first()
+    run = db.query(Run).filter(Run.id == run_id, Run.principal == principal).first()
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found.")
 

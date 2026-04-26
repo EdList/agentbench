@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 
 import jwt
 from fastapi import HTTPException, Security, status
@@ -79,6 +80,12 @@ def require_token(
 # Combined: accept *either* API key *or* JWT bearer token
 # ---------------------------------------------------------------------------
 
+
+def _principal_for_api_key(api_key: str) -> str:
+    digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    return f"apikey:{digest}"
+
+
 def require_auth(
     api_key: str | None = Security(_api_key_header),
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),
@@ -89,7 +96,7 @@ def require_auth(
     """
     # Try API key first
     if api_key is not None and api_key in settings.api_keys:
-        return f"apikey:{api_key[:8]}"
+        return _principal_for_api_key(api_key)
 
     # Try JWT bearer
     if credentials is not None:

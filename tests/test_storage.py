@@ -341,6 +341,38 @@ class TestTrajectoryDiffCompare:
         info_diffs = [d for d in result.step_diffs if d.severity == "info"]
         assert any(d.field == "response" for d in info_diffs)
 
+    def test_missing_final_response_is_info(self):
+        golden = self._make_traj(response="Hello world")
+        current = self._make_traj(response="")
+
+        diff = TrajectoryDiff()
+        result = diff.compare(golden, current)
+        info_diffs = [d for d in result.step_diffs if d.severity == "info"]
+        assert any(d.field == "final_response" for d in info_diffs)
+
+    def test_different_tool_output_is_warning(self):
+        golden = self._make_traj(
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_input": {"q": "x"},
+                "tool_output": "old result",
+            }]
+        )
+        current = self._make_traj(
+            steps=[{
+                "action": "tool_call",
+                "tool_name": "search",
+                "tool_input": {"q": "x"},
+                "tool_output": "new result",
+            }]
+        )
+
+        diff = TrajectoryDiff()
+        result = diff.compare(golden, current)
+        warning_diffs = [d for d in result.step_diffs if d.severity == "warning"]
+        assert any(d.field == "tool_output" for d in warning_diffs)
+
     def test_extra_step_in_current_is_warning(self):
         golden = self._make_traj(
             steps=[{"action": "llm_response", "response": "a"}],

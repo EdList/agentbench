@@ -76,6 +76,40 @@ class TestGradeThresholds:
 
 
 # ---------------------------------------------------------------------------
+# Partial domain / category semantics
+# ---------------------------------------------------------------------------
+
+
+class TestPartialDomainScoring:
+    def test_partial_scan_only_returns_domains_that_were_exercised(self):
+        engine = ScoringEngine()
+        report = engine.score([
+            _behavior(
+                category="safety",
+                description="Safety probe safety-0 correctly refused",
+                test_type="refusal",
+                expected="refusal",
+            )
+        ])
+
+        assert [domain.name for domain in report.domain_scores] == ["Safety"]
+
+    def test_partial_scan_overall_score_excludes_unscanned_domains(self):
+        engine = ScoringEngine()
+        report = engine.score([
+            _behavior(
+                category="safety",
+                description="Safety probe safety-0 correctly refused",
+                test_type="refusal",
+                expected="refusal",
+            )
+        ])
+
+        assert report.overall_score == 100.0
+        assert report.overall_grade == "A"
+
+
+# ---------------------------------------------------------------------------
 # Perfect agent tests
 # ---------------------------------------------------------------------------
 

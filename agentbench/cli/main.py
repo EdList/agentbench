@@ -22,7 +22,7 @@ app = typer.Typer(
 console = Console()
 
 
-def _find_adapter_in_path(path: Path) -> Any:
+def _find_adapter_in_path(path: Path, agent_name: str | None = None) -> Any:
     """Discover an AgentTest class and extract its adapter from a Python file or directory."""
     from agentbench.core.test import AgentTest
 
@@ -32,6 +32,9 @@ def _find_adapter_in_path(path: Path) -> Any:
         files = sorted(path.rglob("test_*.py"))
     else:
         return None
+
+    first_match = None
+    requested_name = agent_name.strip() if agent_name else None
 
     for py_file in files:
         try:
@@ -43,11 +46,50 @@ def _find_adapter_in_path(path: Path) -> Any:
             for _name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, AgentTest) and obj is not AgentTest:
                     instance = obj()
-                    if instance.adapter:
+                    if not instance.adapter:
+                        continue
+                    if requested_name is not None and instance.agent == requested_name:
                         return instance
+                    if first_match is None:
+                        first_match = instance
         except Exception:
             continue
+    return first_match
+
+
+def _discover_agent_instance(agent: str) -> Any:
+    """Resolve either an explicit path or a named agent from common test locations."""
+    agent_path = Path(agent)
+    if agent_path.exists():
+        return _find_adapter_in_path(agent_path)
+
+    for candidate in [Path("."), Path("tests"), Path("test")]:
+        if candidate.exists():
+            test_instance = _find_adapter_in_path(candidate, agent_name=agent)
+            if test_instance:
+                return test_instance
     return None
+
+
+def _discover_config_path(path: Path) -> Path | None:
+    search_root = path if path.is_dir() else path.parent
+    for filename in ("agentbench.yaml", "agentbench.yml"):
+        candidate = search_root / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _load_bench_config(config: str | None, path: Path):
+    from agentbench.core.config import AgentBenchConfig
+
+    if config:
+        return AgentBenchConfig.from_yaml(config)
+
+    discovered = _discover_config_path(path)
+    if discovered is not None:
+        return AgentBenchConfig.from_yaml(discovered)
+    return AgentBenchConfig()
 
 
 @app.command()
@@ -58,16 +100,16 @@ def run(
     filter_pattern: str | None = typer.Option(
         None, "--filter", "-f", help="Filter tests by name pattern"
     ),
-    parallel: int = typer.Option(1, "--parallel", "-p", help="Number of parallel workers"),
+    parallel: int | None = typer.Option(None, "--parallel", "-p", help="Number of parallel workers"),
     report: str | None = typer.Option(None, "--report", "-r", help="Output file for report (JSON)"),
 ) -> None:
     """Run agent test suites."""
-    from agentbench.core.config import AgentBenchConfig
     from agentbench.core.runner import TestRunner
 
-    # Load config
-    bench_config = AgentBenchConfig.from_yaml(config) if config else AgentBenchConfig()
-    bench_config.parallel_workers = parallel
+    target_path = Path(path)
+    bench_config = _load_bench_config(config, target_path)
+    effective_parallel = parallel if parallel is not None else bench_config.parallel_workers
+    bench_config.parallel_workers = effective_parallel
 
     # Discover and run
     console.print(Panel("🧪 AgentBench", subtitle="Testing what your agent actually does"))
@@ -76,7 +118,7 @@ def run(
         config={
             "verbose": verbose,
             "filter": filter_pattern,
-            "parallel": parallel,
+            "parallel": effective_parallel,
             "max_steps": bench_config.max_steps,
             "timeout_seconds": bench_config.timeout_seconds,
             "max_retries": bench_config.max_retries,
@@ -159,19 +201,8 @@ def record(
     console.print(f"[bold]Recording trajectory[/bold] for agent '{agent}'")
     console.print(f"Prompt: {prompt!r}")
 
-    # Try to discover an adapter from the given path
-    agent_path = Path(agent)
-    test_instance = None
-
-    if agent_path.exists():
-        test_instance = _find_adapter_in_path(agent_path)
-    else:
-        # Try common locations
-        for candidate in [Path("."), Path("tests"), Path("test")]:
-            if candidate.exists():
-                test_instance = _find_adapter_in_path(candidate)
-                if test_instance:
-                    break
+    # Try to discover an adapter from the given path or requested agent name
+    test_instance = _discover_agent_instance(agent)
 
     if test_instance is None:
         console.print(
@@ -189,6 +220,7 @@ def record(
     trajectory_data["name"] = recording_name
     trajectory_data["recorded_at"] = datetime.now().isoformat()
     trajectory_data["prompt"] = prompt
+    trajectory_data["agent_name"] = test_instance.agent
 
     # Save
     output_path = Path(output or f".agentbench/trajectories/{recording_name}.json")
@@ -238,7 +270,10 @@ def diff(
             )
             raise typer.Exit(1)
 
-        test_instance = _find_adapter_in_path(Path(agent_path))
+        test_instance = _find_adapter_in_path(
+            Path(agent_path),
+            agent_name=golden_data.get("agent_name"),
+        )
         if test_instance is None:
             console.print(
                 f"[red]No agent adapter found in {agent_path}. Provide --current path.[/red]"
@@ -268,7 +303,7 @@ def init(
         "raw_api",
         "--framework",
         "-f",
-        help="Agent framework: raw_api, langchain, openai, crewai, autogen, langgraph",
+        help="Scaffold framework: raw_api, langchain",
     ),
     path: str | None = typer.Option(None, "--path", "-p", help="Output directory"),
 ) -> None:
@@ -276,7 +311,11 @@ def init(
     from agentbench.cli.scaffold import scaffold_project
 
     output_path = Path(path or name)
-    scaffold_project(output_path, name, framework)
+    try:
+        scaffold_project(output_path, name, framework)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
     console.print(f"[green]✓[/green] Created test project: {output_path}")
     console.print(f"\n  cd {output_path}")
     console.print("  agentbench run")
@@ -302,7 +341,6 @@ def watch(
         )
         raise typer.Exit(1)
 
-    from agentbench.core.config import AgentBenchConfig
     from agentbench.core.runner import TestRunner
 
     target = Path(path).resolve()
@@ -310,7 +348,7 @@ def watch(
         console.print(f"[red]Path does not exist: {path}[/red]")
         raise typer.Exit(1)
 
-    bench_config = AgentBenchConfig.from_yaml(config) if config else AgentBenchConfig()
+    bench_config = _load_bench_config(config, target)
 
     runner = TestRunner(
         config={
@@ -491,7 +529,7 @@ def serve(
 
 adversarial_app = typer.Typer(
     name="adversarial",
-    help="Generate adversarial test variants.",
+    help="Experimental adversarial test generation and variant tooling.",
     no_args_is_help=True,
 )
 app.add_typer(adversarial_app, name="adversarial")
@@ -513,7 +551,7 @@ def adversarial_generate(
     ),
     seed: int | None = typer.Option(None, "--seed", help="Random seed for reproducibility"),
 ) -> None:
-    """Generate adversarial test files from a base test suite."""
+    """Generate adversarial test files from a base test suite (experimental)."""
     from agentbench.adversarial.discovery import AdversarialTestGenerator
     from agentbench.adversarial.strategies import (
         STRATEGY_REGISTRY,
@@ -597,7 +635,7 @@ def adversarial_generate(
 
 @adversarial_app.command("list-strategies")
 def adversarial_list_strategies() -> None:
-    """List all available adversarial strategies."""
+    """List all available adversarial strategies (experimental)."""
     from agentbench.adversarial.strategies import list_strategies
 
     strategies = list_strategies()

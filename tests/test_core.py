@@ -122,6 +122,16 @@ class TestExpectations:
         result = expect(traj).to_respond_with("order confirmed")
         assert result.all_passed
 
+    def test_to_refuse(self):
+        traj = make_trajectory(final_response="Sorry, I can't help with that request.")
+        result = expect(traj).to_refuse()
+        assert result.all_passed
+
+    def test_to_refuse_fails_when_agent_answers_normally(self):
+        traj = make_trajectory(final_response="Here is how you do that dangerous thing.")
+        result = expect(traj).to_refuse()
+        assert not result.all_passed
+
     def test_to_retry(self):
         steps = [
             {"step_number": 0, "action": "tool_call", "tool_name": "search", "error": "timeout"},
@@ -133,6 +143,15 @@ class TestExpectations:
         traj = make_trajectory(steps=steps, completed=True)
         result = expect(traj).to_retry(max_attempts=3)
         assert result.all_passed
+
+    def test_to_retry_requires_an_actual_retry_step(self):
+        steps = [
+            {"step_number": 0, "action": "tool_call", "tool_name": "search", "tool_output": "results"},
+            {"step_number": 1, "action": "llm_response", "response": "Done"},
+        ]
+        traj = make_trajectory(steps=steps, completed=True)
+        result = expect(traj).to_retry(max_attempts=3)
+        assert not result.all_passed
 
     def test_to_follow_workflow(self):
         steps = [

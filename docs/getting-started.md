@@ -39,13 +39,14 @@ my-agent-tests/
     └── trajectories/     # Recorded golden trajectories
 ```
 
-You can specify a framework template:
+You can specify a scaffold template:
 
 ```bash
 agentbench init my-tests --framework langchain
-agentbench init my-tests --framework openai
 agentbench init my-tests --framework raw_api   # default
 ```
+
+When you run tests from that project, AgentBench automatically loads the local `agentbench.yaml` file unless you pass `--config` explicitly.
 
 ---
 

@@ -203,13 +203,13 @@ class TrajectoryDiff:
         # Compare final responses
         golden_response = golden.get("response", golden.get("final_response", ""))
         current_response = current.get("response", current.get("final_response", ""))
-        if golden_response and current_response and golden_response != current_response:
+        if golden_response != current_response:
             result.step_diffs.append(StepDiff(
                 step_number=max_steps,
                 severity="info",
                 field="final_response",
-                golden_value=golden_response[:100],
-                current_value=current_response[:100],
+                golden_value=(golden_response or "")[:100],
+                current_value=(current_response or "")[:100],
                 message="Final response differs",
             ))
 
@@ -253,6 +253,12 @@ class TrajectoryDiff:
                     step_number=index, severity="warning", field="tool_input",
                     golden_value=golden.get("tool_input"), current_value=current.get("tool_input"),
                     message=f"Tool '{golden.get('tool_name')}' called with different inputs",
+                ))
+            elif golden.get("tool_output") != current.get("tool_output"):
+                result.step_diffs.append(StepDiff(
+                    step_number=index, severity="warning", field="tool_output",
+                    golden_value=golden.get("tool_output"), current_value=current.get("tool_output"),
+                    message=f"Tool '{golden.get('tool_name')}' returned different output",
                 ))
             else:
                 result.step_diffs.append(StepDiff(

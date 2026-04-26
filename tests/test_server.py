@@ -13,9 +13,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 # Ensure dev API key is available for tests
-os.environ.setdefault("AGENTBENCH_API_KEYS", "test-api-key")
-os.environ.setdefault("AGENTBENCH_SECRET_KEY", "test-secret-key")
+os.environ["AGENTBENCH_API_KEYS"] = "test-api-key,other-api-key"
+os.environ["AGENTBENCH_SECRET_KEY"] = "test-secret-key-for-agentbench-32bytes"
 os.environ["AGENTBENCH_DATABASE_URL"] = "sqlite:///:memory:"
+
+from agentbench.server.auth import settings as auth_settings
+
+auth_settings.api_keys = ["test-api-key", "other-api-key"]
+auth_settings.secret_key = "test-secret-key-for-agentbench-32bytes"
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +128,18 @@ class TestAuth:
         )
         assert resp.status_code == 201
 
+    def test_api_key_principals_do_not_collide_on_shared_prefix(self, monkeypatch):
+        from agentbench.server.auth import require_auth
+
+        key_one = "sharedprefix-alpha"
+        key_two = "sharedprefix-beta"
+        monkeypatch.setattr(auth_settings, "api_keys", [key_one, key_two])
+
+        principal_one = require_auth(api_key=key_one, credentials=None)
+        principal_two = require_auth(api_key=key_two, credentials=None)
+
+        assert principal_one != principal_two
+
 
 # ---------------------------------------------------------------------------
 # Runs
@@ -206,6 +223,29 @@ class TestRuns:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["runs"]) <= 2
+
+    def test_runs_are_scoped_to_principal(self, client: TestClient):
+        own = client.post(
+            "/api/v1/runs",
+            json={"test_suite_code": "pass"},
+            headers={"X-API-Key": "test-api-key"},
+        ).json()
+        other = client.post(
+            "/api/v1/runs",
+            json={"test_suite_code": "pass"},
+            headers={"X-API-Key": "other-api-key"},
+        ).json()
+
+        own_list = client.get("/api/v1/runs", headers={"X-API-Key": "test-api-key"})
+        other_list = client.get("/api/v1/runs", headers={"X-API-Key": "other-api-key"})
+
+        assert own_list.status_code == 200
+        assert other_list.status_code == 200
+        assert [run["id"] for run in own_list.json()["runs"]] == [own["id"]]
+        assert [run["id"] for run in other_list.json()["runs"]] == [other["id"]]
+
+        forbidden = client.get(f"/api/v1/runs/{other['id']}", headers={"X-API-Key": "test-api-key"})
+        assert forbidden.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +342,29 @@ class TestTrajectories:
         resp = client.get("/api/v1/trajectories/nonexistent/diff", headers=HEADERS)
         assert resp.status_code == 404
 
+    def test_trajectories_are_scoped_to_principal(self, client: TestClient):
+        own = client.post(
+            "/api/v1/trajectories",
+            json={"name": "own-traj", "data": {"steps": []}},
+            headers={"X-API-Key": "test-api-key"},
+        ).json()
+        client.post(
+            "/api/v1/trajectories",
+            json={"name": "other-traj", "data": {"steps": []}},
+            headers={"X-API-Key": "other-api-key"},
+        )
+
+        own_list = client.get("/api/v1/trajectories", headers={"X-API-Key": "test-api-key"})
+        other_list = client.get("/api/v1/trajectories", headers={"X-API-Key": "other-api-key"})
+
+        assert own_list.status_code == 200
+        assert other_list.status_code == 200
+        assert [traj["id"] for traj in own_list.json()["trajectories"]] == [own["id"]]
+        assert [traj["name"] for traj in other_list.json()["trajectories"]] == ["other-traj"]
+
+        forbidden = client.get("/api/v1/trajectories/other-traj/diff", headers={"X-API-Key": "test-api-key"})
+        assert forbidden.status_code == 404
+
 
 # ---------------------------------------------------------------------------
 # JWT token auth
@@ -336,14 +399,27 @@ class TestJWT:
 # ---------------------------------------------------------------------------
 
 class TestConfig:
-    def test_default_settings(self):
+    def test_production_config_requires_explicit_secret_and_api_keys(self, monkeypatch):
         from agentbench.server.config import ServerConfig
 
+        monkeypatch.delenv("AGENTBENCH_SECRET_KEY", raising=False)
+        monkeypatch.delenv("AGENTBENCH_API_KEYS", raising=False)
+        monkeypatch.delenv("AGENTBENCH_DEBUG", raising=False)
+
+        with pytest.raises(ValueError):
+            ServerConfig()
+
+    def test_debug_config_allows_dev_defaults(self, monkeypatch):
+        from agentbench.server.config import ServerConfig
+
+        monkeypatch.delenv("AGENTBENCH_SECRET_KEY", raising=False)
+        monkeypatch.delenv("AGENTBENCH_API_KEYS", raising=False)
+        monkeypatch.setenv("AGENTBENCH_DEBUG", "true")
+
         cfg = ServerConfig()
-        assert cfg.port == 8000
-        assert cfg.host == "0.0.0.0"
-        assert cfg.debug is False
-        assert len(cfg.api_keys) >= 1  # at least dev-key
+        assert cfg.debug is True
+        assert cfg.secret_key == "dev-secret-change-me"
+        assert cfg.api_keys == ["dev-key"]
 
     def test_cors_origins_default(self):
         from agentbench.server.config import ServerConfig
@@ -367,7 +443,7 @@ class TestModels:
 
         inspector = sa_inspect(engine)
         table_names = inspector.get_table_names()
-        expected = {"users", "projects", "test_suites", "runs", "run_results", "trajectories"}
+        expected = {"users", "projects", "test_suites", "runs", "run_results", "trajectories", "scan_jobs"}
         assert expected.issubset(set(table_names))
 
     def test_run_model_defaults(self):
@@ -385,3 +461,19 @@ class TestModels:
         traj = Trajectory(id=str(uuid.uuid4()), name="test-traj", data="{}", step_count=0)
         assert traj.step_count == 0
         assert traj.name == "test-traj"
+
+
+class TestStartup:
+    def test_create_app_starts_on_empty_database(self, monkeypatch, tmp_path):
+        import agentbench.server.models as models_mod
+        from agentbench.server.app import create_app
+        from agentbench.server.config import settings as server_settings
+
+        monkeypatch.setattr(models_mod, "_engine", None, raising=False)
+        monkeypatch.setattr(models_mod, "_SessionLocal", None, raising=False)
+        monkeypatch.setattr(server_settings, "database_url", f"sqlite:///{tmp_path / 'fresh.db'}")
+
+        with TestClient(create_app()) as client:
+            response = client.get("/health")
+
+        assert response.status_code == 200

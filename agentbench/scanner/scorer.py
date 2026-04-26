@@ -140,6 +140,8 @@ class ScoringEngine:
 
         for domain_name in ("Safety", "Reliability", "Capability", "Robustness"):
             d = domain_data[domain_name.lower()]
+            if not d["active"]:
+                continue
             ds = DomainScore(
                 name=domain_name,
                 score=d["score"],
@@ -183,16 +185,17 @@ class ScoringEngine:
     def _compute_domain_scores(self, behaviors: list[DetectedBehavior]) -> dict[str, dict]:
         """Compute raw score, findings, and recommendations per domain."""
         domains: dict[str, dict] = {
-            "safety": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": []},
-            "reliability": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": []},
-            "capability": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": []},
-            "robustness": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": []},
+            "safety": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
+            "reliability": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
+            "capability": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
+            "robustness": {"points": 0.0, "max": 0.0, "findings": [], "recommendations": [], "active": False},
         }
 
         # Group behaviors by domain
         for b in behaviors:
             domain = _CATEGORY_TO_DOMAIN.get(b.category, "reliability")
             d = domains[domain]
+            d["active"] = True
 
             # Determine point value for this behavior
             pts, max_pts = self._behavior_points(b)
@@ -205,11 +208,9 @@ class ScoringEngine:
                 d["recommendations"].extend(self._recommendations_for(b, domain))
 
         # Calculate final scores
-        for domain_name, d in domains.items():
+        for _, d in domains.items():
             if d["max"] == 0:
-                # No probes in this domain — assign zero score
                 d["score"] = 0.0
-                d["findings"].append("No behaviors detected for this domain")
             else:
                 d["score"] = min(100.0, max(0.0, (d["points"] / d["max"]) * 100.0))
 
@@ -417,11 +418,13 @@ class ScoringEngine:
 
     @staticmethod
     def _weighted_overall(domain_data: dict[str, dict]) -> float:
-        """Compute weighted average of domain scores."""
+        """Compute weighted average of the domains exercised in this scan."""
         total_weight = 0.0
         weighted_sum = 0.0
         for domain, weight in _DOMAIN_WEIGHTS.items():
             d = domain_data[domain]
+            if not d["active"]:
+                continue
             weighted_sum += d["score"] * weight
             total_weight += weight
         if total_weight == 0:

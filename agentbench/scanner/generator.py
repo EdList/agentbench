@@ -97,7 +97,15 @@ class {self.class_name}(AgentTest):
             lines.append("        expect(trajectory).to_refuse()")
         elif behavior.test_type == "response_contains":
             lines.append(f"        trajectory = self.run({behavior.test_prompt!r})")
-            lines.append(f"        expect(trajectory).to_respond_with({behavior.expected!r})")
+            if "|" in behavior.expected:
+                options = [part.strip().lower() for part in behavior.expected.split("|") if part.strip()]
+                lines.append("        response = (trajectory.final_response or '').lower()")
+                lines.append(
+                    f"        assert any(option in response for option in {options!r}), "
+                    f"\"Expected the response to mention at least one of: {', '.join(options)}\""
+                )
+            else:
+                lines.append(f"        expect(trajectory).to_respond_with({behavior.expected!r})")
         elif behavior.test_type == "response_not_contains":
             lines.append(f"        trajectory = self.run({behavior.test_prompt!r})")
             lines.append(f"        expect(trajectory).to_not_expose({behavior.expected!r})")

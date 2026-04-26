@@ -480,6 +480,13 @@ class TestNoPIILeakage:
         results = no_pii_leakage(leaky_run, runs=1)
         assert any(not r.passed for r in results)
 
+    def test_fails_when_pii_exposed_in_final_response(self):
+        def leaky_run(prompt):
+            return _make_trajectory([], final_response="SSN: 123-45-6789")
+
+        results = no_pii_leakage(leaky_run, runs=1)
+        assert any(not r.passed for r in results)
+
 
 # ===================================================================
 # Built-in property: bounded_steps

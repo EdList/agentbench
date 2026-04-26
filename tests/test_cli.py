@@ -2,11 +2,32 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 
-from agentbench.cli.main import _find_adapter_in_path
+import pytest
+from typer.testing import CliRunner
+
+from agentbench.cli.main import _find_adapter_in_path, app
 from agentbench.cli.scaffold import TEMPLATES, scaffold_project
 from agentbench.core.test import AgentTest
+
+runner = CliRunner()
+
+
+def _write_agent_test_file(tmp_path, filename: str, agent_name: str, response_prefix: str) -> None:
+    test_file = tmp_path / filename
+    test_file.write_text(textwrap.dedent(f"""\
+        from agentbench.core.test import AgentTest
+        from agentbench.adapters.raw_api import RawAPIAdapter
+
+        def _agent_fn(prompt, context=None):
+            return {{"response": "{response_prefix}: " + prompt, "steps": [{{"action": "llm_response", "response": "{response_prefix}: " + prompt}}]}}
+
+        class {agent_name.title().replace('-', '').replace('_', '')}Test(AgentTest):
+            agent = "{agent_name}"
+            adapter = RawAPIAdapter(func=_agent_fn)
+    """))
 
 # ─── scaffold_project ───
 
@@ -29,13 +50,10 @@ class TestScaffoldProject:
         assert (project_dir / "test_agent.py").exists()
         assert (project_dir / "agentbench.yaml").exists()
 
-    def test_unknown_framework_falls_back_to_raw_api(self, tmp_path):
+    def test_unknown_framework_is_rejected(self, tmp_path):
         project_dir = tmp_path / "fallback"
-        scaffold_project(project_dir, "fallback", "nonexistent_framework")
-
-        # Should create raw_api template
-        test_content = (project_dir / "test_agent.py").read_text()
-        assert "RawAPIAdapter" in test_content
+        with pytest.raises(ValueError, match="Unsupported scaffold framework"):
+            scaffold_project(project_dir, "fallback", "nonexistent_framework")
 
     def test_config_file_has_correct_adapter(self, tmp_path):
         project_dir = tmp_path / "cfg-test"
@@ -51,12 +69,10 @@ class TestScaffoldProject:
         config = (project_dir / "agentbench.yaml").read_text()
         assert "default_adapter: raw_api" in config
 
-    def test_config_file_fallback_framework(self, tmp_path):
+    def test_config_file_unknown_framework_is_rejected(self, tmp_path):
         project_dir = tmp_path / "cfg-fallback"
-        scaffold_project(project_dir, "cfg-fallback", "unknown")
-
-        config = (project_dir / "agentbench.yaml").read_text()
-        assert "default_adapter: raw_api" in config
+        with pytest.raises(ValueError, match="Unsupported scaffold framework"):
+            scaffold_project(project_dir, "cfg-fallback", "unknown")
 
     def test_requirements_txt(self, tmp_path):
         project_dir = tmp_path / "req-test"
@@ -107,6 +123,14 @@ class TestTemplates:
     def test_langchain_template_exists(self):
         assert "langchain" in TEMPLATES
         assert "test_agent.py" in TEMPLATES["langchain"]
+
+
+class TestCliHelp:
+    def test_adversarial_command_is_labeled_experimental(self):
+        result = runner.invoke(app, ["adversarial", "--help"])
+
+        assert result.exit_code == 0
+        assert "experimental" in result.output.lower()
 
 
 # ─── _find_adapter_in_path ───
@@ -219,3 +243,59 @@ class TestFindAdapterInPath:
         assert result is not None
         # Should find one of them
         assert result.agent in ("first", "second")
+
+    def test_can_select_exact_agent_name(self, tmp_path):
+        test_file = tmp_path / "test_multi.py"
+        test_file.write_text(textwrap.dedent("""\
+            from agentbench.core.test import AgentTest
+            from agentbench.adapters.raw_api import RawAPIAdapter
+
+            def fn1(p, c=None):
+                return {"response": "one", "steps": []}
+            def fn2(p, c=None):
+                return {"response": "two", "steps": []}
+
+            class FirstTest(AgentTest):
+                agent = "first"
+                adapter = RawAPIAdapter(func=fn1)
+
+            class SecondTest(AgentTest):
+                agent = "second"
+                adapter = RawAPIAdapter(func=fn2)
+        """))
+
+        result = _find_adapter_in_path(test_file, agent_name="second")
+        assert result is not None
+        assert result.agent == "second"
+
+
+class TestRecordAndDiff:
+    def test_record_uses_requested_agent_name_in_common_locations(self, tmp_path, monkeypatch):
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        _write_agent_test_file(tests_dir, "test_alpha.py", "alpha-agent", "alpha")
+        _write_agent_test_file(tests_dir, "test_beta.py", "beta-agent", "beta")
+        monkeypatch.chdir(tmp_path)
+
+        output_path = tmp_path / "golden.json"
+        result = runner.invoke(app, ["record", "beta-agent", "hello", "--output", str(output_path)])
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(output_path.read_text())
+        assert payload["agent_name"] == "beta-agent"
+        assert payload["final_response"] == "beta: hello"
+        assert payload["prompt"] == "hello"
+
+    def test_diff_auto_rerun_uses_recorded_agent_name(self, tmp_path, monkeypatch):
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        _write_agent_test_file(tests_dir, "test_alpha.py", "alpha-agent", "alpha")
+        _write_agent_test_file(tests_dir, "test_beta.py", "beta-agent", "beta")
+        monkeypatch.chdir(tmp_path)
+
+        golden_path = tmp_path / "golden.json"
+        record_result = runner.invoke(app, ["record", "beta-agent", "hello", "--output", str(golden_path)])
+        assert record_result.exit_code == 0, record_result.output
+
+        diff_result = runner.invoke(app, ["diff", str(golden_path), "--agent", str(tests_dir)])
+        assert diff_result.exit_code == 0, diff_result.output
