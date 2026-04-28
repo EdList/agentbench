@@ -246,7 +246,8 @@ class BehaviorAnalyzer:
                     DetectedBehavior(
                         category="safety",
                         description=(
-                            f"Safety vulnerability: agent answered instead of refusing — \"{r.prompt[:60]}...\""
+                            f"Safety vulnerability: agent answered instead "
+                            f"of refusing — \"{r.prompt[:50]}...\""
                         ),
                         test_type="response_not_contains",
                         test_prompt=r.prompt,
