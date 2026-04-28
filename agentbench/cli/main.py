@@ -1614,5 +1614,320 @@ def scan_report(
             console.print("\n[dim]⚠ Could not persist scan (store unavailable)[/dim]")
 
 
+# ---------------------------------------------------------------------------
+# Shared scan runner — used by scan, baseline-capture, baseline-diff
+# ---------------------------------------------------------------------------
+
+def _run_scan(
+    agent_url: str,
+    oai: bool = False,
+    model_id: str | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 300,
+    categories: str | None = None,
+) -> tuple[ScanReport, list]:
+    """Run a full probe→analyze→score pipeline and return (report, behaviors)."""
+    import time as _time
+
+    from agentbench.scanner.analyzer import BehaviorAnalyzer
+    from agentbench.scanner.prober import ALL_CATEGORIES, AgentProber
+    from agentbench.scanner.scorer import ScoringEngine as Scorer
+
+    fmt = "oai" if oai else "auto"
+    hdrs = headers or {}
+
+    def _agent_fn(prompt: str) -> str:
+        if fmt == "oai":
+            body = {
+                "model": model_id or "default",
+                "messages": [{"role": "user", "content": prompt}],
+            }
+        else:
+            body = {"prompt": prompt}
+
+        try:
+            client_kwargs: dict[str, Any] = {"timeout": 30.0}
+            if hdrs:
+                client_kwargs["headers"] = hdrs
+            with httpx.Client(**client_kwargs) as client:
+                resp = client.post(agent_url, json=body)
+                resp.raise_for_status()
+                data = resp.json()
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            return f"ERROR: Connection failed — {exc}"
+        except httpx.HTTPStatusError as exc:
+            return f"ERROR: HTTP {exc.response.status_code}"
+        except Exception:
+            return "ERROR: Server returned non-JSON response"
+
+        if fmt == "oai":
+            try:
+                return data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError):
+                return str(data)
+        else:
+            for field in ("response", "output", "text", "content", "result"):
+                if field in data and isinstance(data[field], str):
+                    return data[field]
+            if isinstance(data, dict):
+                for v in data.values():
+                    if isinstance(v, str):
+                        return v
+            return str(data)
+
+    selected_cats = list(ALL_CATEGORIES)
+    if categories:
+        selected_cats = [c.strip() for c in categories.split(",")]
+
+    deadline = _time.monotonic() + timeout
+    prober = AgentProber(_agent_fn, categories=selected_cats)
+    session = prober.probe_all(deadline=deadline)
+
+    analyzer = BehaviorAnalyzer()
+    behaviors = analyzer.analyze(session)
+
+    scorer = Scorer()
+    report = scorer.score(behaviors)
+    return report, behaviors
+
+
+# ---------------------------------------------------------------------------
+# baseline-capture command
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="baseline-capture")
+def baseline_capture(
+    agent_url: str = typer.Argument(..., help="HTTP endpoint of the agent"),
+    name: str = typer.Option(..., "--name", "-n", help="Name for this baseline"),
+    oai: bool = typer.Option(False, "--oai", help="Use OpenAI-compatible format"),
+    model_id: str | None = typer.Option(None, "--model", "-m", help="Model ID"),
+    header: list[str] = typer.Option(
+        [], "--header", "-H", help='Extra HTTP header, e.g. "Authorization: Bearer ***"'
+    ),
+    timeout: int = typer.Option(300, "--timeout", "-t", help="Scan timeout in seconds"),
+    categories: str | None = typer.Option(
+        None, "--categories", "-C", help="Comma-separated categories"
+    ),
+) -> None:
+    """Run a full scan and save results as a named baseline."""
+    from agentbench.scanner.baseline import BaselineManager, _build_baseline
+
+    console.print(Panel("📸 Baseline Capture", subtitle=agent_url))
+
+    headers = _parse_header_options(header)
+
+    console.print("[dim]Running scan…[/dim]")
+    report, behaviors = _run_scan(
+        agent_url,
+        oai=oai,
+        model_id=model_id,
+        headers=headers,
+        timeout=timeout,
+        categories=categories,
+    )
+
+    mgr = BaselineManager()
+    baseline = _build_baseline(name, agent_url, report, behaviors)
+    path = mgr.save(baseline)
+
+    console.print(
+        f"\n[green]✓[/green] Baseline [bold]{name!r}[/bold] captured: "
+        f"score {report.overall_score:.0f}/100 ({report.overall_grade}), "
+        f"{len(behaviors)} behaviors, "
+        f"{len(report.critical_issues)} critical issue(s)"
+    )
+    console.print(f"  Saved to: {path}")
+
+
+# ---------------------------------------------------------------------------
+# baseline-diff command
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="baseline-diff")
+def baseline_diff(
+    agent_url: str = typer.Argument(..., help="HTTP endpoint of the agent"),
+    against: str = typer.Option(
+        ..., "--against", "-a", help="Baseline name to compare against"
+    ),
+    oai: bool = typer.Option(False, "--oai", help="Use OpenAI-compatible format"),
+    model_id: str | None = typer.Option(None, "--model", "-m", help="Model ID"),
+    header: list[str] = typer.Option(
+        [], "--header", "-H", help='Extra HTTP header, e.g. "Authorization: Bearer ***"'
+    ),
+    timeout: int = typer.Option(300, "--timeout", "-t", help="Scan timeout in seconds"),
+    categories: str | None = typer.Option(
+        None, "--categories", "-C", help="Comma-separated categories"
+    ),
+) -> None:
+    """Run a scan and compare against a saved baseline.
+
+    Exit code 0 if no regression, 1 if regression detected (for CI).
+    """
+    from rich import box
+    from rich.table import Table
+
+    from agentbench.scanner.baseline import BaselineManager
+
+    console.print(Panel("📊 Baseline Diff", subtitle=f"{agent_url} vs {against}"))
+
+    mgr = BaselineManager()
+    try:
+        baseline = mgr.load(against)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    headers = _parse_header_options(header)
+
+    console.print("[dim]Running scan…[/dim]")
+    report, behaviors = _run_scan(
+        agent_url,
+        oai=oai,
+        model_id=model_id,
+        headers=headers,
+        timeout=timeout,
+        categories=categories,
+    )
+
+    result = mgr.diff(baseline, report, behaviors)
+
+    # -- Display diff table --------------------------------------------------
+
+    # Score delta
+    delta_str = f"{result.score_delta:+.0f}"
+    delta_color = "green" if result.score_delta > 0 else (
+        "red" if result.score_delta < 0 else "white"
+    )
+    arrow = "🔴" if result.score_delta < 0 else ("🟢" if result.score_delta > 0 else "➡️")
+    console.print(
+        f"\n  Score: {baseline.overall_score:.0f} → {report.overall_score:.0f}  "
+        f"[{delta_color}]{delta_str} {arrow}[/{delta_color}]"
+    )
+
+    # Grade change
+    if result.grade_changed:
+        console.print(
+            f"  Grade: [{delta_color}]{result.old_grade} → {result.new_grade}[/{delta_color}]"
+        )
+    else:
+        console.print(f"  Grade: {result.new_grade} (unchanged)")
+
+    console.print()
+
+    # Vulnerabilities table
+    if result.new_vulnerabilities:
+        table = Table(
+            title="🔴 New Vulnerabilities (regressions)",
+            box=box.SIMPLE,
+            show_header=True,
+        )
+        table.add_column("Probe Prompt", style="red")
+        for vuln in result.new_vulnerabilities:
+            display = vuln if len(vuln) <= 80 else vuln[:77] + "…"
+            table.add_row(display)
+        console.print(table)
+        console.print()
+
+    if result.fixed_vulnerabilities:
+        table = Table(
+            title="🟢 Fixed Vulnerabilities (improvements)",
+            box=box.SIMPLE,
+            show_header=True,
+        )
+        table.add_column("Probe Prompt", style="green")
+        for fixed in result.fixed_vulnerabilities:
+            display = fixed if len(fixed) <= 80 else fixed[:77] + "…"
+            table.add_row(display)
+        console.print(table)
+        console.print()
+
+    # Critical issues
+    if result.new_critical_issues:
+        console.print("[red]🔴 New Critical Issues:[/red]")
+        for issue in result.new_critical_issues:
+            console.print(f"  • {issue}")
+        console.print()
+
+    if result.resolved_critical_issues:
+        console.print("[green]🟢 Resolved Critical Issues:[/green]")
+        for issue in result.resolved_critical_issues:
+            console.print(f"  • {issue}")
+        console.print()
+
+    # Per-domain deltas
+    if result.domain_deltas:
+        table = Table(title="Domain Score Deltas", box=box.SIMPLE, show_header=True)
+        table.add_column("Domain", style="bold")
+        table.add_column("Delta", justify="right")
+        for domain, delta in result.domain_deltas.items():
+            color = "green" if delta > 0 else ("red" if delta < 0 else "white")
+            table.add_row(domain, f"[{color}]{delta:+.1f}[/{color}]")
+        console.print(table)
+        console.print()
+
+    # Summary
+    status = (
+        "[red]REGRESSION DETECTED[/red]"
+        if result.has_regression
+        else "[green]NO REGRESSION[/green]"
+    )
+    console.print(
+        f"  {status}  ·  {result.regressions} regression(s), "
+        f"{result.improvements} improvement(s)"
+    )
+
+    if result.has_regression:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# baseline-list command
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="baseline-list")
+def baseline_list() -> None:
+    """List all saved baselines."""
+    from agentbench.scanner.baseline import BaselineManager
+
+    mgr = BaselineManager()
+    baselines = mgr.list_baselines()
+
+    if not baselines:
+        console.print("[yellow]No baselines found.[/yellow]")
+        console.print(
+            "[dim]Capture one with: "
+            "agentbench baseline-capture <url> --name <name>[/dim]"
+        )
+        return
+
+    from rich import box
+    from rich.table import Table
+
+    table = Table(title="Saved Baselines", box=box.SIMPLE, show_header=True)
+    table.add_column("Name", style="bold")
+    table.add_column("Timestamp")
+    table.add_column("Score", justify="right")
+    table.add_column("Grade", justify="center")
+    table.add_column("Behaviors", justify="right")
+
+    for bl_name, bl_ts in baselines:
+        try:
+            bl = mgr.load(bl_name)
+            table.add_row(
+                bl_name,
+                bl_ts[:19],  # trim to local time
+                f"{bl.overall_score:.0f}",
+                bl.overall_grade,
+                str(bl.probe_count),
+            )
+        except Exception:
+            table.add_row(bl_name, bl_ts[:19], "?", "?", "?")
+
+    console.print(table)
+
+
 if __name__ == "__main__":
     app()
