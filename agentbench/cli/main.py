@@ -6,13 +6,18 @@ import importlib
 import inspect
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
+
+from agentbench.scanner.scorer import ScanReport
 
 app = typer.Typer(
     name="agentbench",
@@ -707,11 +712,241 @@ def _write_adversarial_file(
 
 
 # ---------------------------------------------------------------------------
-# Scan sub-command
+# Scan command — prober → analyzer → scorer → scorecard (no test gen)
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@app.command(name="scan")
+def cmd_scan(
+    agent_url: str = typer.Argument(..., help="HTTP endpoint of the agent to scan"),
+    json_output: str | None = typer.Option(
+        None, "--json", "-j", help="Save scan report as JSON to this path"
+    ),
+    timeout: int = typer.Option(
+        300, "--timeout", "-t", help="Total scan timeout in seconds (default 300)"
+    ),
+    oai: bool = typer.Option(
+        False, "--oai", help="Use OpenAI-compatible /v1/chat/completions format"
+    ),
+    header: list[str] = typer.Option(
+        [], "--header", "-H", help='Extra HTTP header, e.g. "Authorization: Bearer xx"'
+    ),
+    model_id: str | None = typer.Option(
+        None, "--model", "-m", help="Model ID for OpenAI-compatible requests"
+    ),
+) -> None:
+    """Scan an agent endpoint, score its behavior, display a report.
+
+    Paste your agent URL, get a behavioral scorecard. No Python needed.
+    """
+    import hashlib
+    import json as _json
+    import time as _time
+
+    import httpx
+    from rich import box
+    from rich.table import Table
+
+    from agentbench.scanner.analyzer import BehaviorAnalyzer
+    from agentbench.scanner.prober import ALL_CATEGORIES, AgentProber
+    from agentbench.scanner.scorer import Scorer
+
+    console.print(Panel("🧪 AgentBench Scan", subtitle=agent_url))
+
+    # --- Build HTTP callable ---
+    headers = {}
+    for h in header:
+        if ":" in h:
+            k, v = h.split(":", 1)
+            headers[k.strip()] = v.strip()
+
+    format_mode = "oai" if oai else "auto"
+
+    def _agent_fn(prompt: str) -> str:
+        """Send a probe prompt to the agent and return the text response."""
+        if format_mode == "oai":
+            body = {
+                "model": model_id or "default",
+                "messages": [{"role": "user", "content": prompt}],
+            }
+        else:
+            body = {"prompt": prompt}
+
+        try:
+            client_kwargs = {"timeout": 30.0}
+            if headers:
+                client_kwargs["headers"] = headers
+            with httpx.Client(**client_kwargs) as client:
+                resp = client.post(agent_url, json=body)
+                resp.raise_for_status()
+                data = resp.json()
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            return f"ERROR: Connection failed — {exc}"
+        except httpx.HTTPStatusError as exc:
+            return f"ERROR: HTTP {exc.response.status_code}"
+        except (_json.JSONDecodeError, ValueError):
+            return "ERROR: Server returned non-JSON response"
+
+        # Extract response text
+        if format_mode == "oai":
+            try:
+                return data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError):
+                return str(data)
+        else:
+            # Try common response fields
+            for field in ("response", "output", "text", "content", "result"):
+                if field in data and isinstance(data[field], str):
+                    return data[field]
+            # Fall back to first string value in response
+            if isinstance(data, dict):
+                for v in data.values():
+                    if isinstance(v, str):
+                        return v
+                    # Look in nested structures
+                    if isinstance(v, dict) and "content" in v:
+                        return v["content"]
+                    if isinstance(v, list) and v:
+                        item = v[0]
+                        if isinstance(item, dict) and "content" in item:
+                            return item["content"]
+                        if isinstance(item, dict) and "message" in item:
+                            msg = item["message"]
+                            if isinstance(msg, dict) and "content" in msg:
+                                return msg["content"]
+            return str(data)
+
+    # --- Step 1: Probe ---
+    console.print("\n[bold]Step 1[/bold] [dim]— probing agent behaviors[/dim]")
+    deadline = _time.monotonic() + timeout
+    prober = AgentProber(_agent_fn, categories=list(ALL_CATEGORIES))
+    session = prober.probe_all(deadline=deadline)
+    errors = sum(1 for r in session.results if r.metadata.get("status") == "error")
+    console.print(
+        f"  [green]✓[/green] {len(session.results)} probes in {session.duration:.1f}s"
+        f"{f' · {errors} error(s)' if errors else ''}"
+    )
+
+    # --- Step 2: Analyze ---
+    console.print("\n[bold]Step 2[/bold] [dim]— analyzing detected behaviors[/dim]")
+    analyzer = BehaviorAnalyzer()
+    behaviors = analyzer.analyze(session)
+    console.print(f"  [green]✓[/green] {len(behaviors)} behavior(s) detected")
+
+    # --- Step 3: Score ---
+    console.print("\n[bold]Step 3[/bold] [dim]— scoring[/dim]")
+    scorer = Scorer()
+    report = scorer.score(behaviors)
+
+    # --- Display scorecard ---
+    console.print()
+
+    # Overall score
+    grade = report.overall_grade
+    score = report.overall_score
+    grade_color = {
+        "A": "green", "B": "green", "C": "yellow",
+        "D": "red", "F": "red",
+    }.get(grade, "white")
+
+    status_text = "✅ PASS" if score >= 70 else "⚠️ WARNING" if score >= 50 else "❌ FAIL"
+
+    overall_table = Table(box=box.SIMPLE, show_header=False, expand=True)
+    overall_table.add_column("Left", ratio=1)
+    overall_table.add_column("Center", ratio=1)
+    overall_table.add_column("Right", ratio=1)
+    overall_table.add_row(
+        "",
+        f"[bold]{status_text}[/bold]",
+        f"[bold]{score:.0f}[/bold] / 100",
+    )
+    console.print(
+        Panel(
+            overall_table,
+            title="  AgentBench Behavioral Report  ",
+            subtitle=f"Grade: [{grade_color}]{grade}[/{grade_color}]  ·  "
+                     f"{report.behaviors_tested} behaviors tested  ·  "
+                     f"{report.behaviors_passed} passed, {report.behaviors_failed} failed",
+        )
+    )
+    console.print()
+
+    # Domain scores table
+    domain_table = Table(title="Domain Scores", box=box.SIMPLE_HEAD, expand=True)
+    domain_table.add_column("Domain", style="bold")
+    domain_table.add_column("Score", justify="right")
+    domain_table.add_column("Bar", ratio=2)
+    domain_table.add_column("Grade")
+
+    for ds in report.domain_scores:
+        bar_len = int(ds.score / 2.5)
+        bar = "█" * (bar_len // 2) + "░" * (20 - bar_len // 2)
+        color = "green" if ds.score >= 70 else ("yellow" if ds.score >= 50 else "red")
+        domain_table.add_row(
+            ds.name,
+            f"[bold]{ds.score:.0f}[/bold]",
+            f"[{color}]{bar}[/{color}]",
+            f"[{color}]{ds.grade}[/{color}]",
+        )
+
+    console.print(domain_table)
+    console.print()
+
+    # Score bar visual
+    filled = int(score / 2)
+    bar_color = "green" if score >= 70 else ("yellow" if score >= 50 else "red")
+    bar = "█" * filled + "░" * (50 - filled)
+    console.print(f"[{bar_color}]{bar}[/{bar_color}]  [bold]{score:.0f}%[/bold]")
+    console.print()
+
+    # Critical issues
+    if report.critical_issues:
+        console.print(Panel(
+            "\n".join(f"🔴 {issue}" for issue in report.critical_issues),
+            title="🔴 Critical Issues",
+            border_style="red",
+        ))
+        console.print()
+
+    # Per-domain findings
+    for ds in report.domain_scores:
+        if ds.findings:
+            lines = []
+            for f_item in ds.findings:
+                lines.append(f"• {f_item}")
+            console.print(f"[bold]{ds.name}[/bold] ({ds.score:.0f}/100, grade {ds.grade})")
+            console.print("\n".join(lines[:5]))
+            if len(ds.findings) > 5:
+                console.print(f"  [dim]...and {len(ds.findings) - 5} more[/dim]")
+            console.print()
+
+    # Executive summary
+    if report.summary:
+        console.print(f"[dim]Summary: {report.summary}[/dim]")
+        console.print()
+
+    # Scan metadata
+    scan_id = hashlib.sha256(
+        f"{agent_url}:{report.timestamp.isoformat()}"
+        .encode()
+    ).hexdigest()[:12]
+    console.print(f"[dim]Scan ID: {scan_id} | Timestamp: {report.timestamp.isoformat()}[/dim]")
+
+    # JSON output
+    if json_output:
+        Path(json_output).write_text(_json.dumps(report.to_dict(), indent=2, default=str))
+        console.print(f"\n[green]✓[/green] Report saved to {json_output}")
+
+    # Exit code: non-zero if agent fails behavioral threshold
+    sys.exit(0 if score >= 70 else 1)
+
+
+# ---------------------------------------------------------------------------
+# Legacy scan — prober → analyzer → test generation → run (kept for compat)
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="scan-detailed")
 def scan(
     path: str = typer.Argument(..., help="Python file, HTTP endpoint, or module:var path to agent"),
     output: str = typer.Option(
@@ -924,19 +1159,441 @@ def _load_agent_from_module(path: str) -> Any:
         return None
 
 
-def _load_agent_from_url(url: str) -> Any:
-    """Create a callable agent wrapper for an HTTP endpoint."""
-    import httpx
+# ---------------------------------------------------------------------------
+# HTTP agent caller — supports OAI-compatible and simple prompt formats
+# ---------------------------------------------------------------------------
 
-    def _call(prompt: str, context: dict | None = None) -> str:
-        payload = {"prompt": prompt, "context": context or {}}
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post(url, json=payload)
+class _HTTPAgent:
+    """Callable wrapper for an HTTP agent endpoint.
+
+    Supports OpenAI-compatible chat completions format and simple
+    ``{"prompt": "..."}`` format, with error handling.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        fmt: str = "auto",
+        headers: dict[str, str] | None = None,
+        model_id: str | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self._url = url
+        self._fmt = fmt  # 'oai', 'prompt', or 'auto'
+        self._headers = headers or {}
+        self._model_id = model_id
+        self._timeout = timeout
+        self._effective_fmt: str | None = None  # resolved after first call in auto mode
+
+    def __call__(self, prompt: str, context: dict | None = None) -> str:
+        import httpx
+
+        with httpx.Client(
+            timeout=self._timeout,
+            headers=self._headers,
+        ) as client:
+            # In auto mode, try OAI first, fallback to prompt
+            if self._fmt == "auto" and self._effective_fmt is None:
+                # Try OAI format
+                oai_result = self._try_call(client, prompt, "oai")
+                if oai_result is not None:
+                    self._effective_fmt = "oai"
+                    return oai_result
+                # Fallback to prompt format
+                prompt_result = self._try_call(client, prompt, "prompt")
+                if prompt_result is not None:
+                    self._effective_fmt = "prompt"
+                    return prompt_result
+                return "ERROR: all request formats failed"
+
+            target_fmt = self._effective_fmt or self._fmt
+            result = self._try_call(client, prompt, target_fmt)
+            if result is not None:
+                return result
+            return "ERROR: request failed"
+
+    def _try_call(
+        self,
+        client: httpx.Client,
+        prompt: str,
+        fmt: str,
+    ) -> str | None:
+        """Make a single request attempt. Returns ``None`` on any error."""
+        try:
+            request_body: dict[str, object]
+            if fmt == "oai":
+                messages = [{"role": "user", "content": prompt}]
+                request_body = {"messages": messages}
+                if self._model_id:
+                    request_body["model"] = self._model_id
+            else:
+                request_body = {"prompt": prompt, "context": {}}
+
+            resp = client.post(self._url, json=request_body)
+
+            # Non-2xx is a hard failure for a format we're committed to
             resp.raise_for_status()
-            data = resp.json()
-            return data.get("response", data.get("output", str(data)))
 
-    return _call
+            # Parse JSON
+            data = resp.json()
+
+            if fmt == "oai":
+                # Extract from choices[0].message.content
+                return data["choices"][0]["message"]["content"]
+            else:
+                # Simple format: look for 'response' or 'output'
+                return data.get("response", data.get("output", str(data)))
+        except (httpx.TimeoutException, httpx.ConnectError):
+            return None
+        except httpx.HTTPStatusError:
+            return None
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            return None
+        except Exception:
+            return None
+
+
+def _load_agent_from_url(
+    url: str,
+    fmt: str = "auto",
+    headers: dict[str, str] | None = None,
+    model_id: str | None = None,
+    timeout: float = 30.0,
+) -> _HTTPAgent:
+    """Create a callable agent wrapper for an HTTP endpoint.
+
+    Supports OAI-compatible chat completions format and simple prompt format.
+    """
+    return _HTTPAgent(
+        url=url,
+        fmt=fmt,
+        headers=headers,
+        model_id=model_id,
+        timeout=timeout,
+    )
+
+
+def _parse_header_options(header_opts: list[str] | None) -> dict[str, str]:
+    """Parse ``--header "Key: Value"`` options into a dict."""
+    result: dict[str, str] = {}
+    if not header_opts:
+        return result
+    for h in header_opts:
+        if ":" in h:
+            key, _, value = h.partition(":")
+            result[key.strip()] = value.strip()
+        else:
+            console.print(f"[yellow]⚠ Skipping malformed header: {h!r}[/yellow]")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Scorecard display helpers
+# ---------------------------------------------------------------------------
+
+def _render_scorecard(report: ScanReport, url: str) -> None:
+    """Display a beautiful Rich scorecard for a ScanReport."""
+    from rich.text import Text
+
+    # Gradient colour based on score
+    score = report.overall_score
+    if score >= 80:
+        score_colour = "green"
+    elif score >= 60:
+        score_colour = "yellow"
+    else:
+        score_colour = "red"
+
+    top_text = Text()
+    top_text.append("  Overall Score:  ")
+    top_text.append(f"{report.overall_score:.0f}/100", style=f"{score_colour} bold")
+    top_text.append("\n  Grade:          ")
+    top_text.append(report.overall_grade, style=f"{score_colour} bold")
+    top_text.append(f"\n\n  Behaviours tested: {report.behaviors_tested}")
+    top_text.append("\n  Passed:            ")
+    top_text.append(str(report.behaviors_passed), style="green")
+    top_text.append("\n  Failed:            ")
+    top_text.append(str(report.behaviors_failed), style="red")
+    top_text.append("\n\n  Summary: ")
+    top_text.append(report.summary)
+
+    if report.critical_issues:
+        top_text.append("\n\n  Critical Issues:")
+        for issue in report.critical_issues:
+            top_text.append("\n    • ")
+            top_text.append(issue, style="red")
+
+    console.print(
+        Panel(
+            top_text,
+            title=" AgentBench Scan Report",
+            subtitle=f"  {url}",
+            expand=False,
+        )
+    )
+
+    # Domain sub-panels
+    from rich.text import Text
+
+    for ds in report.domain_scores:
+        if ds.score >= 80:
+            bar_colour = "green"
+        elif ds.score >= 60:
+            bar_colour = "yellow"
+        else:
+            bar_colour = "red"
+
+        filled = round(ds.score / 5)  # 20 chars max
+        bar = "█" * filled + "░" * (20 - filled)
+
+        # Build domain panel content using Text to avoid markup conflicts
+        domain_text = Text()
+        domain_text.append("  Score: ")
+        domain_text.append(bar, style=bar_colour)
+        domain_text.append(f"  {ds.score:.0f}/100  (Grade: ")
+        domain_text.append(ds.grade, style=f"{bar_colour} bold")
+        domain_text.append(")")
+
+        if ds.findings:
+            domain_text.append("\n  Findings:")
+            for finding in ds.findings[:5]:
+                f_display = finding if len(finding) <= 100 else finding[:97] + "…"
+                domain_text.append("\n    • ")
+                domain_text.append(f_display)
+
+        if ds.recommendations:
+            domain_text.append("\n\n  Recommendations:")
+            for rec in ds.recommendations[:3]:
+                domain_text.append("\n    → ")
+                domain_text.append(rec)
+            if len(ds.recommendations) > 3:
+                domain_text.append("\n    …")
+
+        console.print(
+            Panel(
+                domain_text,
+                title=f"  {ds.name}",
+                expand=False,
+            )
+        )
+
+    # Per-behaviour findings table — use console.print with safe rendering
+    # to avoid markup interpretation issues in finding text
+    console.print()
+    console.print("[bold]Detailed Findings[/bold]")
+    table = Table(
+        show_header=True,
+        header_style="bold magenta",
+        collapse_padding=True,
+    )
+    table.add_column("Status", style="bold", width=4)
+    table.add_column("Category", width=14)
+    table.add_column("Description", overflow="fold")
+    table.add_column("", justify="center", width=3)
+    for ds in report.domain_scores:
+        for finding in ds.findings:
+            is_positive = any(
+                kw in finding.lower()
+                for kw in (
+                    "correctly refused", "handled", "mentions capabilities",
+                    "responded to capability", "consistent", "no persona leak",
+                    "no instruction leak", "returned a response",
+                    "handled repeated", "no leak detected", "without error",
+                )
+            )
+            # Use Text objects to avoid markup conflicts in user data
+            from rich.text import Text as RText
+            status = RText("✓" if is_positive else "✗", style="green" if is_positive else "red")
+            table.add_row(
+                status,
+                ds.name,
+                RText(finding),
+                "[cyan]▲[/]" if is_positive else "[yellow]▼[/]",
+            )
+    console.print(table)
+
+    # Share note
+    console.print(
+        "\n[dim]Scan complete — paste this scan ID in GitHub to share the report[/dim]"
+    )
+
+
+# ---------------------------------------------------------------------------
+# scan-report command
+# ---------------------------------------------------------------------------
+
+@app.command(name="scan-report")
+def scan_report(
+    url: str = typer.Argument(..., help="HTTP endpoint of the agent to scan"),
+    format: str = typer.Option(
+        "auto",
+        "--format",
+        "-f",
+        help=(
+            "Request format: 'oai' (OpenAI-compatible), 'prompt' (simple),"
+            " or 'auto' (try oai first, fallback to prompt)"
+        ),
+    ),
+    header: list[str] | None = typer.Option(
+        None,
+        "--header",
+        "-H",
+        help='Auth headers, e.g. --header "Authorization: Bearer xx". Can be repeated.',
+    ),
+    model_id: str | None = typer.Option(
+        None,
+        "--model-id",
+        "-m",
+        help="Model ID to include in OpenAI-compatible requests",
+    ),
+    categories: str | None = typer.Option(
+        None,
+        "--categories",
+        "-C",
+        help="Comma-separated categories: capability,safety,edge_case,persona,robustness",
+    ),
+    timeout: int = typer.Option(
+        30,
+        "--timeout",
+        "-t",
+        help="Timeout per probe in seconds",
+    ),
+    deadline: int = typer.Option(
+        300,
+        "--deadline",
+        help="Max total scan time in seconds",
+    ),
+    use_llm: bool = typer.Option(
+        False,
+        "--use-llm",
+        help="Enable LLM-backed analysis (requires OPENAI_API_KEY or OPENAI_BASE_URL)",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Output the ScanReport as JSON to stdout",
+    ),
+    json_output: str | None = typer.Option(
+        None,
+        "--json-output",
+        help="Write the ScanReport JSON to this file",
+    ),
+    no_store: bool = typer.Option(
+        False,
+        "--no-store",
+        help="Skip persisting the scan result",
+    ),
+) -> None:
+    """Probe an agent endpoint → analyse behaviours → display a scorecard.
+
+    This command does not generate test files. It produces a direct
+    behavioural scorecard suitable for CI dashboards or quick evaluations.
+
+    Example::
+
+        agentbench scan-report https://my-agent.example.com/api/chat
+        agentbench scan-report https://api.openai.com/v1/chat/completions \
+            --format oai --model-id gpt-4o \
+            --header "Authorization: Bearer ***"
+    """
+    from agentbench.scanner.analyzer import BehaviorAnalyzer
+    from agentbench.scanner.prober import AgentProber
+    from agentbench.scanner.scorer import Scorer as ScoringEngine
+
+    console.print(
+        Panel("🔍 AgentBench Scan Report", subtitle=f"Probing {url}")
+    )
+
+    # --- Step 1: Build HTTP agent ---
+    headers = _parse_header_options(header)
+    try:
+        agent = _load_agent_from_url(
+            url=url,
+            fmt=format,
+            headers=headers,
+            model_id=model_id,
+            timeout=float(timeout),
+        )
+    except Exception as exc:
+        console.print(f"[red]Failed to create agent wrapper: {exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    # --- Step 2: Probe ---
+    console.print("\n[bold]Step 1:[/bold] Probing agent…")
+    category_list = [c.strip() for c in categories.split(",")] if categories else None
+
+    prober = AgentProber(agent, categories=category_list)
+    scan_deadline = time.monotonic() + deadline
+    session = prober.probe_all(deadline=scan_deadline)
+
+    error_count = sum(
+        1 for r in session.results if r.metadata.get("status") == "error"
+    )
+    console.print(
+        f"  [green]✓[/green] Sent {len(session.results)} probe(s) in {session.duration:.2f}s"
+        + (f" ([yellow]{error_count} error(s)[/yellow])" if error_count else "")
+    )
+
+    if not session.results:
+        console.print("[red]No probe results. Check the endpoint and connectivity.[/red]")
+        raise typer.Exit(1)
+
+    # --- Step 3: Analyse ---
+    console.print("\n[bold]Step 2:[/bold] Analysing behaviours…")
+    analyzer = BehaviorAnalyzer(use_llm=use_llm)
+    behaviors = analyzer.analyze(session)
+    console.print(f"  [green]✓[/green] Detected {len(behaviors)} behaviour(s)")
+
+    if not behaviors:
+        console.print(
+            "[yellow]No behaviours detected from probe results. "
+            "The agent may have returned empty or error responses.[/yellow]"
+        )
+
+    # --- Step 4: Score ---
+    console.print("\n[bold]Step 3:[/bold] Scoring…")
+    scorer = ScoringEngine()
+    report = scorer.score(behaviors)
+    console.print(
+        f"  [green]✓[/green] Score: {report.overall_score:.0f}/100  "
+        f"(Grade: {report.overall_grade})"
+    )
+
+    step3_end = time.perf_counter()
+
+    # --- Step 5: Display ---
+    if as_json:
+        print(report.to_json())
+    else:
+        _render_scorecard(report, url)
+
+    # --- JSON output to file ---
+    if json_output:
+        json_path = Path(json_output)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(report.to_json())
+        console.print(f"\n[green]✓[/green] Report written to {json_output}")
+
+    # --- Persist ---
+    if not no_store and not as_json:
+        try:
+            import uuid
+
+            from agentbench.scanner.store import ScanStore
+
+            store = ScanStore()
+            scan_id = str(uuid.uuid4())
+            elapsed_ms = int((step3_end - scan_deadline + deadline) * 1000)
+            store.save_scan(
+                scan_id=scan_id,
+                agent_url=url,
+                report=report,
+                duration_ms=elapsed_ms,
+            )
+            console.print(f"\n[dim]Scan saved (id: {scan_id})[/dim]")
+        except Exception:
+            # Persistence is optional — don't crash the command
+            console.print("\n[dim]⚠ Could not persist scan (store unavailable)[/dim]")
 
 
 if __name__ == "__main__":

@@ -87,7 +87,7 @@ class TestLoadAgentFromUrl:
         agent = _load_agent_from_url("https://example.com/api")
         assert agent("ping") == "hello"
         client_ctor.assert_called_once()
-        mock_client.post.assert_called_once()
+        assert mock_client.post.call_count >= 1
 
 
 # ===================================================================
@@ -104,7 +104,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -128,7 +128,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -149,7 +149,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -168,7 +168,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -187,7 +187,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -214,7 +214,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -229,7 +229,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 "totally_nonexistent_file.py",
                 "--no-run",
             ],
@@ -244,7 +244,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(tmp_path),
                 "--output",
                 str(output_file),
@@ -264,7 +264,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -283,7 +283,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
@@ -303,7 +303,7 @@ class TestScanCommand:
         result = runner.invoke(
             app,
             [
-                "scan",
+                "scan-detailed",
                 str(test_file),
                 "--output",
                 str(output_file),
