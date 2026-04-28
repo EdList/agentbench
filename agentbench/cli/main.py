@@ -1965,5 +1965,49 @@ def record_workflow(
     record_command(url, name, format, header, timeout, api_key)
 
 
+@app.command(name="replay")
+def replay_workflow(
+    workflow_name: str = typer.Argument(
+        ..., help="Name of recorded workflow to replay"
+    ),
+    url: str | None = typer.Option(
+        None, "--url", "-u", help="Agent endpoint URL (default: reuse original)"
+    ),
+    format: str = typer.Option(
+        "openai", "--format", "-f", help="Agent API format: openai | raw"
+    ),
+    header: list[str] | None = typer.Option(
+        None, "--header", "-H", help="HTTP header (key:value), repeatable"
+    ),
+    timeout: float = typer.Option(
+        30.0, "--timeout", "-t", help="Request timeout (seconds)"
+    ),
+    api_key: str | None = typer.Option(
+        None, "--api-key", "-k", help="API key (sent as Bearer token)"
+    ),
+    threshold: float = typer.Option(
+        0.8, "--threshold", help="Regression score threshold (0-1)"
+    ),
+    save_report: bool = typer.Option(
+        True, "--save-report/--no-save-report",
+        help="Save report to disk",
+    ),
+) -> None:
+    """Replay a recorded workflow and detect behavioral regressions.
+
+    Loads a previously recorded workflow, re-sends every user message to
+    the current agent, compares tool call sequences and response semantics,
+    and outputs a pass/fail regression report.
+
+    Exit code 0 = all good, 1 = regression detected.
+    """
+    from agentbench.cli.replay import replay_command
+
+    replay_command(
+        workflow_name, url, format, header, timeout,
+        api_key, threshold, save_report,
+    )
+
+
 if __name__ == "__main__":
     app()
