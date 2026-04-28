@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentbench"
+name = "agentbench-cli"
 version = "0.2.0"
 description = "Behavioral testing framework for AI agents — scan any agent URL and get a security & reliability scorecard"
 readme = "README.md"
@@ -81,6 +81,9 @@ markers = [
     "slow: marks tests as slow",
     "integration: marks integration tests requiring external services",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentbench"]
 
 [tool.mypy]
 python_version = "3.11"
