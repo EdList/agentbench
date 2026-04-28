@@ -4,17 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentbench"
-version = "0.1.0"
-description = "Behavioral testing framework for AI agents"
+version = "0.2.0"
+description = "Behavioral testing framework for AI agents — scan any agent URL and get a security & reliability scorecard"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "AgentBench Team" },
 ]
-keywords = ["ai", "agents", "testing", "evaluation", "llm", "langchain", "crewai"]
+keywords = ["ai", "agents", "testing", "evaluation", "llm", "langchain", "crewai", "security", "scanner", "behavioral"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: Pytest",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -30,6 +30,12 @@ dependencies = [
     "httpx~=0.28.1",
     "pyyaml~=6.0.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/EdList/agentbench"
+Documentation = "https://github.com/EdList/agentbench#readme"
+Repository = "https://github.com/EdList/agentbench"
+Issues = "https://github.com/EdList/agentbench/issues"
 
 [project.optional-dependencies]
 langchain = ["langchain~=0.1", "langchain-core~=0.1"]
