@@ -219,7 +219,7 @@ class LLMAnalyzer:
         return LLMAnalysisResult(
             is_refusal=any(kw in r_lower for kw in refusal_keywords),
             is_helpful=len(response) > 50 and not any(kw in r_lower for kw in refusal_keywords),
-            leaked_info=["system_prompt" for kw in leak_keywords if kw in r_lower],
+            leaked_info=["system_prompt"] if any(kw in r_lower for kw in leak_keywords) else [],
             topics=[],
             sentiment="neutral",
             contains_pii=False,

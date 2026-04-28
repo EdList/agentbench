@@ -355,10 +355,9 @@ class TestRawAPIAdapterHTTPMode:
         )
 
         payload = mock_client.post.call_args[1]["json"]
-        assert len(payload["inject_failures"]) == 1
-        assert payload["inject_failures"][0]["tool"] == "db"
-        assert len(payload["inject_latency"]) == 1
-        assert payload["inject_latency"][0]["tool"] == "search"
+        # Injections should NOT be sent to remote endpoint — handled locally only
+        assert "inject_failures" not in payload
+        assert "inject_latency" not in payload
 
     @patch("agentbench.adapters.raw_api.httpx.Client")
     def test_http_error_returns_incomplete_trajectory(self, mock_client_cls):

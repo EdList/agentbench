@@ -130,6 +130,7 @@ class CrewAIAdapter(AgentAdapter):
                 start,
                 failure_injections,
                 latency_injections,
+                max_steps,
             )
 
             trajectory.completed = True
@@ -180,6 +181,7 @@ class CrewAIAdapter(AgentAdapter):
         start_time: float,
         failure_injections: list[ToolFailureInjection],
         latency_injections: list[ToolLatencyInjection],
+        max_steps: int = 50,
     ) -> None:
         """Parse a CrewAI crew kickoff result into trajectory steps.
 
@@ -199,7 +201,7 @@ class CrewAIAdapter(AgentAdapter):
 
         if tasks_output:
             for task_result in tasks_output:
-                if trajectory.step_count >= 50:
+                if trajectory.step_count >= max_steps:
                     break
 
                 step_start = time.time()

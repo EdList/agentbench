@@ -601,7 +601,8 @@ class TestSafeDNSTransport:
 
         scans_mod._run_scan("https://example.com/agent", None)
 
-        assert client_ctor.call_args.kwargs["follow_redirects"] is False
+        assert client_ctor.call_args.kwargs["follow_redirects"] is True
+        assert client_ctor.call_args.kwargs["max_redirects"] == 5
         assert "max_response_size" not in client_ctor.call_args.kwargs
 
 

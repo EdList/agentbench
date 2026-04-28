@@ -279,10 +279,12 @@ class TestParallelExecution:
             adapter = slow_adapter()
 
             def test_1(self):
-                self.run("1")
+                result = self.run("1")
+                expect(result).to_complete()
 
             def test_2(self):
-                self.run("2")
+                result = self.run("2")
+                expect(result).to_complete()
 
         runner = TestRunner(config={"parallel": 2})
         start = time.time()
@@ -375,11 +377,13 @@ class TestHooksSetupTeardown:
 
             def test_a(self):
                 setup_log.append("test_a")
-                self.run("a")
+                result = self.run("a")
+                expect(result).to_complete()
 
             def test_b(self):
                 setup_log.append("test_b")
-                self.run("b")
+                result = self.run("b")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(HookedSuite)
@@ -401,10 +405,12 @@ class TestHooksSetupTeardown:
                 teardown_log.append("teardown")
 
             def test_a(self):
-                self.run("a")
+                result = self.run("a")
+                expect(result).to_complete()
 
             def test_b(self):
-                self.run("b")
+                result = self.run("b")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(TeardownSuite)
@@ -451,10 +457,12 @@ class TestHooksSetupTeardown:
                 setup_class_log.append("setup_class")
 
             def test_a(self):
-                self.run("a")
+                result = self.run("a")
+                expect(result).to_complete()
 
             def test_b(self):
-                self.run("b")
+                result = self.run("b")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(ClassHookSuite)
@@ -473,7 +481,8 @@ class TestHooksSetupTeardown:
                 teardown_class_log.append("teardown_class")
 
             def test_a(self):
-                self.run("a")
+                result = self.run("a")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(TeardownClassSuite)
@@ -497,7 +506,8 @@ class TestHooksSetupTeardown:
 
             def test_1(self):
                 order_log.append("test")
-                self.run("1")
+                result = self.run("1")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(OrderSuite)
@@ -529,11 +539,13 @@ class TestHooksSetupTeardown:
 
             def test_a(self):
                 log.append("test_a")
-                self.run("a")
+                result = self.run("a")
+                expect(result).to_complete()
 
             def test_b(self):
                 log.append("test_b")
-                self.run("b")
+                result = self.run("b")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(AllHooksSuite)
@@ -572,7 +584,8 @@ class TestFixtureIntegration:
 
             def test_with_fixture(self):
                 assert self._conn == "db-conn"
-                self.run("test")
+                result = self.run("test")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(FixtureSuite)
@@ -602,7 +615,8 @@ class TestFixtureIntegration:
 
             def test_uses_resource(self):
                 assert self._resource == "resource"
-                self.run("test")
+                result = self.run("test")
+                expect(result).to_complete()
 
         runner = TestRunner()
         result = runner.run_suite(ResourceSuite)

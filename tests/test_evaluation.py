@@ -135,7 +135,8 @@ class TestMetricsCollectorCollect:
 
         collector = MetricsCollector()
         metrics = collector.collect(traj)
-        assert metrics.total_latency_ms == 200.0  # sum of latencies
+        # total_latency_ms=0.0 is an explicit value, not falsy — respect it
+        assert metrics.total_latency_ms == 0.0
 
     def test_collect_empty_trajectory(self):
         traj = AgentTrajectory()

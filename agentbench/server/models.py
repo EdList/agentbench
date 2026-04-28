@@ -49,7 +49,7 @@ class Project(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    principal = Column(String(255), nullable=False, index=True, default="")
+    principal = Column(String(255), nullable=False, index=True)
     owner_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -64,7 +64,7 @@ class SavedAgent(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
-    principal = Column(String(255), nullable=False, index=True, default="")
+    principal = Column(String(255), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     agent_url = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
@@ -77,7 +77,7 @@ class ScanPolicy(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(String, ForeignKey("projects.id"), nullable=False, index=True)
-    principal = Column(String(255), nullable=False, index=True, default="")
+    principal = Column(String(255), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     categories_json = Column(Text, nullable=True)
     minimum_overall_score = Column(Float, nullable=True)
@@ -97,7 +97,7 @@ class ScanJob(Base):
     )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    principal = Column(String(255), nullable=False, index=True, default="")
+    principal = Column(String(255), nullable=False, index=True)
     status = Column(
         String(50),
         nullable=False,
@@ -113,9 +113,9 @@ class ScanJob(Base):
         index=True,
     )
     agent_url = Column(Text, nullable=False)
-    project_id = Column(String, nullable=True, index=True)
-    agent_id = Column(String, nullable=True, index=True)
-    policy_id = Column(String, nullable=True, index=True)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True)
+    agent_id = Column(String, ForeignKey("saved_agents.id"), nullable=True, index=True)
+    policy_id = Column(String, ForeignKey("scan_policies.id"), nullable=True, index=True)
     categories_json = Column(Text, nullable=True)
     scan_id = Column(String, nullable=True, index=True)
     release_verdict = Column(String(50), nullable=True)
@@ -151,7 +151,7 @@ class Run(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     test_suite_id = Column(String, ForeignKey("test_suites.id"), nullable=True)
-    principal = Column(String(255), nullable=False, index=True, default="")
+    principal = Column(String(255), nullable=False, index=True)
     status = Column(
         String(50), default="pending", server_default="pending"
     )  # pending, running, completed, failed
@@ -170,7 +170,7 @@ class RunResult(Base):
     __tablename__ = "run_results"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String, ForeignKey("runs.id"), nullable=False)
+    run_id = Column(String, ForeignKey("runs.id"), nullable=False, index=True)
     test_name = Column(String(255), nullable=False)
     passed = Column(Integer, default=0, server_default="0")
     failed = Column(Integer, default=0, server_default="0")
@@ -185,7 +185,7 @@ class Trajectory(Base):
     __tablename__ = "trajectories"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    principal = Column(String(255), nullable=False, index=True, default="")
+    principal = Column(String(255), nullable=False, index=True)
     name = Column(String(255), nullable=False, index=True)
     data = Column(Text, nullable=False)  # JSON blob of full trajectory
     prompt = Column(Text, nullable=True)
@@ -251,7 +251,9 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
     cutoff = datetime.now(UTC) - timedelta(days=days)
     factory = get_session_factory()
     db: Session = factory()
+    _batch_size = 500
     try:
+        # Batch-delete old RunResults via their parent Runs in chunks
         old_run_ids = [
             row[0]
             for row in (
@@ -261,10 +263,13 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
             )
         ]
         deleted_run_results = 0
-        if old_run_ids:
-            deleted_run_results = db.execute(
-                delete(RunResult).where(RunResult.run_id.in_(old_run_ids))
-            ).rowcount or 0
+        for start in range(0, len(old_run_ids), _batch_size):
+            chunk = old_run_ids[start : start + _batch_size]
+            deleted_run_results += (
+                db.execute(
+                    delete(RunResult).where(RunResult.run_id.in_(chunk))
+                ).rowcount or 0
+            )
         deleted_runs = db.execute(
             delete(Run).where(Run.created_at.is_not(None), Run.created_at < cutoff)
         ).rowcount or 0

@@ -153,7 +153,8 @@ class JudgeEvaluator:
 
     def _cache_key(self, prompt: str) -> str:
         """Generate a cache key from the judge prompt."""
-        return hashlib.sha256(f"{self._provider}:{self._model}:{prompt}".encode()).hexdigest()
+        raw = f"{self._provider}:{self._model}:{self._temperature}:{self._max_tokens}:{prompt}"
+        return hashlib.sha256(raw.encode()).hexdigest()
 
     def _compute_confidence(self, score: float, threshold: float) -> float:
         """Compute confidence based on distance from threshold."""
@@ -203,8 +204,8 @@ class JudgeEvaluator:
         # Call LLM
         try:
             response_text = self._call_llm(prompt)
-            result = self._parse_response(response_text, start)
             self._total_calls += 1
+            result = self._parse_response(response_text, start)
         except Exception as e:
             result = JudgeResult(
                 passed=False,

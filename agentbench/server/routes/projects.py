@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from agentbench.server.auth import require_auth
@@ -42,22 +43,35 @@ def create_project(
     principal: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> ProjectResponse:
-    # Per-principal project creation limit
+    # Per-principal project creation limit — wrapped in an exclusive DB
+    # transaction to prevent TOCTOU races on the count-then-insert pattern.
     from agentbench.server.config import settings as _settings  # noqa: F401
     _max_projects = int(os.getenv("AGENTBENCH_MAX_PROJECTS_PER_PRINCIPAL", "100"))
-    existing = db.query(Project).filter(Project.principal == principal).count()
-    if existing >= _max_projects:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Project limit reached ({_max_projects}). Delete existing projects first.",
+    try:
+        db.execute(text("BEGIN EXCLUSIVE"))
+    except Exception:
+        # PostgreSQL or unsupported — rely on row-level locking instead
+        pass
+    try:
+        existing = db.query(Project).filter(Project.principal == principal).count()
+        if existing >= _max_projects:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Project limit reached ({_max_projects}). Delete existing projects first.",
+            )
+        project = Project(
+            name=body.name.strip(),
+            description=body.description,
+            principal=principal,
         )
-    project = Project(
-        name=body.name.strip(),
-        description=body.description,
-        principal=principal,
-    )
-    db.add(project)
-    db.commit()
+        db.add(project)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(project)
     return ProjectResponse.model_validate(project, from_attributes=True)
 
@@ -97,6 +111,37 @@ def run_project_gate(
     principal: str = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> ProjectGateResponse:
+    # Verify that the project exists and belongs to the principal
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.principal == principal
+    ).first()
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id!r} not found.")
+
+    # Verify that agent_id belongs to the given project
+    from agentbench.server.models import SavedAgent
+    agent = db.query(SavedAgent).filter(
+        SavedAgent.id == body.agent_id, SavedAgent.principal == principal
+    ).first()
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Saved agent {body.agent_id!r} not found.")
+    if agent.project_id != project_id:
+        raise HTTPException(
+            status_code=400, detail="Saved agent does not belong to this project."
+        )
+
+    # Verify that policy_id belongs to the given project
+    from agentbench.server.models import ScanPolicy
+    policy = db.query(ScanPolicy).filter(
+        ScanPolicy.id == body.policy_id, ScanPolicy.principal == principal
+    ).first()
+    if policy is None:
+        raise HTTPException(status_code=404, detail=f"Scan policy {body.policy_id!r} not found.")
+    if policy.project_id != project_id:
+        raise HTTPException(
+            status_code=400, detail="Scan policy does not belong to this project."
+        )
+
     scan = submit_scan(
         ScanRequest(
             project_id=project_id,
@@ -113,8 +158,8 @@ def run_project_gate(
         policy_id=scan.policy_id or body.policy_id,
         release_verdict=scan.release_verdict,
         verdict_reasons=list(scan.verdict_reasons),
-        overall_score=scan.overall_score,
-        overall_grade=scan.overall_grade,
+        overall_score=scan.overall_score or 0.0,
+        overall_grade=scan.overall_grade or "N/A",
         permalink=f"/?scan_id={scan.scan_id}",
     )
 

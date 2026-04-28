@@ -60,7 +60,11 @@ class MetricsCollector:
         # Latency
         if trajectory.steps:
             latencies = [s.latency_ms for s in trajectory.steps if s.latency_ms > 0]
-            metrics.total_latency_ms = trajectory.total_latency_ms or sum(latencies)
+            metrics.total_latency_ms = (
+                trajectory.total_latency_ms
+                if trajectory.total_latency_ms is not None
+                else sum(latencies)
+            )
             metrics.avg_step_latency_ms = sum(latencies) / len(latencies) if latencies else 0
             metrics.max_step_latency_ms = max(latencies) if latencies else 0
 

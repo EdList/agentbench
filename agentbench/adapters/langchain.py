@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Any
 
 from agentbench.adapters.base import AgentAdapter
@@ -71,8 +72,10 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
         tool_name = serialized.get("name", "unknown")
         # Store tool_input for use in on_tool_end
         self._current_tool_name = tool_name
-        self._current_tool_input = kwargs.get("tool_input", None) or (
-            {"input": input_str} if input_str else {}
+        raw_tool_input = kwargs.get("tool_input", None)
+        self._current_tool_input = (
+            raw_tool_input if raw_tool_input is not None
+            else ({"input": input_str} if input_str else {})
         )
         # Don't reset _injected_failure here — it may have been set by on_agent_action
         # which fires before on_tool_start in LangChain's callback order
@@ -135,9 +138,9 @@ class _TrajectoryCallback(_LangChainBase):  # type: ignore[misc]
 
         # Check failure injection
         error_msg = None
-        for inj in self._failure_injections:
+        for i, inj in enumerate(self._failure_injections):
             if inj.tool_name == tool_name and inj.fail_times > 0:
-                inj.fail_times -= 1
+                self._failure_injections[i] = replace(inj, fail_times=inj.fail_times - 1)
                 error_msg = inj.error_message
                 break
 
@@ -216,7 +219,11 @@ class LangChainAdapter(AgentAdapter):
                 config={"callbacks": [callback]},
             )
 
-            trajectory.final_response = result.get("output", str(result))
+            trajectory.final_response = (
+                result.get("output", str(result))
+                if isinstance(result, dict)
+                else str(result)
+            )
             trajectory.completed = True
             trajectory.total_latency_ms = (time.time() - start) * 1000
 

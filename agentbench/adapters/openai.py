@@ -423,7 +423,6 @@ class OpenAIAdapter(AgentAdapter):
                         message_id = getattr(msg_info, "message_id", None)
 
                     content = self._fetch_message_content(thread, message_id) if message_id else ""
-                    _latency = getattr(step, "completed_at", 0) and getattr(step, "started_at", 0)
                     step_latency = (
                         ((step.completed_at - step.started_at) * 1000)
                         if step.started_at and step.completed_at

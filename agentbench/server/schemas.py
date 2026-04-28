@@ -151,6 +151,13 @@ class TrajectoryUploadRequest(BaseModel):
     prompt: str | None = Field(None, description="Original prompt", max_length=10_000)
     tags: list[str] | None = Field(default_factory=list, description="Tags")
 
+    @field_validator("tags")
+    @classmethod
+    def validate_tags_length(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(value) > 50:
+            raise ValueError("tags must contain at most 50 items.")
+        return value
+
     @model_validator(mode="after")
     def validate_trajectory_payload_size(self) -> TrajectoryUploadRequest:
         payload_size = len(str(self.data))
@@ -209,6 +216,14 @@ class ErrorResponse(BaseModel):
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200, description="Project name")
     description: str | None = Field(None, description="Optional project description")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Project name must not be empty after stripping whitespace.")
+        return stripped
 
 
 class ProjectResponse(BaseModel):
@@ -402,6 +417,16 @@ class ScanRequest(BaseModel):
         host_part = parts[1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
         if not host_part or host_part == ":":
             raise ValueError("agent_url must include a valid hostname.")
+        # Block dangerous ports (SSRF mitigation) — same list as SavedAgentCreateRequest
+        _ssrf_blocked_ports = frozenset(
+            {22, 23, 25, 465, 587, 993, 995, 3306, 5432, 6379, 9200, 27017}
+        )
+        if ":" in host_part:
+            port_token = host_part.rsplit(":", 1)[-1].strip("]")
+            if port_token.isdigit():
+                port = int(port_token)
+                if port in _ssrf_blocked_ports:
+                    raise ValueError("agent_url port is not allowed.")
         return parsed
 
     @field_validator("categories")
@@ -409,6 +434,8 @@ class ScanRequest(BaseModel):
     def validate_categories(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return value
+        if len(value) == 0:
+            raise ValueError("categories must not be an empty list. Set to null for defaults.")
         normalized: list[str] = []
         for category in value:
             canonical = normalize_public_scan_category(category)

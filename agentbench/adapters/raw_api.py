@@ -180,14 +180,6 @@ class RawAPIAdapter(AgentAdapter):
                 "max_steps": max_steps,
                 "timeout": timeout_seconds,
                 "context": context or {},
-                "inject_failures": [
-                    {"tool": f.tool_name, "times": f.fail_times, "error": f.error_message}
-                    for f in (failure_injections or [])
-                ],
-                "inject_latency": [
-                    {"tool": li.tool_name, "delay_ms": li.delay_ms}
-                    for li in (latency_injections or [])
-                ],
             }
 
             with httpx.Client(timeout=self._timeout) as client:

@@ -108,12 +108,16 @@ class ScanStore:
             if not expired_ids:
                 return 0
 
-            placeholders = ",".join("?" for _ in expired_ids)
-            conn.execute(
-                f"DELETE FROM domain_scores WHERE scan_id IN ({placeholders})",
-                expired_ids,
-            )
-            conn.execute(f"DELETE FROM scans WHERE id IN ({placeholders})", expired_ids)
+            # Batch deletes to stay under SQLite's 999-variable limit per statement.
+            batch_size = 500
+            for i in range(0, len(expired_ids), batch_size):
+                batch = expired_ids[i : i + batch_size]
+                placeholders = ",".join("?" for _ in batch)
+                conn.execute(
+                    f"DELETE FROM domain_scores WHERE scan_id IN ({placeholders})",
+                    batch,
+                )
+                conn.execute(f"DELETE FROM scans WHERE id IN ({placeholders})", batch)
             conn.execute("PRAGMA incremental_vacuum")
             return len(expired_ids)
 
@@ -412,10 +416,11 @@ class ServerScanStore:
             )
             job.overall_score = report.overall_score
             job.overall_grade = report.overall_grade
-            # Flush instead of commit — let the caller control the transaction
-            # boundary.  The scan worker in routes/scans.py owns the session
-            # lifecycle and will commit after all writes are done.
+            # Flush to write changes to the DB transaction, then commit so
+            # they are persisted even if the caller does not explicitly commit
+            # (e.g. when _owns_session is True and we close the session below).
             session.flush()
+            session.commit()
         except Exception:
             session.rollback()
             raise

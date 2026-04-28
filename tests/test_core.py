@@ -381,7 +381,7 @@ class TestAgentTimeout:
         assert "TIMEOUT" in result.results[0].error
 
     def test_fast_test_passes_under_timeout(self):
-        """A fast test should pass within the timeout."""
+        """A fast test with assertions should pass within the timeout."""
 
         class FastSuite(AgentTest):
             agent = "fast"
@@ -393,7 +393,8 @@ class TestAgentTimeout:
             )
 
             def test_fast(self):
-                self.run("fast")
+                traj = self.run("fast")
+                expect(traj).to_complete()
 
         runner = TestRunner(config={"timeout_seconds": 30.0})
         result = runner.run_suite(FastSuite)

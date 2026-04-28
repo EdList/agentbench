@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib
 import importlib.util
 import inspect
@@ -322,9 +323,12 @@ class TestRunner:
             # setup_class hook
             self._run_class_hook(class_instance, "setup_class")
             shared_class_state = {
-                key: value
+                key: copy.deepcopy(value)
                 for key, value in class_instance.__dict__.items()
-                if key not in {"trajectory", "_expectations"}
+                if key not in {
+                    "trajectory", "_expectations",
+                    "_failure_injections", "_latency_injections",
+                }
             }
 
             try:
@@ -361,9 +365,12 @@ class TestRunner:
             # setup_class hook
             self._run_class_hook(class_instance, "setup_class")
             shared_class_state = {
-                key: value
+                key: copy.deepcopy(value)
                 for key, value in class_instance.__dict__.items()
-                if key not in {"trajectory", "_expectations"}
+                if key not in {
+                    "trajectory", "_expectations",
+                    "_failure_injections", "_latency_injections",
+                }
             }
 
             try:
@@ -445,11 +452,13 @@ class TestRunner:
             # Fallback for platforms/threads where signal-based interruption is unavailable.
             test_error_box: list[str | None] = [None]
             test_done = threading.Event()
+            result_lock = threading.Lock()
 
             def _execute() -> None:
                 try:
                     self._execute_test_body(
-                        instance, method_name, display_name, param_info, suite_name, result
+                        instance, method_name, display_name, param_info, suite_name, result,
+                        result_lock=result_lock,
                     )
                 except Exception as exc:
                     test_error_box[0] = f"{type(exc).__name__}: {exc}"
@@ -461,16 +470,17 @@ class TestRunner:
             worker.start()
 
             if not test_done.wait(timeout=timeout_seconds):
-                result.passed = False
-                result.error = (
-                    f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
-                    f"  What went wrong: The test did not finish within the allowed time.\n"
-                    f"  Expected: Test completes within {timeout_seconds}s.\n"
-                    f"  What happened: Test is still running after "
-                    f"{timeout_seconds}s (possible infinite loop or agent hang).\n"
-                    f"  Suggested fix: Increase 'timeout_seconds' in "
-                    f"config, optimize the agent, or check for infinite loops."
-                )
+                with result_lock:
+                    result.passed = False
+                    result.error = (
+                        f"TIMEOUT: Test '{display_name}' exceeded {timeout_seconds}s timeout.\n"
+                        f"  What went wrong: The test did not finish within the allowed time.\n"
+                        f"  Expected: Test completes within {timeout_seconds}s.\n"
+                        f"  What happened: Test is still running after "
+                        f"{timeout_seconds}s (possible infinite loop or agent hang).\n"
+                        f"  Suggested fix: Increase 'timeout_seconds' in "
+                        f"config, optimize the agent, or check for infinite loops."
+                    )
             test_error = test_error_box[0]
 
         # If the test itself recorded an error (not timeout)
@@ -479,6 +489,8 @@ class TestRunner:
             result.error = test_error
 
         result.duration_ms = (time.time() - test_start) * 1000
+        # Teardown any test-scoped generator fixtures that were used
+        self._fixture_registry.teardown_test_fixtures()
         return result
 
     def _execute_test_body(
@@ -489,6 +501,7 @@ class TestRunner:
         param_info: dict | None,
         suite_name: str,
         result: TestResult,
+        result_lock: threading.Lock | None = None,
     ) -> None:
         """Execute the actual test logic (called inside a thread)."""
         try:
@@ -523,14 +536,13 @@ class TestRunner:
                     prop = getattr(instance.__class__, method_name, None)
                 if isinstance(prop, Property):
                     prop_results = prop.check(instance=instance)
+                    _lock = result_lock
                     for pr in prop_results:
                         if pr.passed:
-                            result.assertions.append(
-                                AssertionResult(
-                                    passed=True,
-                                    message=(f"Property passed for input: {pr.input_value!r}"),
-                                    assertion_type="property_test",
-                                )
+                            ar = AssertionResult(
+                                passed=True,
+                                message=(f"Property passed for input: {pr.input_value!r}"),
+                                assertion_type="property_test",
                             )
                         else:
                             msg = f"Property failed for input: {pr.input_value!r}"
@@ -538,17 +550,29 @@ class TestRunner:
                                 msg += f"\n  Error: {pr.error}"
                             if pr.was_shrunk:
                                 msg += f"\n  Shrunk to: {pr.shrink_result.minimal!r}"
-                            result.assertions.append(
-                                AssertionResult(
-                                    passed=False,
-                                    message=msg,
-                                    assertion_type="property_test",
-                                )
+                            ar = AssertionResult(
+                                passed=False,
+                                message=msg,
+                                assertion_type="property_test",
                             )
-                    if result.assertions:
-                        result.passed = all(a.passed for a in result.assertions)
+                        if _lock:
+                            with _lock:
+                                result.assertions.append(ar)
+                        else:
+                            result.assertions.append(ar)
+                    if _lock:
+                        with _lock:
+                            if result.assertions:
+                                result.passed = all(a.passed for a in result.assertions)
+                            else:
+                                result.passed = False
+                                result.error = "No assertions were made in this test"
                     else:
-                        result.passed = True
+                        if result.assertions:
+                            result.passed = all(a.passed for a in result.assertions)
+                        else:
+                            result.passed = False
+                            result.error = "No assertions were made in this test"
                 return  # Skip trajectory / expect collection
 
             elif param_info and param_info.get("adversarial_variant"):
@@ -578,33 +602,71 @@ class TestRunner:
             instance._expectations = []
 
             for exp in _active_expectations:
-                result.assertions.extend(exp.results)
+                if result_lock:
+                    with result_lock:
+                        result.assertions.extend(exp.results)
+                else:
+                    result.assertions.extend(exp.results)
 
             # Determine pass/fail
-            if result.assertions:
-                result.passed = all(a.passed for a in result.assertions)
+            if result_lock:
+                with result_lock:
+                    if result.assertions:
+                        result.passed = all(a.passed for a in result.assertions)
+                    else:
+                        result.passed = False
+                        result.error = "No assertions were made in this test"
             else:
-                result.passed = True
+                if result.assertions:
+                    result.passed = all(a.passed for a in result.assertions)
+                else:
+                    result.passed = False
+                    result.error = "No assertions were made in this test"
 
         except AssertionError as e:
-            result.passed = False
-            result.error = (
-                f"AssertionError in '{display_name}': {e}\n"
-                f"  What went wrong: An explicit assertion in the test method failed.\n"
-                f"  Suggested fix: Review the test logic and agent output to ensure they match."
-            )
+            if result_lock:
+                with result_lock:
+                    result.passed = False
+                    result.error = (
+                        f"AssertionError in '{display_name}': {e}\n"
+                        "  What went wrong: An explicit assertion in the test "
+                        "method failed.\n"
+                        "  Suggested fix: Review the test logic and agent "
+                        "output to ensure they match."
+                    )
+            else:
+                result.passed = False
+                result.error = (
+                    f"AssertionError in '{display_name}': {e}\n"
+                    "  What went wrong: An explicit assertion in the test "
+                    "method failed.\n"
+                    "  Suggested fix: Review the test logic and agent "
+                    "output to ensure they match."
+                )
         except Exception as e:
-            result.passed = False
             exc_type = type(e).__name__
             exc_msg = str(e)
-            result.error = (
-                f"AGENT CRASH in '{display_name}': {exc_type}: {exc_msg}\n"
-                f"  What went wrong: The agent or test raised an unhandled exception.\n"
-                f"  Expected: Test should complete without exceptions.\n"
-                f"  What happened: {exc_type} was raised: {exc_msg}\n"
-                f"  Suggested fix: Check the agent adapter configuration "
-                f"and ensure the agent function handles edge cases."
-            )
+            if result_lock:
+                with result_lock:
+                    result.passed = False
+                    result.error = (
+                        f"AGENT CRASH in '{display_name}': {exc_type}: {exc_msg}\n"
+                        f"  What went wrong: The agent or test raised an unhandled exception.\n"
+                        f"  Expected: Test should complete without exceptions.\n"
+                        f"  What happened: {exc_type} was raised: {exc_msg}\n"
+                        f"  Suggested fix: Check the agent adapter configuration "
+                        f"and ensure the agent function handles edge cases."
+                    )
+            else:
+                result.passed = False
+                result.error = (
+                    f"AGENT CRASH in '{display_name}': {exc_type}: {exc_msg}\n"
+                    f"  What went wrong: The agent or test raised an unhandled exception.\n"
+                    f"  Expected: Test should complete without exceptions.\n"
+                    f"  What happened: {exc_type} was raised: {exc_msg}\n"
+                    f"  Suggested fix: Check the agent adapter configuration "
+                    f"and ensure the agent function handles edge cases."
+                )
             traceback.print_exc()
         finally:
             # teardown hook (after each test) — always run

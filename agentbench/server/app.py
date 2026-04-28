@@ -72,11 +72,29 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Global request body size limit (1 MB default)
+    # Content-Security-Policy headers — strict policy for all responses
+    _csp_value = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'"
+    )
+
+    @application.middleware("http")
+    async def _add_csp_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = _csp_value
+        return response
+
+    # Global request body size limit (1 MB default).
+    # We validate the *actual* body size, not just the Content-Length header,
+    # so chunked transfer encoding or a missing header cannot bypass the check.
     _max_body = int(os.getenv("AGENTBENCH_MAX_BODY_BYTES", "1048576"))
 
     @application.middleware("http")
     async def _limit_body_size(request, call_next):
+        # Fast-path: reject obviously oversized Content-Length headers
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > _max_body:
             from fastapi.responses import JSONResponse
@@ -84,6 +102,16 @@ def create_app() -> FastAPI:
                 status_code=413,
                 content={"detail": "Request body too large."},
             )
+        # For methods that typically carry a body, consume and size-check the
+        # actual payload.  This catches chunked encoding and missing headers.
+        if request.method in ("POST", "PUT", "PATCH"):
+            body = await request.body()
+            if len(body) > _max_body:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large."},
+                )
         return await call_next(request)
 
     # Health check — not versioned

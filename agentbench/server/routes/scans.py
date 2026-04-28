@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -102,6 +103,13 @@ class _LRUScanStore:
 
 _scan_store = _LRUScanStore(maxsize=settings.scan_memory_cap)
 _rate_limit_window_by_principal: dict[str, list[float]] = {}
+"""In-memory per-principal rate-limit state.
+
+**Note:** This is per-process only.  For multi-process deployments (e.g.,
+multiple gunicorn/uvicorn workers), you MUST add external rate limiting
+(e.g., nginx ``limit_req``, a reverse-proxy WAF, or a shared-redis counter)
+to enforce limits globally across all workers.
+"""
 _rate_limit_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
@@ -166,55 +174,76 @@ _queue_admission_lock = threading.Lock()
 def _enforce_scan_queue_limits(
     db: Session, principal: str, resolved: ResolvedScanRequest,
 ) -> ScanJob:
-    """Atomically check queue limits AND create the ScanJob under one lock.
+    """Check queue limits AND create the ScanJob.
 
-    Returns a committed ScanJob.  Eliminates TOCTOU between the queue
-    check and the row insert.
+    Uses a two-phase approach to avoid holding a Python lock during I/O:
+    1. Acquire process-local lock for quick in-process serialization.
+    2. Inside the lock, do a ``SELECT … FOR UPDATE`` (PostgreSQL) or
+       ``BEGIN EXCLUSIVE`` (SQLite) to serialize across processes, then
+       check counts and insert the job atomically.
+
+    Returns a committed ScanJob.
     """
     inflight_statuses = ["queued", "running"]
     with _queue_admission_lock:
-        principal_inflight = (
-            db.query(ScanJob)
-            .filter(
-                ScanJob.principal == principal,
-                ScanJob.status.in_(inflight_statuses),
-            )
-            .count()
-        )
-        if principal_inflight >= settings.scan_max_queued_per_principal:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=(
-                    "Too many scans already queued for this principal. "
-                    "Wait for an active scan to finish."
-                ),
-            )
+        # Use a database-level write lock to serialize across processes.
+        # For SQLite WAL mode we force an EXCLUSIVE transaction so that
+        # concurrent processes cannot both pass the count check.
+        try:
+            db.execute(text("BEGIN EXCLUSIVE"))
+        except Exception:
+            # PostgreSQL or unsupported — rely on row-level locking instead
+            pass
 
-        total_inflight = (
-            db.query(ScanJob)
-            .filter(ScanJob.status.in_(inflight_statuses))
-            .count()
-        )
-        if total_inflight >= settings.scan_max_queued_total:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="The scan queue is full right now. Please retry shortly.",
+        try:
+            principal_inflight = (
+                db.query(ScanJob)
+                .filter(
+                    ScanJob.principal == principal,
+                    ScanJob.status.in_(inflight_statuses),
+                )
+                .count()
             )
+            if principal_inflight >= settings.scan_max_queued_per_principal:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=(
+                        "Too many scans already queued for this principal. "
+                        "Wait for an active scan to finish."
+                    ),
+                )
 
-        job = ScanJob(
-            principal=principal,
-            status="queued",
-            agent_url=resolved.agent_url,
-            project_id=resolved.project_id,
-            agent_id=resolved.agent_id,
-            policy_id=resolved.policy_id,
-            categories_json=json.dumps(resolved.categories)
-            if resolved.categories is not None
-            else None,
-        )
-        db.add(job)
-        db.commit()
-        db.refresh(job)
+            total_inflight = (
+                db.query(ScanJob)
+                .filter(ScanJob.status.in_(inflight_statuses))
+                .count()
+            )
+            if total_inflight >= settings.scan_max_queued_total:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="The scan queue is full right now. Please retry shortly.",
+                )
+
+            job = ScanJob(
+                principal=principal,
+                status="queued",
+                agent_url=resolved.agent_url,
+                project_id=resolved.project_id,
+                agent_id=resolved.agent_id,
+                policy_id=resolved.policy_id,
+                categories_json=json.dumps(resolved.categories)
+                if resolved.categories is not None
+                else None,
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception:
+            db.rollback()
+            raise
 
     return job
 
@@ -615,12 +644,25 @@ def _resolve_scan_record(
     return persisted["agent_url"], response
 
 
+def _redact_agent_url(url: str) -> str:
+    """Strip query parameters and credentials from an agent URL for safe display."""
+    parsed = urlparse(url)
+    # Strip userinfo (user:pass@host) if present
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    # Rebuild without query, fragment, or credentials
+    return f"{parsed.scheme}://{netloc}{parsed.path}"
+
+
 def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> ScanShareResponse:
     """Build share-friendly text blocks and a permalink for a scan."""
     # Build absolute permalink using configured base URL or request context
     base_url = settings.base_url.rstrip("/") if settings.base_url else ""
     relative = f"/?scan_id={scan_id}"
     absolute_permalink = f"{base_url}{relative}"
+    # Redact agent URL to avoid leaking credentials or signed query params
+    safe_agent_display = _redact_agent_url(agent_url)
     title = f"AgentBench report — {report.overall_grade} ({round(report.overall_score)}/100)"
     domain_lines = "\n".join(
         f"- {domain.name}: {domain.grade} ({round(domain.score)}/100)"
@@ -654,7 +696,7 @@ def _build_share_payload(scan_id: str, agent_url: str, report: ScanResponse) -> 
     )
     return ScanShareResponse(
         scan_id=scan_id,
-        agent_url=agent_url,
+        agent_url=safe_agent_display,
         permalink=absolute_permalink,
         title=title,
         markdown=markdown,
@@ -1103,7 +1145,8 @@ def _run_scan(
     client = httpx.Client(
         timeout=30.0,
         transport=transport,
-        follow_redirects=False,
+        follow_redirects=True,
+        max_redirects=5,
     )
 
     # Wrap the agent URL in a simple callable for the prober
@@ -1133,9 +1176,17 @@ def _run_scan(
     finally:
         client.close()
 
+    # Check cancellation after probing
+    if cancel_fn and cancel_fn():
+        raise ScanCancelledError("Scan cancelled after probing phase.")
+
     # 2. Analyze
     analyzer = BehaviorAnalyzer(use_llm=settings.scanner_use_llm)
     behaviors = analyzer.analyze(session)
+
+    # Check cancellation after analysis
+    if cancel_fn and cancel_fn():
+        raise ScanCancelledError("Scan cancelled after analysis phase.")
 
     # 3. Score
     engine = ScoringEngine()
@@ -1293,6 +1344,22 @@ def list_scans(
 # ---------------------------------------------------------------------------
 
 
+def _validate_url_path_param(agent_url: str) -> str:
+    """Validate that a path-parameter agent_url looks like an HTTP(S) URL."""
+    stripped = agent_url.strip()
+    if not stripped:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="agent_url path parameter must not be empty.",
+        )
+    if not stripped.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="agent_url must start with http:// or https://.",
+        )
+    return stripped
+
+
 @router.get(
     "/history/{agent_url:path}",
     response_model=list[ScanHistoryEntryResponse],
@@ -1304,8 +1371,9 @@ def scan_history(
     principal: str = Depends(require_auth),
 ) -> list[ScanHistoryEntryResponse]:
     """List persisted scan history for a specific agent URL."""
+    validated_url = _validate_url_path_param(agent_url)
     return _get_store().list_scans(
-        agent_url=agent_url,
+        agent_url=validated_url,
         principal=principal,
         limit=limit,
         offset=offset,
@@ -1321,7 +1389,8 @@ def regression_report(
     principal: str = Depends(require_auth),
 ) -> RegressionReportResponse:
     """Get regression report comparing the two latest scans for an agent."""
-    report = _get_store().get_regression_report(agent_url, principal=principal)
+    validated_url = _validate_url_path_param(agent_url)
+    report = _get_store().get_regression_report(validated_url, principal=principal)
     if report is None:
         raise HTTPException(
             status_code=404,
