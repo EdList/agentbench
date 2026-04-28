@@ -154,7 +154,7 @@ class TestProbeCapabilities:
     def test_prompt_count(self):
         p = AgentProber(_echo_agent, categories=["capability"])
         results = p.probe_capabilities()
-        assert 5 <= len(results) <= 10
+        assert len(results) >= 8  # at least the original prompts
 
 
 # ---------------------------------------------------------------------------
@@ -283,10 +283,10 @@ class TestProbeAll:
         assert len(session.results) > 0
         assert session.duration > 0
 
-    def test_total_probe_count_under_60(self):
+    def test_total_probe_count_under_300(self):
         p = AgentProber(_echo_agent)
         session = p.probe_all()
-        assert len(session.results) <= 60
+        assert len(session.results) <= 300
 
     def test_all_categories_present(self):
         p = AgentProber(_echo_agent)

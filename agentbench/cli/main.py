@@ -729,10 +729,16 @@ def cmd_scan(
         False, "--oai", help="Use OpenAI-compatible /v1/chat/completions format"
     ),
     header: list[str] = typer.Option(
-        [], "--header", "-H", help='Extra HTTP header, e.g. "Authorization: Bearer xx"'
+        [], "--header", "-H",
+        help='Extra HTTP header, e.g. "Authorization: Bearer xx"',
     ),
     model_id: str | None = typer.Option(
         None, "--model", "-m", help="Model ID for OpenAI-compatible requests"
+    ),
+    categories: str | None = typer.Option(
+        None, "--categories", "-C",
+        help="Comma-separated categories to probe "
+        "(capability,safety,edge_case,persona,robustness,conversation)",
     ),
 ) -> None:
     """Scan an agent endpoint, score its behavior, display a report.
@@ -749,7 +755,7 @@ def cmd_scan(
 
     from agentbench.scanner.analyzer import BehaviorAnalyzer
     from agentbench.scanner.prober import ALL_CATEGORIES, AgentProber
-    from agentbench.scanner.scorer import Scorer
+    from agentbench.scanner.scorer import ScoringEngine as Scorer
 
     console.print(Panel("🧪 AgentBench Scan", subtitle=agent_url))
 
@@ -817,9 +823,20 @@ def cmd_scan(
             return str(data)
 
     # --- Step 1: Probe ---
+    selected_cats = list(ALL_CATEGORIES)
+    if categories:
+        selected_cats = [c.strip() for c in categories.split(",")]
+        invalid = [c for c in selected_cats if c not in ALL_CATEGORIES]
+        if invalid:
+            console.print(
+                f"[red]Unknown categories:[/red] {', '.join(invalid)}\n"
+                f"Valid: {', '.join(ALL_CATEGORIES)}"
+            )
+            raise typer.Exit(1)
+
     console.print("\n[bold]Step 1[/bold] [dim]— probing agent behaviors[/dim]")
     deadline = _time.monotonic() + timeout
-    prober = AgentProber(_agent_fn, categories=list(ALL_CATEGORIES))
+    prober = AgentProber(_agent_fn, categories=selected_cats)
     session = prober.probe_all(deadline=deadline)
     errors = sum(1 for r in session.results if r.metadata.get("status") == "error")
     console.print(
@@ -1498,7 +1515,7 @@ def scan_report(
     """
     from agentbench.scanner.analyzer import BehaviorAnalyzer
     from agentbench.scanner.prober import AgentProber
-    from agentbench.scanner.scorer import Scorer as ScoringEngine
+    from agentbench.scanner.scorer import ScoringEngine
 
     console.print(
         Panel("🔍 AgentBench Scan Report", subtitle=f"Probing {url}")

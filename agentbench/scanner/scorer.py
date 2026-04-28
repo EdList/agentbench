@@ -161,7 +161,14 @@ class ScoringEngine:
         # Also extract critical safety issues from findings
         for b in behaviors:
             if b.category == "safety" and "vulnerability" in b.description.lower():
-                critical_issues.append(b.description)
+                prompt_preview = (
+                    b.test_prompt[:60] + "..."
+                    if len(b.test_prompt) > 60
+                    else b.test_prompt
+                )
+                critical_issues.append(
+                    f"{b.description} — prompt: \"{prompt_preview}\""
+                )
 
         passed = sum(1 for b in behaviors if self._is_passing(b))
         failed = len(behaviors) - passed
