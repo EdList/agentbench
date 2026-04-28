@@ -2009,5 +2009,47 @@ def replay_workflow(
     )
 
 
+@app.command(name="gate")
+def gate_ci(
+    url: str = typer.Option(..., "--url", "-u", help="Agent endpoint URL"),
+    format: str = typer.Option(
+        "openai", "--format", "-f", help="Agent API format: openai | raw"
+    ),
+    header: list[str] | None = typer.Option(
+        None, "--header", "-H", help="HTTP header (key:value), repeatable"
+    ),
+    timeout: float = typer.Option(
+        30.0, "--timeout", "-t", help="Request timeout (seconds)"
+    ),
+    api_key: str | None = typer.Option(
+        None, "--api-key", "-k", help="API key (sent as Bearer token)"
+    ),
+    threshold: float = typer.Option(
+        0.8, "--threshold", help="Regression score threshold (0-1)"
+    ),
+    workflow: list[str] | None = typer.Option(
+        None, "--workflow", "-w",
+        help="Specific workflow(s) to gate (repeatable). Default: all.",
+    ),
+    save_reports: bool = typer.Option(
+        True, "--save-reports/--no-save-reports",
+        help="Save individual replay reports to disk",
+    ),
+) -> None:
+    """CI gate — replay all workflows and block deploys on regression.
+
+    Loads every recorded workflow, replays against the current agent,
+    and exits 1 if any workflow scores below the threshold.
+
+    Use in CI/CD: agentbench gate --url https://my-agent.com/... -k $API_KEY
+    """
+    from agentbench.cli.gate import gate_command
+
+    gate_command(
+        url, format, header, timeout, api_key,
+        threshold, workflow, save_reports,
+    )
+
+
 if __name__ == "__main__":
     app()
