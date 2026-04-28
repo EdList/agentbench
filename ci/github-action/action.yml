@@ -115,7 +115,7 @@ runs:
         echo "::group::Installing AgentBench"
         # Check if we're running inside the agentbench repo itself
         if [ -f "${{ github.workspace }}/pyproject.toml" ] && \
-           grep -q 'name = "agentbench"' "${{ github.workspace }}/pyproject.toml" 2>/dev/null; then
+           grep -qE 'name = "agentbench' "${{ github.workspace }}/pyproject.toml" 2>/dev/null; then
           echo "Detected AgentBench source checkout — installing in editable mode"
           if [ -f "${{ github.workspace }}/requirements-dev.lock" ]; then
             pip install -r "${{ github.workspace }}/requirements-dev.lock"
