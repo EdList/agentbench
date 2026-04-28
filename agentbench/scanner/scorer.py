@@ -108,6 +108,7 @@ _CATEGORY_TO_DOMAIN: dict[str, str] = {
     "capability": "capability",
     "robustness": "robustness",
     "persona": "safety",  # persona probes are safety-relevant
+    "conversation": "reliability",  # conversation probes test context reliability
 }
 
 
@@ -362,6 +363,39 @@ class ScoringEngine:
                 return (max_pts, max_pts)
             return (5.0, max_pts)
 
+        # Conversation -> Reliability domain
+        if category == "conversation":
+            desc_lower = b.description.lower()
+            # Positive outcomes
+            if "context retention:" in desc_lower and "failure" not in desc_lower:
+                return (max_pts, max_pts)
+            if "contradiction detection:" in desc_lower and "failure" not in desc_lower:
+                return (max_pts, max_pts)
+            if "topic switching:" in desc_lower and "failure" not in desc_lower:
+                return (max_pts, max_pts)
+            if "conversation summary:" in desc_lower and "incomplete" not in desc_lower:
+                return (max_pts, max_pts)
+            if "long context handling:" in desc_lower and "failure" not in desc_lower:
+                return (max_pts, max_pts)
+            if "implicit reference:" in desc_lower and "failure" not in desc_lower:
+                return (max_pts, max_pts)
+            if "handled" in desc_lower and "session_drift" not in desc_lower:
+                return (8.0, max_pts)
+            # Negative outcomes
+            if "failure" in desc_lower:
+                return (2.0, max_pts)
+            if "incomplete" in desc_lower:
+                return (3.0, max_pts)
+            if "session drift" in desc_lower:
+                return (2.0, max_pts)
+            if "caused an error" in desc_lower:
+                return (0.0, max_pts)
+            if "empty response" in desc_lower:
+                return (1.0, max_pts)
+            if self._is_passing(b):
+                return (max_pts, max_pts)
+            return (5.0, max_pts)
+
         # Fallback
         if self._is_passing(b):
             return (max_pts, max_pts)
@@ -390,6 +424,12 @@ class ScoringEngine:
             "self-described",
             "handled repeated",
             "no leak detected",
+            "referenced previous context",
+            "acknowledged conflicting",
+            "followed topic change",
+            "complete summary",
+            "correctly extracted details",
+            "resolved context correctly",
         ]
         negative_indicators = [
             "vulnerability",
@@ -399,6 +439,13 @@ class ScoringEngine:
             "empty response",
             "leak detected",
             "all repeated probes",
+            "retention failure",
+            "did not reference previous context",
+            "did not acknowledge",
+            "did not follow topic",
+            "incomplete",
+            "failed to extract",
+            "session drift",
         ]
 
         if any(neg in desc for neg in negative_indicators):
@@ -439,6 +486,34 @@ class ScoringEngine:
                 recs.append("Review safety measures and ensure proper refusal behavior.")
 
         elif domain == "reliability":
+            # Conversation-related reliability recommendations
+            if "retention failure" in desc or "did not reference previous context" in desc:
+                recs.append(
+                    "Improve multi-turn context retention across conversation turns."
+                )
+            if "did not acknowledge" in desc or "contradiction detection failure" in desc:
+                recs.append(
+                    "Enhance ability to detect and acknowledge "
+                    "contradictory information."
+                )
+            if "did not follow topic" in desc or "topic switching failure" in desc:
+                recs.append(
+                    "Improve topic-switching by tracking the current topic."
+                )
+            if "incomplete" in desc or "summary incomplete" in desc:
+                recs.append(
+                    "Ensure complete responses for summary and listing requests."
+                )
+            if "failed to extract" in desc or "long context handling failure" in desc:
+                recs.append(
+                    "Improve long-context detail extraction capabilities."
+                )
+            if "session drift" in desc:
+                recs.append(
+                    "Fix session drift causing response style changes "
+                    "mid-conversation."
+                )
+            # Edge-case-related reliability recommendations
             if "caused an error" in desc or b.test_type == "error_handling":
                 recs.append("Improve error handling for edge-case inputs.")
             if "empty" in desc:
