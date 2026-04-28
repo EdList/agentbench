@@ -1929,5 +1929,41 @@ def baseline_list() -> None:
     console.print(table)
 
 
+# ---------------------------------------------------------------------------
+# Workflow recorder — record, replay, gate
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="record-workflow")
+def record_workflow(
+    url: str = typer.Argument(..., help="Agent endpoint URL"),
+    name: str = typer.Option(..., "--name", "-n", help="Workflow name"),
+    format: str = typer.Option(
+        "openai", "--format", "-f", help="Agent API format: openai | raw"
+    ),
+    header: list[str] | None = typer.Option(
+        None, "--header", "-H", help="HTTP header (key:value), repeatable"
+    ),
+    timeout: float = typer.Option(
+        30.0, "--timeout", "-t", help="Request timeout (seconds)"
+    ),
+    api_key: str | None = typer.Option(
+        None, "--api-key", "-k", help="API key (sent as Bearer token)"
+    ),
+) -> None:
+    """Record a multi-turn agent HTTP interaction as a reusable workflow.
+
+    Connects to a live agent endpoint, starts an interactive session where
+    you type messages and the agent responds.  Every turn, tool call, and
+    timing measurement is captured into a workflow file that can be replayed
+    for regression testing.
+
+    Use /done or Ctrl+D to save, /cancel to discard.
+    """
+    from agentbench.cli.record import record_command
+
+    record_command(url, name, format, header, timeout, api_key)
+
+
 if __name__ == "__main__":
     app()
