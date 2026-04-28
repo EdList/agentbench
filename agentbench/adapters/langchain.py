@@ -182,11 +182,11 @@ class LangChainAdapter(AgentAdapter):
         tools: list[str] | None = None,
     ):
         self._executor = agent_executor
-        self._tools = tools or []
+        self._tools = tools
 
     def get_available_tools(self) -> list[str]:
         """Return tool names from the LangChain agent."""
-        if self._tools:
+        if self._tools is not None:
             return self._tools
         try:
             return [t.name for t in self._executor.tools]

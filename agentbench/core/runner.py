@@ -326,7 +326,7 @@ class TestRunner:
                 key: copy.deepcopy(value)
                 for key, value in class_instance.__dict__.items()
                 if key not in {
-                    "trajectory", "_expectations",
+                    "_trajectory", "_expectations",
                     "_failure_injections", "_latency_injections",
                 }
             }
@@ -368,7 +368,7 @@ class TestRunner:
                 key: copy.deepcopy(value)
                 for key, value in class_instance.__dict__.items()
                 if key not in {
-                    "trajectory", "_expectations",
+                    "_trajectory", "_expectations",
                     "_failure_injections", "_latency_injections",
                 }
             }

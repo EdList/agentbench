@@ -96,12 +96,21 @@ def create_app() -> FastAPI:
     async def _limit_body_size(request, call_next):
         # Fast-path: reject obviously oversized Content-Length headers
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > _max_body:
-            from fastapi.responses import JSONResponse
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body too large."},
-            )
+        if content_length:
+            try:
+                cl_value = int(content_length)
+            except ValueError:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header."},
+                )
+            if cl_value > _max_body:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large."},
+                )
         # For methods that typically carry a body, consume and size-check the
         # actual payload.  This catches chunked encoding and missing headers.
         if request.method in ("POST", "PUT", "PATCH"):

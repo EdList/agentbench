@@ -102,12 +102,20 @@ class AgentBenchConfig:
         # Nested configs
         if "sandbox" in data:
             sandbox_data = data["sandbox"]
+            if not isinstance(sandbox_data, dict):
+                raise TypeError(
+                    f"Config 'sandbox' expected dict, got {type(sandbox_data).__name__}"
+                )
             config.sandbox = SandboxConfig(
                 **{k: v for k, v in sandbox_data.items() if k in SandboxConfig.__dataclass_fields__}
             )
 
         if "judge" in data:
             judge_data = data["judge"]
+            if not isinstance(judge_data, dict):
+                raise TypeError(
+                    f"Config 'judge' expected dict, got {type(judge_data).__name__}"
+                )
             config.judge = JudgeConfig(
                 **{k: v for k, v in judge_data.items() if k in JudgeConfig.__dataclass_fields__}
             )

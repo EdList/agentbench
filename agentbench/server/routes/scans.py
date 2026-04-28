@@ -257,6 +257,7 @@ def _wait_for_scan_job_result(
     """Wait for an async scan job and return its completed report."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
+        db.commit()          # release read transaction so worker can write
         db.expire_all()
         job = _get_scan_job_or_404(db, job_id, principal)
         if job.status == "completed":
@@ -827,6 +828,8 @@ def _execute_resolved_scan(
             }
         )
         return report_response, score_report
+    except ScanCancelledError:
+        raise
     except Exception as exc:
         logger.exception("Failed to scan agent endpoint %s", resolved.agent_url)
         raise HTTPException(

@@ -1524,6 +1524,7 @@ def scan_report(
 
     prober = AgentProber(agent, categories=category_list)
     scan_deadline = time.monotonic() + deadline
+    scan_start = time.monotonic()
     session = prober.probe_all(deadline=scan_deadline)
 
     error_count = sum(
@@ -1559,7 +1560,7 @@ def scan_report(
         f"(Grade: {report.overall_grade})"
     )
 
-    step3_end = time.perf_counter()
+    step3_end = time.monotonic()
 
     # --- Step 5: Display ---
     if as_json:
@@ -1583,7 +1584,7 @@ def scan_report(
 
             store = ScanStore()
             scan_id = str(uuid.uuid4())
-            elapsed_ms = int((step3_end - scan_deadline + deadline) * 1000)
+            elapsed_ms = int((step3_end - scan_start) * 1000)
             store.save_scan(
                 scan_id=scan_id,
                 agent_url=url,

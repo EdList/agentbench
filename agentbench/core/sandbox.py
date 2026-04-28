@@ -64,7 +64,7 @@ class SandboxManager:
         Returns:
             SandboxResult with output and timing.
         """
-        timeout = timeout or self._config.timeout_seconds
+        timeout = self._config.timeout_seconds if timeout is None else timeout
         start = time.time()
         container = None
 

@@ -24,6 +24,7 @@ class FixtureRegistry:
         self._suite_cache: dict[str, dict[str, tuple[Any, Fixture | None]]] = {}
         # Track test-scoped generator fixtures that need teardown after each test
         self._pending_teardowns: list[Fixture] = []
+        self._teardown_lock = threading.Lock()
 
     @classmethod
     def get(cls) -> FixtureRegistry:
@@ -63,7 +64,8 @@ class FixtureRegistry:
             value = fixture.setup()
             # If this is a generator fixture, track it so teardown runs after the test
             if hasattr(fixture, "_gen") and fixture._gen is not None:
-                self._pending_teardowns.append(fixture)
+                with self._teardown_lock:
+                    self._pending_teardowns.append(fixture)
             return value
 
         if scope == "session":
@@ -100,9 +102,10 @@ class FixtureRegistry:
         Should be called by the runner after each individual test completes
         to ensure generator fixture teardown code (after yield) runs.
         """
-        for fixture in self._pending_teardowns:
-            fixture.teardown()
-        self._pending_teardowns.clear()
+        with self._teardown_lock:
+            for fixture in self._pending_teardowns:
+                fixture.teardown()
+            self._pending_teardowns.clear()
 
     def teardown_all(self) -> None:
         """Tear down all cached fixtures (session + all suites)."""
