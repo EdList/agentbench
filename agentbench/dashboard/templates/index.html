@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentBench Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a; --text: #e0e0e0;
+          --dim: #888; --green: #4ade80; --red: #f87171; --yellow: #fbbf24;
+          --blue: #60a5fa; --cyan: #22d3ee; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); min-height: 100vh; }
+  .header { padding: 20px 32px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header h1 span { color: var(--cyan); }
+  .header .status { font-size: 13px; padding: 4px 12px; border-radius: 12px; }
+  .status.healthy { background: rgba(74,222,128,.15); color: var(--green); }
+  .status.unhealthy { background: rgba(248,113,113,.15); color: var(--red); }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 32px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+               padding: 20px; }
+  .stat-card .label { font-size: 12px; color: var(--dim); text-transform: uppercase;
+                      letter-spacing: 0.5px; margin-bottom: 8px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; }
+  .stat-card .value.green { color: var(--green); }
+  .stat-card .value.red { color: var(--red); }
+  .stat-card .value.blue { color: var(--blue); }
+  .stat-card .value.yellow { color: var(--yellow); }
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+             padding: 20px; margin-bottom: 24px; }
+  .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .chart-container { height: 280px; position: relative; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: var(--dim); text-transform: uppercase;
+       padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tr:hover { background: rgba(255,255,255,.03); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+  .badge.pass { background: rgba(74,222,128,.15); color: var(--green); }
+  .badge.fail { background: rgba(248,113,113,.15); color: var(--red); }
+  .badge.none { background: rgba(136,136,136,.15); color: var(--dim); }
+  .empty { text-align: center; padding: 40px; color: var(--dim); font-size: 14px; }
+  @media (max-width: 768px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .container { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⚡ <span>AgentBench</span> Dashboard</h1>
+  <div id="header-status" class="status healthy">Loading...</div>
+</div>
+<div class="container">
+  <!-- Stats cards -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="label">Workflows</div>
+      <div class="value blue" id="stat-workflows">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg Score</div>
+      <div class="value green" id="stat-score">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Reports</div>
+      <div class="value blue" id="stat-reports">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Regressions</div>
+      <div class="value" id="stat-regressions">—</div>
+    </div>
+  </div>
+
+  <!-- Timeline chart -->
+  <div class="section">
+    <h2>Score Timeline</h2>
+    <div class="chart-container"><canvas id="timeline-chart"></canvas></div>
+  </div>
+
+  <!-- Workflows table -->
+  <div class="section">
+    <h2>Workflows</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Turns</th><th>Tools</th><th>Latest Score</th><th>Status</th><th>Reports</th></tr></thead>
+      <tbody id="workflows-table"></tbody>
+    </table>
+  </div>
+
+  <!-- Recent reports -->
+  <div class="section">
+    <h2>Recent Reports</h2>
+    <table>
+      <thead><tr><th>Workflow</th><th>Score</th><th>Turns</th><th>Passed</th><th>Time</th></tr></thead>
+      <tbody id="reports-table"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+async function loadDashboard() {
+  try {
+    const [stats, workflows, reports, timeline] = await Promise.all([
+      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/workflows').then(r => r.json()),
+      fetch('/api/reports?limit=20').then(r => r.json()),
+      fetch('/api/timeline').then(r => r.json()),
+    ]);
+
+    renderStats(stats);
+    renderWorkflows(workflows);
+    renderReports(reports.reports || []);
+    renderTimeline(timeline);
+  } catch (e) {
+    console.error('Failed to load dashboard:', e);
+    $('#header-status').textContent = 'Error loading data';
+    $('#header-status').className = 'status unhealthy';
+  }
+}
+
+function renderStats(stats) {
+  $('#stat-workflows').textContent = stats.total_workflows;
+  $('#stat-score').textContent = (stats.average_score * 100).toFixed(0) + '%';
+  $('#stat-reports').textContent = stats.total_reports;
+
+  const regEl = $('#stat-regressions');
+  regEl.textContent = stats.regression_count;
+  regEl.className = stats.regression_count > 0 ? 'value red' : 'value green';
+
+  const status = $('#header-status');
+  if (stats.healthy) {
+    status.textContent = '✓ All Clear';
+    status.className = 'status healthy';
+  } else {
+    status.textContent = '⚠ Regression Detected';
+    status.className = 'status unhealthy';
+  }
+}
+
+function renderWorkflows(workflows) {
+  const tbody = $('#workflows-table');
+  if (!workflows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No workflows recorded yet. Use <code>agentbench record-workflow</code> to create one.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = workflows.map(w => `
+    <tr>
+      <td><strong>${esc(w.name)}</strong></td>
+      <td>${w.turn_count || 0}</td>
+      <td>${w.tool_call_count || 0}</td>
+      <td>${w.latest_score != null ? (w.latest_score * 100).toFixed(0) + '%' : '—'}</td>
+      <td>${w.latest_passed != null ? (w.latest_passed ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>') : '<span class="badge none">—</span>'}</td>
+      <td>${w.report_count || 0}</td>
+    </tr>
+  `).join('');
+}
+
+function renderReports(reports) {
+  const tbody = $('#reports-table');
+  if (!reports.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No reports yet. Use <code>agentbench replay</code> or <code>agentbench gate</code>.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = reports.map(r => `
+    <tr>
+      <td>${esc(r.replay_of || r.workflow_name || '—')}</td>
+      <td>${((r.overall_score || 0) * 100).toFixed(0)}%</td>
+      <td>${(r.turn_results || []).length}</td>
+      <td>${r.passed ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>'}</td>
+      <td>${formatTime(r.created_at)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderTimeline(timeline) {
+  if (!timeline.length) return;
+
+  const labels = timeline.map(t => formatTime(t.timestamp));
+  const scores = timeline.map(t => t.score * 100);
+  const thresholds = timeline.map(t => t.threshold * 100);
+  const colors = timeline.map(t => t.passed ? 'rgba(74,222,128,0.8)' : 'rgba(248,113,113,0.8)');
+
+  const ctx = $('#timeline-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Score %',
+          data: scores,
+          borderColor: '#22d3ee',
+          backgroundColor: 'rgba(34,211,238,0.1)',
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: colors,
+          pointRadius: 5,
+        },
+        {
+          label: 'Threshold',
+          data: thresholds,
+          borderColor: 'rgba(248,113,113,0.5)',
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { min: 0, max: 100, grid: { color: 'rgba(255,255,255,0.05)' },
+             ticks: { color: '#888', callback: v => v + '%' } },
+        x: { grid: { color: 'rgba(255,255,255,0.05)' },
+             ticks: { color: '#888', maxRotation: 45 } },
+      },
+      plugins: { legend: { labels: { color: '#888' } } },
+    },
+  });
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatTime(ts) {
+  if (!ts) return '—';
+  try { return new Date(ts).toLocaleString(); } catch { return ts; }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

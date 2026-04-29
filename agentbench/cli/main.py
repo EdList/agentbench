@@ -2051,5 +2051,25 @@ def gate_ci(
     )
 
 
+@app.command(name="dashboard")
+def dashboard(
+    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
+    host: str = typer.Option("127.0.0.1", "--host", help="Server host"),
+    base_dir: str | None = typer.Option(
+        None, "--dir", "-d", help="Base directory (default: cwd)"
+    ),
+) -> None:
+    """Start the workflow health dashboard.
+
+    Launches a local web server with workflow health overview,
+    regression timeline, and replay history.
+
+    Open http://127.0.0.1:8080 in your browser.
+    """
+    from agentbench.cli.dashboard import dashboard_command
+
+    dashboard_command(port, host, base_dir)
+
+
 if __name__ == "__main__":
     app()
