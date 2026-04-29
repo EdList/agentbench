@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentbench-cli"
-version = "0.2.0"
-description = "Behavioral testing framework for AI agents — scan any agent URL and get a security & reliability scorecard"
+version = "0.3.0"
+description = "Behavioral regression testing for AI agents — record workflows, replay after changes, block deploys that cause regressions"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "AgentBench Team" },
 ]
-keywords = ["ai", "agents", "testing", "evaluation", "llm", "langchain", "crewai", "security", "scanner", "behavioral"]
+keywords = ["ai", "agents", "testing", "evaluation", "llm", "behavioral", "regression", "recorder", "replay", "ci", "scorecard"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Pytest",

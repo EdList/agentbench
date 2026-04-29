@@ -1,0 +1,230 @@
+# =============================================================================
+# AgentBench Gate Action — Block deployments on behavioral regressions
+# =============================================================================
+#
+# Replays recorded agent workflows and fails the CI pipeline when
+# agent behavior has regressed beyond the configured threshold.
+#
+# Usage:
+#
+#   steps:
+#     - uses: EdList/agentbench/ci/gate-action@main
+#       with:
+#         agent-url: https://my-agent.fly.dev/v1/chat/completions
+#         api-key: ${{ secrets.AGENT_API_KEY }}
+#         threshold: "0.8"
+#         workflows-dir: .agentbench/workflows
+#
+# Or with specific workflows:
+#
+#     - uses: EdList/agentbench/ci/gate-action@main
+#       with:
+#         agent-url: https://my-agent.fly.dev/v1/chat/completions
+#         api-key: ${{ secrets.AGENT_API_KEY }}
+#         workflows: "checkout-flow,search-flow"
+#
+# =============================================================================
+
+name: "AgentBench Behavioral Gate"
+description: "Replay recorded agent workflows and block deployments on regression"
+author: "AgentBench Team"
+
+# ---------------------------------------------------------------------------
+# Inputs
+# ---------------------------------------------------------------------------
+inputs:
+  # Agent endpoint URL (required)
+  agent-url:
+    description: >-
+      URL of the agent endpoint to test.
+      Must be an OpenAI-compatible or raw HTTP JSON endpoint.
+    required: true
+
+  # API key for authentication
+  api-key:
+    description: >-
+      API key sent as Bearer token to the agent endpoint.
+      Use GitHub Secrets: ${{ secrets.AGENT_API_KEY }}
+    required: false
+    default: ""
+
+  # Agent format
+  agent-format:
+    description: "Agent API format: openai (default) or raw"
+    required: false
+    default: "openai"
+
+  # Score threshold
+  threshold:
+    description: >-
+      Regression score threshold (0.0-1.0).
+      Workflows scoring below this will trigger a gate failure.
+    required: false
+    default: "0.8"
+
+  # Specific workflows to test (comma-separated)
+  workflows:
+    description: >-
+      Comma-separated list of workflow names to replay.
+      If empty, all workflows in the workflows directory are tested.
+    required: false
+    default: ""
+
+  # Directory containing recorded workflows
+  workflows-dir:
+    description: >-
+      Path to directory containing .agentbench/workflows/.
+      Defaults to the workspace root.
+    required: false
+    default: "."
+
+  # Request timeout
+  timeout:
+    description: "HTTP request timeout in seconds per turn"
+    required: false
+    default: "30"
+
+  # Python version
+  python-version:
+    description: "Python version (>= 3.11)"
+    required: false
+    default: "3.11"
+
+  # Whether to save reports as artifacts
+  upload-reports:
+    description: "Upload replay reports as workflow artifacts"
+    required: false
+    default: "true"
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+outputs:
+  passed:
+    description: "Number of workflows that passed"
+    value: ${{ steps.gate-run.outputs.passed }}
+  failed:
+    description: "Number of workflows that failed"
+    value: ${{ steps.gate-run.outputs.failed }}
+  total:
+    description: "Total workflows tested"
+    value: ${{ steps.gate-run.outputs.total }}
+  overall-passed:
+    description: "'true' if all workflows passed the gate"
+    value: ${{ steps.gate-run.outputs.overall-passed }}
+
+# ---------------------------------------------------------------------------
+# Runs
+# ---------------------------------------------------------------------------
+runs:
+  using: "composite"
+
+  steps:
+    - name: "Set up Python ${{ inputs.python-version }}"
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: "Install AgentBench"
+      shell: bash
+      run: |
+        echo "::group::Installing AgentBench"
+        if [ -f "${{ github.workspace }}/pyproject.toml" ] && \
+           grep -qE 'name = "agentbench' "${{ github.workspace }}/pyproject.toml" 2>/dev/null; then
+          echo "Detected AgentBench source — installing in editable mode"
+          pip install -e "${{ github.workspace }}[server]"
+        else
+          echo "Installing agentbench-cli from PyPI"
+          pip install agentbench-cli
+        fi
+        echo "::endgroup::"
+
+    - name: "Run behavioral gate"
+      id: gate-run
+      shell: bash
+      working-directory: ${{ inputs.workflows-dir }}
+      env:
+        AGENT_URL: ${{ inputs.agent-url }}
+        AGENT_API_KEY: ${{ inputs.api-key }}
+        AGENT_FORMAT: ${{ inputs.agent-format }}
+        AGENTBENCH_THRESHOLD: ${{ inputs.threshold }}
+        WORKFLOWS: ${{ inputs.workflows }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        echo "::group::Running behavioral gate"
+        echo "Agent URL: $AGENT_URL"
+        echo "Threshold: $AGENTBENCH_THRESHOLD"
+
+        # Build command
+        CMD="agentbench gate --url '$AGENT_URL' --format '$AGENT_FORMAT' --threshold '$AGENTBENCH_THRESHOLD' --timeout '$TIMEOUT' --no-save-reports"
+
+        # Add API key if provided
+        if [ -n "$AGENT_API_KEY" ]; then
+          CMD="$CMD --api-key '$AGENT_API_KEY'"
+        fi
+
+        # Add specific workflows if provided
+        if [ -n "$WORKFLOWS" ]; then
+          for wf in $(echo "$WORKFLOWS" | tr ',' ' '); do
+            CMD="$CMD --workflow '$wf'"
+          done
+        fi
+
+        echo "Running: $CMD"
+
+        # Run gate — capture exit code
+        set +e
+        eval "$CMD" 2>&1 | tee gate-output.txt
+        EXIT_CODE=$?
+        set -e
+
+        echo "::endgroup::"
+
+        # Parse results from output
+        PASSED=$(grep -oP 'Workflows: \K\d+' gate-output.txt | head -1 || echo "0")
+        TOTAL=$(grep -oP 'Total turns: \K\d+' gate-output.txt || echo "0")
+
+        # Count passed/failed from the table
+        PASS_COUNT=$(grep -c "PASS" gate-output.txt 2>/dev/null || echo "0")
+        FAIL_COUNT=$(grep -c "FAIL" gate-output.txt 2>/dev/null || echo "0")
+
+        echo "passed=$PASS_COUNT"     >> "$GITHUB_OUTPUT"
+        echo "failed=$FAIL_COUNT"     >> "$GITHUB_OUTPUT"
+        echo "total=$((PASS_COUNT + FAIL_COUNT))" >> "$GITHUB_OUTPUT"
+
+        if [ "$EXIT_CODE" -eq 0 ]; then
+          echo "overall-passed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "overall-passed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Summary
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "## 🔄 AgentBench Behavioral Gate" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$EXIT_CODE" -eq 0 ]; then
+          echo "✅ **GATE PASSED** — all workflows nominal" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "❌ **GATE FAILED** — behavioral regression detected" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Threshold | $(echo $AGENTBENCH_THRESHOLD) |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Passed | $PASS_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Failed | $FAIL_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+
+        exit $EXIT_CODE
+
+    - name: "Upload gate reports"
+      if: inputs.upload-reports == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: agentbench-gate-reports
+        path: |
+          ${{ inputs.workflows-dir }}/.agentbench/reports/
+          ${{ inputs.workflows-dir }}/gate-output.txt
+        retention-days: 30
+        if-no-files-found: warn
