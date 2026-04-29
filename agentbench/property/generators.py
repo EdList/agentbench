@@ -338,7 +338,7 @@ class AgentInput(_GeneratorMixin):
         words = value.split()
 
         # 1. Remove words one at a time from the end
-        for i in range(len(words), 0, -1):
+        for i in range(len(words) - 1, 0, -1):
             candidates.append(" ".join(words[:i]))
 
         # 2. Remove each word individually

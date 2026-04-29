@@ -197,7 +197,8 @@ class TestSavedAgentsApi:
 
         assert resp.status_code == 422
 
-    def test_create_saved_agent_rejects_nonstandard_port(self, client: TestClient):
+    def test_create_saved_agent_allows_safe_nonstandard_port(self, client: TestClient):
+        """Ports like 8443 (HTTPS alt) are allowed — only SSRF-dangerous ports blocked."""
         project = client.post(
             "/api/v1/projects",
             json={"name": "Support Agent"},
@@ -210,7 +211,23 @@ class TestSavedAgentsApi:
             headers=_auth_headers(),
         )
 
-        assert resp.status_code == 400
+        assert resp.status_code == 201
+
+    def test_create_saved_agent_rejects_ssrf_port(self, client: TestClient):
+        """SSRF-dangerous ports (MySQL 3306, Redis 6379, etc.) are blocked."""
+        project = client.post(
+            "/api/v1/projects",
+            json={"name": "Support Agent"},
+            headers=_auth_headers(),
+        ).json()
+
+        resp = client.post(
+            f"/api/v1/projects/{project['id']}/agents",
+            json={"name": "MySQL Port", "agent_url": "https://example.com:3306/agent"},
+            headers=_auth_headers(),
+        )
+
+        assert resp.status_code == 422
 
 
 class TestScanPoliciesApi:

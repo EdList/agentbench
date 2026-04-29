@@ -149,7 +149,7 @@ def _shrink_string(value: str) -> list[str]:
         candidates.append(value[:mid])
 
     # Remove substrings from the end
-    for i in range(len(value), 0, -1):
+    for i in range(len(value) - 1, 0, -1):
         candidates.append(value[:i])
 
     # Remove individual words

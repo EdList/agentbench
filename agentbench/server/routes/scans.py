@@ -346,12 +346,15 @@ def _validate_agent_url(url: str) -> None:
             detail="URL must contain a valid hostname.",
         )
 
-    # Restrict ports to standard HTTP/HTTPS
+    # Block dangerous ports (SSRF mitigation) — same list as schema validators
+    _ssrf_blocked_ports = frozenset(
+        {22, 23, 25, 465, 587, 993, 995, 3306, 5432, 6379, 9200, 27017}
+    )
     port = parsed.port
-    if port is not None and port not in (80, 443):
+    if port is not None and port in _ssrf_blocked_ports:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Non-standard port {port} is not allowed. Only ports 80 and 443 are permitted.",
+            detail=f"Port {port} is not allowed (SSRF-blocked).",
         )
 
     # Block well-known internal / cloud-metadata hostnames
@@ -1379,6 +1382,7 @@ def scan_history(
 ) -> list[ScanHistoryEntryResponse]:
     """List persisted scan history for a specific agent URL."""
     validated_url = _validate_url_path_param(agent_url)
+    _validate_agent_url(validated_url)
     return _get_store().list_scans(
         agent_url=validated_url,
         principal=principal,
@@ -1397,6 +1401,7 @@ def regression_report(
 ) -> RegressionReportResponse:
     """Get regression report comparing the two latest scans for an agent."""
     validated_url = _validate_url_path_param(agent_url)
+    _validate_agent_url(validated_url)
     report = _get_store().get_regression_report(validated_url, principal=principal)
     if report is None:
         raise HTTPException(

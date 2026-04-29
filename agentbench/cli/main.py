@@ -1641,6 +1641,11 @@ def _run_scan(
     fmt = "oai" if oai else "auto"
     hdrs = headers or {}
 
+    client_kwargs: dict[str, Any] = {"timeout": 30.0}
+    if hdrs:
+        client_kwargs["headers"] = hdrs
+    shared_client = httpx.Client(**client_kwargs)
+
     def _agent_fn(prompt: str) -> str:
         if fmt == "oai":
             body = {
@@ -1651,13 +1656,9 @@ def _run_scan(
             body = {"prompt": prompt}
 
         try:
-            client_kwargs: dict[str, Any] = {"timeout": 30.0}
-            if hdrs:
-                client_kwargs["headers"] = hdrs
-            with httpx.Client(**client_kwargs) as client:
-                resp = client.post(agent_url, json=body)
-                resp.raise_for_status()
-                data = resp.json()
+            resp = shared_client.post(agent_url, json=body)
+            resp.raise_for_status()
+            data = resp.json()
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             return f"ERROR: Connection failed — {exc}"
         except httpx.HTTPStatusError as exc:
@@ -1685,8 +1686,11 @@ def _run_scan(
         selected_cats = [c.strip() for c in categories.split(",")]
 
     deadline = _time.monotonic() + timeout
-    prober = AgentProber(_agent_fn, categories=selected_cats)
-    session = prober.probe_all(deadline=deadline)
+    try:
+        prober = AgentProber(_agent_fn, categories=selected_cats)
+        session = prober.probe_all(deadline=deadline)
+    finally:
+        shared_client.close()
 
     analyzer = BehaviorAnalyzer()
     behaviors = analyzer.analyze(session)
@@ -2063,6 +2067,9 @@ def dashboard(
     base_dir: str | None = typer.Option(
         None, "--dir", "-d", help="Base directory (default: cwd)"
     ),
+    token: str | None = typer.Option(
+        None, "--token", "-t", help="Bearer token for API authentication"
+    ),
 ) -> None:
     """Start the workflow health dashboard.
 
@@ -2073,7 +2080,7 @@ def dashboard(
     """
     from agentbench.cli.dashboard import dashboard_command
 
-    dashboard_command(port, host, base_dir)
+    dashboard_command(port, host, base_dir, token)
 
 
 if __name__ == "__main__":

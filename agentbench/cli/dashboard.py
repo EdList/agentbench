@@ -5,18 +5,20 @@ Start the workflow health dashboard server.
 
 from __future__ import annotations
 
+import logging
+
 import typer
 from rich.console import Console
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 def dashboard_command(
-    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
-    host: str = typer.Option("127.0.0.1", "--host", help="Server host"),
-    base_dir: str | None = typer.Option(
-        None, "--dir", "-d", help="Base directory (default: cwd)"
-    ),
+    port: int = 8080,
+    host: str = "127.0.0.1",
+    base_dir: str | None = None,
+    token: str | None = None,
 ) -> None:
     """Start the workflow health dashboard.
 
@@ -33,6 +35,27 @@ def dashboard_command(
     console.print("  [bold cyan]⚡ AgentBench Dashboard[/bold cyan]")
     console.print(f"  Serving from: {root}")
     console.print(f"  URL: [underline]http://{host}:{port}[/underline]")
+
+    if token:
+        console.print("  Auth: [green]bearer token enabled[/green]")
+    else:
+        console.print(
+            "  Auth: [yellow]disabled[/yellow] "
+            "(use --token to enable)"
+        )
+
+    # Warn when binding to non-localhost
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        logger.warning(
+            "Dashboard is binding to a non-localhost address (%s). "
+            "Ensure the network is trusted or use --token to enable authentication.",
+            host,
+        )
+        console.print(
+            f"  [yellow]⚠ Binding to non-localhost ({host}). "
+            "Consider using --token.[/yellow]"
+        )
+
     console.print("  Press Ctrl+C to stop")
     console.print()
 
@@ -41,7 +64,7 @@ def dashboard_command(
 
         from agentbench.dashboard.app import create_dashboard_app
 
-        app = create_dashboard_app(base_dir=root)
+        app = create_dashboard_app(base_dir=root, auth_token=token)
         uvicorn.run(app, host=host, port=port, log_level="info")
     except ImportError:
         console.print(

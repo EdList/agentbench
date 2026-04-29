@@ -15,10 +15,12 @@ API endpoints:
 from __future__ import annotations
 
 import json
+import logging
+import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 
@@ -27,19 +29,32 @@ from agentbench.recorder.workflow import Workflow
 _DASHBOARD_DIR = Path(__file__).resolve().parent / "templates"
 _WORKFLOWS_DIR = Path(".agentbench/workflows")
 _REPORTS_DIR = Path(".agentbench/reports")
+_LOGGER = logging.getLogger(__name__)
+
+# Valid workflow names: alphanumeric, hyphens, underscores only
+_WORKFLOW_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def create_dashboard_app(
     base_dir: Path | None = None,
+    auth_token: str | None = None,
 ) -> FastAPI:
     """Create the dashboard FastAPI application.
 
     Args:
         base_dir: Root directory containing ``.agentbench/``.
             Defaults to cwd.
+        auth_token: Optional bearer token for API authentication.
+            If None, a warning is logged and all requests are allowed.
     """
     root = base_dir or Path.cwd()
     rp_dir = root / _REPORTS_DIR
+
+    if auth_token is None:
+        _LOGGER.warning(
+            "Dashboard running WITHOUT authentication. "
+            "Set --token to enable bearer token auth."
+        )
 
     app = FastAPI(
         title="AgentBench Dashboard",
@@ -53,6 +68,22 @@ def create_dashboard_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # -- Bearer token auth middleware for /api/* routes ----------------------
+
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next: Any) -> Response:
+        if request.url.path.startswith("/api/"):
+            if auth_token is not None:
+                auth_header = request.headers.get("Authorization", "")
+                expected = f"Bearer {auth_token}"
+                if auth_header != expected:
+                    return Response(
+                        content='{"detail":"Unauthorized"}',
+                        status_code=401,
+                        media_type="application/json",
+                    )
+        return await call_next(request)
 
     # -- Helpers -------------------------------------------------------------
 
@@ -175,6 +206,14 @@ def create_dashboard_app(
     @app.get("/api/workflows/{name}", tags=["dashboard"])
     def get_workflow(name: str) -> dict[str, Any]:
         """Get detailed info for a single workflow."""
+        if not _WORKFLOW_NAME_RE.match(name):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Workflow name must contain only alphanumeric "
+                    "characters, hyphens, and underscores."
+                ),
+            )
         try:
             wf = Workflow.load(name, base_dir=root)
         except FileNotFoundError:

@@ -377,7 +377,7 @@ class TestRunner:
                 for method_name, display_name, param_info in test_items:
                     # Create a fresh instance for each test to prevent state leakage
                     instance = suite_class()
-                    instance.__dict__.update(shared_class_state)
+                    instance.__dict__.update(copy.deepcopy(shared_class_state))
                     result = self._run_single_test(
                         instance, method_name, display_name, param_info, suite_name
                     )
