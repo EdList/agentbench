@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ class ScanStore:
         self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self._retention_days = DEFAULT_RETENTION_DAYS if retention_days is None else retention_days
         self._save_count: int = 0
+        self._save_lock = threading.Lock()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -178,8 +180,10 @@ class ScanStore:
                 )
 
         # Periodic cleanup — only every 10 saves to reduce I/O overhead.
-        self._save_count = getattr(self, "_save_count", 0) + 1
-        if self._save_count % 10 == 0:
+        with self._save_lock:
+            self._save_count += 1
+            should_cleanup = self._save_count % 10 == 0
+        if should_cleanup:
             self.cleanup_old_scans()
 
     def get_scan(

@@ -258,9 +258,14 @@ class MultiAgentTest:
                 current_message = response
                 turn_count += 1
 
-                if stop_condition and stop_condition(result):
-                    result.duration = time.time() - start_time
-                    return result
+                if stop_condition:
+                    try:
+                        should_stop = stop_condition(result)
+                    except Exception:
+                        should_stop = False
+                    if should_stop:
+                        result.duration = time.time() - start_time
+                        return result
 
             # Check if we should stop after a full round (consensus / termination)
             if self._should_stop(result):
@@ -304,10 +309,22 @@ class MultiAgentTest:
             seen: set[str] = set()
             order: list[_AgentEntry] = []
             for source, targets in self._custom_routes.items():
+                if source not in name_to_entry:
+                    raise ValueError(
+                        f"CUSTOM topology route references unknown source "
+                        f"agent '{source}'. Registered agents: "
+                        f"{sorted(name_to_entry.keys())}"
+                    )
                 if source not in seen:
                     seen.add(source)
                     order.append(name_to_entry[source])
                 for target in targets:
+                    if target not in name_to_entry:
+                        raise ValueError(
+                            f"CUSTOM topology route references unknown target "
+                            f"agent '{target}' (from source '{source}'). "
+                            f"Registered agents: {sorted(name_to_entry.keys())}"
+                        )
                     if target not in seen:
                         seen.add(target)
                         order.append(name_to_entry[target])

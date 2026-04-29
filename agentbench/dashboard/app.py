@@ -68,19 +68,40 @@ def create_dashboard_app(
                 continue
         return reports
 
-    def _scan_all_reports() -> list[dict[str, Any]]:
-        """Load all reports from the reports directory."""
+    def _scan_all_reports(
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Load reports from the reports directory with filesystem-level pagination.
+
+        Returns (page_of_reports, total_count).
+        """
         if not rp_dir.exists():
-            return []
+            return [], 0
+
+        # Gather all JSON files sorted by mtime (newest first) without reading contents
+        all_files = sorted(
+            rp_dir.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        total = len(all_files)
+
+        # Apply filesystem-level pagination: only load the slice needed
+        if limit is not None:
+            page_files = all_files[offset : offset + limit]
+        else:
+            page_files = all_files
+
         reports: list[dict[str, Any]] = []
-        for path in sorted(rp_dir.glob("*.json")):
+        for path in page_files:
             try:
                 data = json.loads(path.read_text())
                 data["_file"] = path.name
                 reports.append(data)
             except (json.JSONDecodeError, KeyError):
                 continue
-        return reports
+        return reports, total
 
     # -- API: Stats ----------------------------------------------------------
 
@@ -88,7 +109,7 @@ def create_dashboard_app(
     def get_stats() -> dict[str, Any]:
         """Dashboard overview statistics."""
         workflows = Workflow.list_workflows(base_dir=root)
-        all_reports = _scan_all_reports()
+        all_reports, _ = _scan_all_reports()
 
         total_workflows = len(workflows)
         total_reports = len(all_reports)
@@ -193,16 +214,13 @@ def create_dashboard_app(
         limit: int = 50, offset: int = 0,
     ) -> dict[str, Any]:
         """List all replay reports (paginated, newest first)."""
-        all_reports = _scan_all_reports()
-        all_reports.reverse()  # newest first
-
-        page = all_reports[offset : offset + limit]
+        page_reports, total = _scan_all_reports(limit=limit, offset=offset)
 
         return {
-            "total": len(all_reports),
+            "total": total,
             "limit": limit,
             "offset": offset,
-            "reports": page,
+            "reports": page_reports,
         }
 
     # -- API: Timeline -------------------------------------------------------
@@ -210,7 +228,7 @@ def create_dashboard_app(
     @app.get("/api/timeline", tags=["dashboard"])
     def get_timeline() -> list[dict[str, Any]]:
         """Regression timeline — scores over time for charts."""
-        all_reports = _scan_all_reports()
+        all_reports, _ = _scan_all_reports()
 
         timeline: list[dict[str, Any]] = []
         for r in all_reports:

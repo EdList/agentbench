@@ -131,8 +131,10 @@ class TrajectoryStore:
         """Delete a saved trajectory."""
         name = self._sanitize_name(name)
         path = self._base_dir / f"{name}.json"
-        if path.exists():
+        try:
             path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 class TrajectoryDiff:

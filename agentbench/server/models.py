@@ -199,22 +199,31 @@ class Trajectory(Base):
 # Engine / session helpers
 # ---------------------------------------------------------------------------
 
+import threading  # noqa: E402
+
 from sqlalchemy import create_engine as _create_engine  # noqa: E402
 
 _engine = None
 _SessionLocal: sessionmaker | None = None
+_engine_lock = threading.Lock()
 
 
 def get_engine():
     """Return the shared SQLAlchemy engine (lazy singleton)."""
     global _engine
     if _engine is None:
-        _engine = _create_engine(
-            settings.database_url,
-            echo=settings.debug,
-            pool_pre_ping=True,
-            connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
-        )
+        with _engine_lock:
+            if _engine is None:
+                _engine = _create_engine(
+                    settings.database_url,
+                    echo=settings.debug,
+                    pool_pre_ping=True,
+                    connect_args=(
+                        {"check_same_thread": False}
+                        if "sqlite" in settings.database_url
+                        else {}
+                    ),
+                )
     return _engine
 
 
@@ -222,7 +231,9 @@ def get_session_factory() -> sessionmaker:
     """Return a session factory bound to the current engine."""
     global _SessionLocal
     if _SessionLocal is None:
-        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
+        with _engine_lock:
+            if _SessionLocal is None:
+                _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
     return _SessionLocal
 
 
@@ -254,25 +265,29 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
     _batch_size = 500
     try:
         # Batch-delete old RunResults via their parent Runs in chunks
-        old_run_ids = [
-            row[0]
-            for row in (
-                db.query(Run.id)
-                .filter(Run.created_at.is_not(None), Run.created_at < cutoff)
-                .all()
-            )
-        ]
         deleted_run_results = 0
-        for start in range(0, len(old_run_ids), _batch_size):
-            chunk = old_run_ids[start : start + _batch_size]
+        while True:
+            old_run_ids = [
+                row[0]
+                for row in (
+                    db.query(Run.id)
+                    .filter(Run.created_at.is_not(None), Run.created_at < cutoff)
+                    .limit(_batch_size)
+                    .all()
+                )
+            ]
+            if not old_run_ids:
+                break
             deleted_run_results += (
                 db.execute(
-                    delete(RunResult).where(RunResult.run_id.in_(chunk))
+                    delete(RunResult).where(RunResult.run_id.in_(old_run_ids))
                 ).rowcount or 0
             )
-        deleted_runs = db.execute(
-            delete(Run).where(Run.created_at.is_not(None), Run.created_at < cutoff)
-        ).rowcount or 0
+            db.execute(
+                delete(Run).where(Run.id.in_(old_run_ids))
+            )
+            db.commit()
+        deleted_runs = 0  # already deleted inside the loop
         deleted_test_suites = db.execute(
             delete(TestSuite).where(
                 TestSuite.created_at.is_not(None),

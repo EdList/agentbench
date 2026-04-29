@@ -112,15 +112,23 @@ def create_app() -> FastAPI:
                     content={"detail": "Request body too large."},
                 )
         # For methods that typically carry a body, consume and size-check the
-        # actual payload.  This catches chunked encoding and missing headers.
+        # actual payload in chunks.  This catches chunked encoding and missing
+        # headers, and aborts early without fully buffering oversized bodies.
         if request.method in ("POST", "PUT", "PATCH"):
-            body = await request.body()
-            if len(body) > _max_body:
-                from fastapi.responses import JSONResponse
-                return JSONResponse(
-                    status_code=413,
-                    content={"detail": "Request body too large."},
-                )
+            from fastapi.responses import JSONResponse
+
+            body_parts: list[bytes] = []
+            total = 0
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > _max_body:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body too large."},
+                    )
+                body_parts.append(chunk)
+            # Store the reassembled body so downstream handlers can read it
+            request._body = b"".join(body_parts)
         return await call_next(request)
 
     # Health check — not versioned

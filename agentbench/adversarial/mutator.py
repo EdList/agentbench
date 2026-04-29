@@ -408,6 +408,8 @@ class MutatorChain:
                 for v in all_variants:
                     new_variants.extend(mutator.generate(v))
                 all_variants.extend(new_variants)
+                if len(all_variants) >= max_variants:
+                    return all_variants[:max_variants]
         return all_variants[:max_variants]
 
     def apply_trajectory(
@@ -426,6 +428,8 @@ class MutatorChain:
                 for v in all_variants:
                     new_variants.extend(mutator.generate(v))
                 all_variants.extend(new_variants)
+                if len(all_variants) >= max_variants:
+                    return all_variants[:max_variants]
         return all_variants[:max_variants]
 
 

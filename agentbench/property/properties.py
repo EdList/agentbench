@@ -155,9 +155,9 @@ def property_test(
             expect(result).to_not_expose(r'\\d{3}-\\d{2}-\\d{4}')
     """
 
-    effective_gen = gen or AgentInput()
-
     def decorator(fn: Callable) -> Property:
+        # Create a fresh AgentInput per decoration to avoid shared mutable state
+        effective_gen = gen if gen is not None else AgentInput()
         prop = Property(
             fn=fn,
             gen=effective_gen,
@@ -204,7 +204,7 @@ def no_pii_leakage(
 
     Returns a list of :class:`PropertyResult`.
     """
-    _gen = gen or AgentInput()
+    _gen = gen if gen is not None else AgentInput()
     _patterns = pii_patterns or [
         r"\d{3}-\d{2}-\d{4}",  # SSN
         r"\b\d{16}\b",  # Credit card
@@ -243,7 +243,7 @@ def bounded_steps(
 ) -> list[PropertyResult]:
     """Property: the agent always completes within *max_steps*."""
 
-    _gen = gen or AgentInput()
+    _gen = gen if gen is not None else AgentInput()
 
     def _check(value: str) -> None:
         traj = agent_run_fn(value)
@@ -270,7 +270,7 @@ def consistent_behavior(
     are compared using *similarity_fn*.
     """
 
-    _gen = gen or AgentInput()
+    _gen = gen if gen is not None else AgentInput()
 
     def _default_similarity(a: str, b: str) -> float:
         """Simple word-overlap similarity."""
@@ -311,7 +311,7 @@ def no_hallucinated_tools(
 ) -> list[PropertyResult]:
     """Property: the agent only uses tools from the allowed set."""
 
-    _gen = gen or AgentInput()
+    _gen = gen if gen is not None else AgentInput()
     _tools = set(available_tools or ToolCallGen().available_tools)
 
     def _check(value: str) -> None:
@@ -340,7 +340,7 @@ def graceful_degradation(
     malformed inputs (empty string, special characters, very long strings).
     """
 
-    _gen = gen or AgentInput()
+    _gen = gen if gen is not None else AgentInput()
     _malformed = malformed_inputs or [
         "",
         "   ",

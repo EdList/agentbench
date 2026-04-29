@@ -135,7 +135,7 @@ class LangGraphAdapter(AgentAdapter):
         node execution as a step.
         """
         start = time.time()
-        failure_injections = failure_injections or []
+        failure_injections = list(failure_injections) if failure_injections else []
         latency_injections = latency_injections or []
 
         try:

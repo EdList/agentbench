@@ -53,7 +53,7 @@ class RawAPIAdapter(AgentAdapter):
         self._endpoint = endpoint
         self._headers = headers or {}
         self._func = func
-        self._tools = tools or []
+        self._tools = tools if tools is not None else []
         self._timeout = timeout
 
     def get_available_tools(self) -> list[str]:

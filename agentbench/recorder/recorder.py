@@ -190,10 +190,13 @@ class SessionRecorder:
 
         # Flexible response key extraction
         content = (
-            data.get("response")
-            or data.get("content")
-            or data.get("text")
-            or str(data)
+            data["response"]
+            if "response" in data and data["response"] is not None
+            else data["content"]
+            if "content" in data and data["content"] is not None
+            else data["text"]
+            if "text" in data and data["text"] is not None
+            else str(data)
         )
 
         # Extract tool calls if present

@@ -135,7 +135,7 @@ class OpenAIAdapter(AgentAdapter):
         injection) and submits outputs back to the run.
         """
         start = time.time()
-        failure_injections = failure_injections or []
+        failure_injections = list(failure_injections) if failure_injections else []
         latency_injections = latency_injections or []
 
         try:

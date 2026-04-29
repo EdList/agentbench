@@ -1102,27 +1102,31 @@ def _list_recent_scans(
     if persisted_rows:
         return [_scan_summary_from_persisted(row) for row in persisted_rows]
 
-    entries = _scan_store.values()
-    # Filter + sort in-memory; LRU store is bounded by scan_memory_cap
-    filtered = [e for e in entries if principal is None or e.get("principal") == principal]
-    sorted_entries = sorted(
-        filtered,
-        key=lambda e: e.get("timestamp", ""),
-        reverse=True,
-    )
-    # Safety: cap offset to prevent negative slice
-    safe_offset = min(offset, len(sorted_entries))
-    page = sorted_entries[safe_offset : safe_offset + limit]
-    return [
-        ScanSummaryResponse(
-            scan_id=e["scan_id"],
-            agent_url=e["agent_url"],
-            overall_score=e["report"].overall_score,
-            overall_grade=e["report"].overall_grade,
-            timestamp=e["timestamp"],
+    # Only fall back to in-memory store when no persistent store is configured
+    if settings.scan_store_mode != "server":
+        entries = _scan_store.values()
+        # Filter + sort in-memory; LRU store is bounded by scan_memory_cap
+        filtered = [e for e in entries if principal is None or e.get("principal") == principal]
+        sorted_entries = sorted(
+            filtered,
+            key=lambda e: e.get("timestamp", ""),
+            reverse=True,
         )
-        for e in page
-    ]
+        # Safety: cap offset to prevent negative slice
+        safe_offset = min(offset, len(sorted_entries))
+        page = sorted_entries[safe_offset : safe_offset + limit]
+        return [
+            ScanSummaryResponse(
+                scan_id=e["scan_id"],
+                agent_url=e["agent_url"],
+                overall_score=e["report"].overall_score,
+                overall_grade=e["report"].overall_grade,
+                timestamp=e["timestamp"],
+            )
+            for e in page
+        ]
+
+    return []
 
 
 def _run_scan(

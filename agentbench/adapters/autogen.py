@@ -127,7 +127,7 @@ class AutoGenAdapter(AgentAdapter):
         group chat manager) and captures each message as a step.
         """
         start = time.time()
-        failure_injections = failure_injections or []
+        failure_injections = list(failure_injections) if failure_injections else []
         latency_injections = latency_injections or []
 
         # Collect messages via a custom hook

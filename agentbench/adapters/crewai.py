@@ -114,7 +114,7 @@ class CrewAIAdapter(AgentAdapter):
         execution as a step in the trajectory.
         """
         start = time.time()
-        failure_injections = failure_injections or []
+        failure_injections = list(failure_injections) if failure_injections else []
         latency_injections = latency_injections or []
 
         try:

@@ -768,6 +768,12 @@ def cmd_scan(
 
     format_mode = "oai" if oai else "auto"
 
+    # Create a single httpx.Client for the entire scan (reuses TCP connection)
+    client_kwargs: dict[str, Any] = {"timeout": 30.0}
+    if headers:
+        client_kwargs["headers"] = headers
+    shared_client = httpx.Client(**client_kwargs)
+
     def _agent_fn(prompt: str) -> str:
         """Send a probe prompt to the agent and return the text response."""
         if format_mode == "oai":
@@ -779,13 +785,9 @@ def cmd_scan(
             body = {"prompt": prompt}
 
         try:
-            client_kwargs = {"timeout": 30.0}
-            if headers:
-                client_kwargs["headers"] = headers
-            with httpx.Client(**client_kwargs) as client:
-                resp = client.post(agent_url, json=body)
-                resp.raise_for_status()
-                data = resp.json()
+            resp = shared_client.post(agent_url, json=body)
+            resp.raise_for_status()
+            data = resp.json()
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             return f"ERROR: Connection failed — {exc}"
         except httpx.HTTPStatusError as exc:
@@ -836,8 +838,11 @@ def cmd_scan(
 
     console.print("\n[bold]Step 1[/bold] [dim]— probing agent behaviors[/dim]")
     deadline = _time.monotonic() + timeout
-    prober = AgentProber(_agent_fn, categories=selected_cats)
-    session = prober.probe_all(deadline=deadline)
+    try:
+        prober = AgentProber(_agent_fn, categories=selected_cats)
+        session = prober.probe_all(deadline=deadline)
+    finally:
+        shared_client.close()
     errors = sum(1 for r in session.results if r.metadata.get("status") == "error")
     console.print(
         f"  [green]✓[/green] {len(session.results)} probes in {session.duration:.1f}s"

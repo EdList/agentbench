@@ -336,7 +336,7 @@ class TestRunner:
                     futures = {}
                     for idx, (method_name, display_name, param_info) in enumerate(test_items):
                         instance = suite_class()
-                        instance.__dict__.update(shared_class_state)
+                        instance.__dict__.update(copy.deepcopy(shared_class_state))
                         future = executor.submit(
                             self._run_single_test,
                             instance,
