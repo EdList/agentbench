@@ -14,6 +14,7 @@ API endpoints:
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import re
@@ -77,7 +78,7 @@ def create_dashboard_app(
             if auth_token is not None:
                 auth_header = request.headers.get("Authorization", "")
                 expected = f"Bearer {auth_token}"
-                if auth_header != expected:
+                if not hmac.compare_digest(auth_header, expected):
                     return Response(
                         content='{"detail":"Unauthorized"}',
                         status_code=401,

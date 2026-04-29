@@ -230,6 +230,7 @@ class MultiAgentTest:
 
         turn_count = 0
         while turn_count < max_turns:
+            prev_turn_count = turn_count
             for agent_entry in turn_order:
                 if turn_count >= max_turns:
                     break
@@ -266,6 +267,12 @@ class MultiAgentTest:
                     if should_stop:
                         result.duration = time.time() - start_time
                         return result
+
+            # Guard against infinite loops: if no agent was invoked in this
+            # entire round (all were filtered by CUSTOM routes), break out
+            # to avoid spinning forever with a stuck turn_count.
+            if turn_count == prev_turn_count:
+                break
 
             # Check if we should stop after a full round (consensus / termination)
             if self._should_stop(result):

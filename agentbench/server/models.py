@@ -266,6 +266,7 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
     try:
         # Batch-delete old RunResults via their parent Runs in chunks
         deleted_run_results = 0
+        deleted_runs = 0
         while True:
             old_run_ids = [
                 row[0]
@@ -283,11 +284,11 @@ def cleanup_old_records(retention_days: int | None = None) -> dict[str, int]:
                     delete(RunResult).where(RunResult.run_id.in_(old_run_ids))
                 ).rowcount or 0
             )
-            db.execute(
+            run_delete_result = db.execute(
                 delete(Run).where(Run.id.in_(old_run_ids))
             )
+            deleted_runs += run_delete_result.rowcount or 0
             db.commit()
-        deleted_runs = 0  # already deleted inside the loop
         deleted_test_suites = db.execute(
             delete(TestSuite).where(
                 TestSuite.created_at.is_not(None),
