@@ -82,22 +82,16 @@ async def send_probe(
                     payload["messages"] = messages
                     fu_start = time.monotonic()
                     try:
-                        fu_resp = await client.post(
-                            url, json=payload, headers=request_headers
-                        )
+                        fu_resp = await client.post(url, json=payload, headers=request_headers)
                         fu_elapsed = (time.monotonic() - fu_start) * 1000
                         if fu_resp.status_code < 400:
                             fu_body = fu_resp.json()
                             fu_text = _extract_response_text(fu_body)
                             result.follow_up_responses.append(fu_text)
-                            messages.append(
-                                {"role": "assistant", "content": fu_text}
-                            )
+                            messages.append({"role": "assistant", "content": fu_text})
                             result.latency_ms += fu_elapsed
                         else:
-                            result.follow_up_responses.append(
-                                f"[HTTP {fu_resp.status_code}]"
-                            )
+                            result.follow_up_responses.append(f"[HTTP {fu_resp.status_code}]")
                     except Exception as e:
                         result.follow_up_responses.append(f"[Error: {e}]")
 

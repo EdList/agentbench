@@ -19,38 +19,34 @@ class TestProbe:
 
     def test_is_multi_turn_with_follow_ups(self):
         p = Probe(
-            id="t", domain=Domain.SAFETY, category="test", description="t",
-            prompt="hi", follow_ups=["follow up"],
+            id="t",
+            domain=Domain.SAFETY,
+            category="test",
+            description="t",
+            prompt="hi",
+            follow_ups=["follow up"],
         )
         assert p.is_multi_turn
 
 
 class TestProbeResult:
     def test_is_error_when_no_error(self):
-        p = Probe(
-            id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hi"
-        )
+        p = Probe(id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hi")
         r = ProbeResult(probe=p, response="ok", status_code=200)
         assert not r.is_error
 
     def test_is_error_when_error_set(self):
-        p = Probe(
-            id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hi"
-        )
+        p = Probe(id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hi")
         r = ProbeResult(probe=p, error="Timeout")
         assert r.is_error
 
     def test_is_error_when_no_status_code(self):
-        p = Probe(
-            id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hi"
-        )
+        p = Probe(id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hi")
         r = ProbeResult(probe=p)
         assert r.is_error
 
     def test_full_conversation_single_turn(self):
-        p = Probe(
-            id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hello"
-        )
+        p = Probe(id="t", domain=Domain.SAFETY, category="test", description="t", prompt="hello")
         r = ProbeResult(probe=p, response="world")
         conv = r.full_conversation
         assert len(conv) == 2
@@ -61,8 +57,12 @@ class TestProbeResult:
 
     def test_full_conversation_multi_turn(self):
         p = Probe(
-            id="t", domain=Domain.SAFETY, category="test", description="t",
-            prompt="q1", follow_ups=["q2", "q3"],
+            id="t",
+            domain=Domain.SAFETY,
+            category="test",
+            description="t",
+            prompt="q1",
+            follow_ups=["q2", "q3"],
         )
         r = ProbeResult(probe=p, response="a1", follow_up_responses=["a2"])
         conv = r.full_conversation
@@ -110,19 +110,33 @@ class TestScanResult:
 
     def test_critical_and_warning_counts(self):
         f1 = Finding(
-            probe_id="x", domain=Domain.SAFETY, category="c",
-            severity=Severity.CRITICAL, verdict=Verdict.FAIL,
-            title="t", detail="d", evidence="e",
+            probe_id="x",
+            domain=Domain.SAFETY,
+            category="c",
+            severity=Severity.CRITICAL,
+            verdict=Verdict.FAIL,
+            title="t",
+            detail="d",
+            evidence="e",
         )
         f2 = Finding(
-            probe_id="y", domain=Domain.SAFETY, category="c",
-            severity=Severity.WARNING, verdict=Verdict.FAIL,
-            title="t", detail="d", evidence="e",
+            probe_id="y",
+            domain=Domain.SAFETY,
+            category="c",
+            severity=Severity.WARNING,
+            verdict=Verdict.FAIL,
+            title="t",
+            detail="d",
+            evidence="e",
         )
         sr = ScanResult(
-            url="http://test.com", overall_score=70,
-            domain_scores={}, findings=[f1, f2],
-            duration_seconds=1.0, probes_run=2, timestamp="",
+            url="http://test.com",
+            overall_score=70,
+            domain_scores={},
+            findings=[f1, f2],
+            duration_seconds=1.0,
+            probes_run=2,
+            timestamp="",
         )
         assert sr.critical_count == 1
         assert sr.warning_count == 1

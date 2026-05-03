@@ -1,21 +1,20 @@
 """Probe registry — loads and indexes all probe definitions."""
 
+from pathlib import Path
+
 from agentbench.probes.base import Domain, Probe
-from agentbench.probes.capability import CAPABILITY_PROBES
-from agentbench.probes.consistency import CONSISTENCY_PROBES
-from agentbench.probes.reliability import RELIABILITY_PROBES
-from agentbench.probes.safety import SAFETY_PROBES
+from agentbench.probes.yaml_loader import load_all_yaml_probes
+
+_BUILTIN_DIR = Path(__file__).parent / "builtin"
 
 _ALL_PROBES: list[Probe] | None = None
 
 
 def get_all_probes() -> list[Probe]:
-    """Return all probes, lazily loaded and cached."""
+    """Return all probes, lazily loaded from YAML and cached."""
     global _ALL_PROBES
     if _ALL_PROBES is None:
-        _ALL_PROBES = (
-            SAFETY_PROBES + RELIABILITY_PROBES + CAPABILITY_PROBES + CONSISTENCY_PROBES
-        )
+        _ALL_PROBES = load_all_yaml_probes(_BUILTIN_DIR)
     return _ALL_PROBES
 
 

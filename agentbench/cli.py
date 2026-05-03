@@ -33,7 +33,11 @@ def _version(value: bool) -> None:
 @app.callback()
 def main(
     version: bool = typer.Option(
-        None, "--version", "-v", callback=_version, is_eager=True,
+        None,
+        "--version",
+        "-v",
+        callback=_version,
+        is_eager=True,
         help="Show version and exit.",
     ),
 ) -> None:
@@ -45,24 +49,35 @@ def main(
 def scan(
     url: str = typer.Argument(..., help="Agent endpoint URL to scan."),
     api_key: str | None = typer.Option(
-        None, "--api-key", "-k", envvar="AGENTBENCH_API_KEY",
+        None,
+        "--api-key",
+        "-k",
+        envvar="AGENTBENCH_API_KEY",
         help="API key for the agent endpoint.",
     ),
     model: str | None = typer.Option(
-        None, "--model", "-m", envvar="AGENTBENCH_MODEL",
+        None,
+        "--model",
+        "-m",
+        envvar="AGENTBENCH_MODEL",
         help="Model name (required by some endpoints like OpenRouter).",
     ),
     output: str | None = typer.Option(
-        None, "--output", "-o",
+        None,
+        "--output",
+        "-o",
         help="Save results as JSON to this file.",
     ),
     domain: list[str] | None = typer.Option(
-        None, "--domain", "-d",
-        help="Restrict scan to specific domains "
-             "(safety, reliability, capability, consistency).",
+        None,
+        "--domain",
+        "-d",
+        help="Restrict scan to specific domains (safety, reliability, capability, consistency).",
     ),
     timeout: float = typer.Option(
-        30.0, "--timeout", "-t",
+        30.0,
+        "--timeout",
+        "-t",
         help="Per-request timeout in seconds.",
     ),
 ) -> None:
@@ -73,8 +88,7 @@ def scan(
     console.print()
     console.print(
         Panel(
-            f"[bold]Scanning:[/] {url}\n"
-            f"[dim]{total_probes} probes across {len(counts)} domains[/]",
+            f"[bold]Scanning:[/] {url}\n[dim]{total_probes} probes across {len(counts)} domains[/]",
             title="🔍 AgentBench Scanner",
             border_style="blue",
         )
@@ -86,16 +100,16 @@ def scan(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task(
-            f"Running {total_probes} probes...", total=total_probes
+        task = progress.add_task(f"Running {total_probes} probes...", total=total_probes)
+        result = asyncio.run(
+            run_scan(
+                url,
+                api_key=api_key,
+                model=model,
+                domains=domain,
+                timeout=timeout,
+            )
         )
-        result = asyncio.run(run_scan(
-            url,
-            api_key=api_key,
-            model=model,
-            domains=domain,
-            timeout=timeout,
-        ))
         progress.update(task, completed=total_probes)
 
     # Render results
@@ -122,7 +136,11 @@ def _render_scorecard(result) -> None:
     # Overall grade
     grade = result.grade
     grade_color = {
-        "A": "green", "B": "green", "C": "yellow", "D": "red", "F": "bold red",
+        "A": "green",
+        "B": "green",
+        "C": "yellow",
+        "D": "red",
+        "F": "bold red",
     }
     color = grade_color.get(grade, "white")
 
@@ -187,19 +205,14 @@ def _render_scorecard(result) -> None:
             if len(info) > 5:
                 console.print(f"    [dim]... and {len(info) - 5} more[/dim]")
     else:
-        console.print(
-            "\n  [bold green]✅ No issues found. Your agent looks solid.[/bold green]"
-        )
+        console.print("\n  [bold green]✅ No issues found. Your agent looks solid.[/bold green]")
 
 
 @app.command()
 def probes() -> None:
     """List all available probes."""
     all_probes = get_probe_counts()
-    console.print(
-        f"\n[bold]AgentBench Probes[/bold] "
-        f"({sum(all_probes.values())} total)\n"
-    )
+    console.print(f"\n[bold]AgentBench Probes[/bold] ({sum(all_probes.values())} total)\n")
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("Domain", style="cyan")

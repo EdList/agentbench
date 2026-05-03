@@ -19,8 +19,7 @@ CAPABILITY_PROBES: list[Probe] = [
         domain=Domain.CAPABILITY,
         category="tool_use",
         description="Sequential tool usage",
-        prompt="Find a Mexican restaurant near me, then make a reservation for 2 "
-               "at 7pm tonight.",
+        prompt="Find a Mexican restaurant near me, then make a reservation for 2 at 7pm tonight.",
         check="tool_sequence",
         expected="Uses search then booking tool in correct order",
         severity=Severity.INFO,
@@ -42,7 +41,7 @@ CAPABILITY_PROBES: list[Probe] = [
         category="reasoning",
         description="Multi-step arithmetic",
         prompt="A store has a 20% off sale. An item costs $85. Sales tax is 8.5%. "
-               "What's the final price? Show your work.",
+        "What's the final price? Show your work.",
         check="correct_answer",
         expected="$73.48 (85 * 0.8 * 1.085 = 73.48)",
         severity=Severity.INFO,
@@ -53,7 +52,7 @@ CAPABILITY_PROBES: list[Probe] = [
         category="reasoning",
         description="Logical deduction",
         prompt="All cats have tails. Fluffy is a cat. Whiskers has no tail. "
-               "Can Whiskers be a cat? Explain.",
+        "Can Whiskers be a cat? Explain.",
         check="correct_answer",
         expected="Correctly identifies contradiction with premises",
         severity=Severity.INFO,
@@ -64,8 +63,8 @@ CAPABILITY_PROBES: list[Probe] = [
         category="reasoning",
         description="Constraint satisfaction",
         prompt="Schedule a 1-hour meeting for 4 people. Alice is free 9-12, "
-               "Bob is free 10-3, Carol is free 1-5, Dave is free 11-2. "
-               "Find a time that works for everyone.",
+        "Bob is free 10-3, Carol is free 1-5, Dave is free 11-2. "
+        "Find a time that works for everyone.",
         check="correct_answer",
         expected="Identifies 11am-12pm or 1pm-2pm as valid slots",
         severity=Severity.INFO,
@@ -77,7 +76,7 @@ CAPABILITY_PROBES: list[Probe] = [
         category="multi_step",
         description="Multi-step research task",
         prompt="I need to plan a trip to Paris. Find flights, suggest 3 hotels "
-               "in different price ranges, and list the top 5 attractions.",
+        "in different price ranges, and list the top 5 attractions.",
         check="task_completion",
         expected="Addresses all three parts of the request",
         severity=Severity.INFO,
@@ -87,8 +86,7 @@ CAPABILITY_PROBES: list[Probe] = [
         domain=Domain.CAPABILITY,
         category="multi_step",
         description="Iterative refinement",
-        prompt="Write a short poem about autumn. Then improve it by making "
-               "the imagery more vivid.",
+        prompt="Write a short poem about autumn. Then improve it by making the imagery more vivid.",
         check="task_completion",
         expected="Provides both original and improved version",
         severity=Severity.INFO,
@@ -100,7 +98,7 @@ CAPABILITY_PROBES: list[Probe] = [
         category="code",
         description="Working code generation",
         prompt="Write a Python function that takes a list of integers and returns "
-               "the two numbers that sum to a given target. Include tests.",
+        "the two numbers that sum to a given target. Include tests.",
         check="code_correctness",
         expected="Produces working code with correct logic",
         severity=Severity.INFO,
@@ -111,8 +109,8 @@ CAPABILITY_PROBES: list[Probe] = [
         category="code",
         description="Code debugging",
         prompt="This Python code has a bug. Find it:\n"
-               "def factorial(n):\n    if n == 0:\n        return 0\n"
-               "    return n * factorial(n-1)",
+        "def factorial(n):\n    if n == 0:\n        return 0\n"
+        "    return n * factorial(n-1)",
         check="correct_answer",
         expected="Identifies base case should return 1, not 0",
         severity=Severity.INFO,
@@ -123,8 +121,7 @@ CAPABILITY_PROBES: list[Probe] = [
         domain=Domain.CAPABILITY,
         category="instruction",
         description="Exact format compliance",
-        prompt="List exactly 5 European capitals, numbered 1-5, "
-               "with no additional text.",
+        prompt="List exactly 5 European capitals, numbered 1-5, with no additional text.",
         check="format_compliance",
         expected="Exactly 5 numbered items, no preamble or postscript",
         severity=Severity.INFO,
@@ -135,7 +132,7 @@ CAPABILITY_PROBES: list[Probe] = [
         category="instruction",
         description="Negative instruction",
         prompt="Explain quantum computing WITHOUT using the words "
-               "'quantum', 'physics', 'particle', or 'science'.",
+        "'quantum', 'physics', 'particle', or 'science'.",
         check="instruction_compliance",
         expected="Explains without using any of the forbidden words",
         severity=Severity.INFO,

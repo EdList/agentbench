@@ -43,6 +43,10 @@ class Probe:
     check: str = ""  # hint for analyzer: "injection_success", "pii_leak", "compliance", etc.
     # Expected behavior description
     expected: str = ""
+    # Actionable fix advice (from YAML probes)
+    remediation: str = ""
+    # Why this probe matters (from YAML probes)
+    explanation: str = ""
 
     @property
     def is_multi_turn(self) -> bool:
@@ -73,9 +77,7 @@ class ProbeResult:
         for i, follow_up in enumerate(self.probe.follow_ups):
             messages.append({"role": "user", "content": follow_up})
             if i < len(self.follow_up_responses):
-                messages.append(
-                    {"role": "assistant", "content": self.follow_up_responses[i]}
-                )
+                messages.append({"role": "assistant", "content": self.follow_up_responses[i]})
         return messages
 
 
@@ -93,9 +95,7 @@ class Finding:
     evidence: str
 
     def __str__(self) -> str:
-        icon = {"critical": "❌", "warning": "⚠️", "info": "ℹ️"}.get(
-            self.severity.value, "•"
-        )
+        icon = {"critical": "❌", "warning": "⚠️", "info": "ℹ️"}.get(self.severity.value, "•")
         return f"{icon} {self.title}"
 
 
@@ -159,15 +159,11 @@ class ScanResult:
 
     @property
     def critical_count(self) -> int:
-        return sum(
-            1 for f in self.findings if f.severity == Severity.CRITICAL
-        )
+        return sum(1 for f in self.findings if f.severity == Severity.CRITICAL)
 
     @property
     def warning_count(self) -> int:
-        return sum(
-            1 for f in self.findings if f.severity == Severity.WARNING
-        )
+        return sum(1 for f in self.findings if f.severity == Severity.WARNING)
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -13,9 +13,7 @@ from agentbench.scanner.scorer import compute_overall, score_domain
 
 
 def _make_probe(domain: Domain = Domain.SAFETY) -> Probe:
-    return Probe(
-        id="t", domain=domain, category="test", description="t", prompt="hi"
-    )
+    return Probe(id="t", domain=domain, category="test", description="t", prompt="hi")
 
 
 class TestScoreDomain:
@@ -32,9 +30,14 @@ class TestScoreDomain:
         results = [ProbeResult(probe=probes[0], response="ok", status_code=200)]
         findings = [
             Finding(
-                probe_id="t", domain=Domain.SAFETY, category="test",
-                severity=Severity.CRITICAL, verdict=Verdict.FAIL,
-                title="bad", detail="d", evidence="e",
+                probe_id="t",
+                domain=Domain.SAFETY,
+                category="test",
+                severity=Severity.CRITICAL,
+                verdict=Verdict.FAIL,
+                title="bad",
+                detail="d",
+                evidence="e",
             )
         ]
         ds = score_domain(Domain.SAFETY, results, findings)
@@ -46,9 +49,14 @@ class TestScoreDomain:
         results = [ProbeResult(probe=probes[0], response="ok", status_code=200)]
         findings = [
             Finding(
-                probe_id="t", domain=Domain.SAFETY, category="test",
-                severity=Severity.WARNING, verdict=Verdict.FAIL,
-                title="warn", detail="d", evidence="e",
+                probe_id="t",
+                domain=Domain.SAFETY,
+                category="test",
+                severity=Severity.WARNING,
+                verdict=Verdict.FAIL,
+                title="warn",
+                detail="d",
+                evidence="e",
             )
         ]
         ds = score_domain(Domain.SAFETY, results, findings)
@@ -59,9 +67,14 @@ class TestScoreDomain:
         results = [ProbeResult(probe=probes[0], response="ok", status_code=200)]
         findings = [
             Finding(
-                probe_id="t", domain=Domain.SAFETY, category="test",
-                severity=Severity.CRITICAL, verdict=Verdict.FAIL,
-                title=f"bad{i}", detail="d", evidence="e",
+                probe_id="t",
+                domain=Domain.SAFETY,
+                category="test",
+                severity=Severity.CRITICAL,
+                verdict=Verdict.FAIL,
+                title=f"bad{i}",
+                detail="d",
+                evidence="e",
             )
             for i in range(10)
         ]
@@ -79,9 +92,9 @@ class TestComputeOverall:
 
     def test_weighted_with_different_scores(self):
         scores = {
-            "safety": DomainScore(domain=Domain.SAFETY, score=100),       # 35%
+            "safety": DomainScore(domain=Domain.SAFETY, score=100),  # 35%
             "reliability": DomainScore(domain=Domain.RELIABILITY, score=80),  # 25%
-            "capability": DomainScore(domain=Domain.CAPABILITY, score=60),    # 20%
+            "capability": DomainScore(domain=Domain.CAPABILITY, score=60),  # 20%
             "consistency": DomainScore(domain=Domain.CONSISTENCY, score=40),  # 20%
         }
         # 100*35 + 80*25 + 60*20 + 40*20 = 3500+2000+1200+800 = 7500 / 100 = 75

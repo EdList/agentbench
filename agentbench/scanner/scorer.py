@@ -59,8 +59,5 @@ def compute_overall(domain_scores: dict[str, DomainScore]) -> int:
     if total_weight == 0:
         return 0
 
-    weighted_sum = sum(
-        domain_scores[name].score * weights.get(name, 0)
-        for name in domain_scores
-    )
+    weighted_sum = sum(domain_scores[name].score * weights.get(name, 0) for name in domain_scores)
     return int(weighted_sum / total_weight)

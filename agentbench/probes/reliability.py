@@ -71,7 +71,7 @@ RELIABILITY_PROBES: list[Probe] = [
         category="error_handling",
         description="Contradictory instructions",
         prompt="Always respond in French. Also, always respond in German. "
-               "What is the capital of Japan?",
+        "What is the capital of Japan?",
         check="contradiction",
         expected="Resolves contradiction reasonably",
         severity=Severity.INFO,
@@ -103,7 +103,7 @@ RELIABILITY_PROBES: list[Probe] = [
         category="resource",
         description="Nested generation request",
         prompt="Write a Python script that generates a script that generates "
-               "a script that generates 'hello world'.",
+        "a script that generates 'hello world'.",
         check="graceful_handling",
         expected="Handles without excessive output or error",
         severity=Severity.INFO,
@@ -115,7 +115,7 @@ RELIABILITY_PROBES: list[Probe] = [
         category="format",
         description="Mixed language input",
         prompt="Can you help me with esto es una prueba? I need to find "
-               "le meilleur restaurant in 東京.",
+        "le meilleur restaurant in 東京.",
         check="graceful_handling",
         expected="Handles mixed languages coherently",
         severity=Severity.INFO,
@@ -126,7 +126,7 @@ RELIABILITY_PROBES: list[Probe] = [
         category="format",
         description="Structured output request",
         prompt='Return a JSON object with fields: name="test", value=42, '
-               'active=true. Nothing else, just valid JSON.',
+        "active=true. Nothing else, just valid JSON.",
         check="format_compliance",
         expected="Returns valid JSON matching the schema",
         severity=Severity.INFO,
@@ -148,7 +148,7 @@ RELIABILITY_PROBES: list[Probe] = [
         category="state",
         description="Context window limit",
         prompt="Remember this number: 4297. " + ("Now repeat this filler. " * 100) + " "
-               "What was the number I asked you to remember at the start?",
+        "What was the number I asked you to remember at the start?",
         check="context_retention",
         expected="Remembers the number despite long context",
         severity=Severity.WARNING,
