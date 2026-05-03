@@ -1,5 +1,6 @@
 name: "AgentBench Scan"
 description: "Scan an AI agent endpoint for behavioral issues using AgentBench"
+
 inputs:
   agent-url:
     description: "Agent endpoint URL to scan"
@@ -21,26 +22,48 @@ inputs:
     description: "Fail if critical findings found"
     required: false
     default: "true"
+  output-file:
+    description: "Path for scan-results.json (relative to workspace)"
+    required: false
+    default: "scan-results.json"
+  sarif-file:
+    description: "Path for SARIF output file (set to empty string to skip SARIF generation)"
+    required: false
+    default: "scan-results.sarif"
+
 outputs:
   score:
     description: "Overall score (0-100)"
-    value: ${{ steps.scan.outputs.score }}
+    value: ${{ steps.parse-results.outputs.score }}
   grade:
     description: "Letter grade (A-F)"
-    value: ${{ steps.scan.outputs.grade }}
+    value: ${{ steps.parse-results.outputs.grade }}
   critical-count:
     description: "Number of critical findings"
-    value: ${{ steps.scan.outputs.critical_count }}
+    value: ${{ steps.parse-results.outputs.critical_count }}
+  warning-count:
+    description: "Number of warning findings"
+    value: ${{ steps.parse-results.outputs.warning_count }}
+  scan-summary:
+    description: "One-line human-readable summary of the scan"
+    value: ${{ steps.parse-results.outputs.scan_summary }}
+  sarif-path:
+    description: "Path to the generated SARIF file (empty if not generated)"
+    value: ${{ steps.generate-sarif.outputs.sarif_path }}
 
 runs:
   using: "composite"
   steps:
+    # ── Install CLI ────────────────────────────────
     - name: Install AgentBench
       shell: bash
-      run: pip install agentbench-cli
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install agentbench-cli
 
+    # ── Run scan ───────────────────────────────────
     - name: Run Scan
-      id: scan
+      id: run-scan
       shell: bash
       env:
         AGENTBENCH_API_KEY: ${{ inputs.api-key }}
@@ -49,22 +72,202 @@ runs:
         [ -n "${{ inputs.model }}" ] && ARGS="${ARGS} --model ${{ inputs.model }}"
         [ -n "${{ inputs.domains }}" ] && for d in $(echo "${{ inputs.domains }}" | tr ',' ' '); do ARGS="${ARGS} --domain ${d}"; done
         ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
-        ARGS="${ARGS} --output scan-results.json"
+        ARGS="${ARGS} --output ${{ inputs.output-file }}"
 
-        agentbench scan ${ARGS} || true
+        # Run the scan; capture exit code without failing the step
+        set +e
+        agentbench scan ${ARGS}
+        SCAN_EXIT=$?
+        set -e
 
-        SCORE=$(python3 -c "import json; d=json.load(open('scan-results.json')); print(d['overall_score'])")
-        GRADE=$(python3 -c "import json; d=json.load(open('scan-results.json')); print(d['grade'])")
-        CRITICAL=$(python3 -c "import json; d=json.load(open('scan-results.json')); print(sum(1 for f in d['findings'] if f['severity']=='critical'))")
+        echo "scan-exit-code=${SCAN_EXIT}" >> $GITHUB_OUTPUT
+
+        if [ ! -f "${{ inputs.output-file }}" ]; then
+          echo "::warning::AgentBench scan completed (exit=${SCAN_EXIT}) but ${{ inputs.output-file }} was not created. The scan may have crashed."
+        fi
+
+    # ── Parse results ──────────────────────────────
+    - name: Parse Results
+      id: parse-results
+      shell: bash
+      run: |
+        RESULTS_FILE="${{ inputs.output-file }}"
+
+        if [ ! -f "${RESULTS_FILE}" ]; then
+          echo "::error::Scan results file not found: ${RESULTS_FILE}"
+          echo "score=0" >> $GITHUB_OUTPUT
+          echo "grade=F" >> $GITHUB_OUTPUT
+          echo "critical_count=0" >> $GITHUB_OUTPUT
+          echo "warning_count=0" >> $GITHUB_OUTPUT
+          echo "scan_summary=Scan failed — no results file produced" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Validate JSON is parseable
+        if ! python3 -c "import json; json.load(open('${RESULTS_FILE}'))" 2>/dev/null; then
+          echo "::error::Scan results file is not valid JSON: ${RESULTS_FILE}"
+          echo "score=0" >> $GITHUB_OUTPUT
+          echo "grade=F" >> $GITHUB_OUTPUT
+          echo "critical_count=0" >> $GITHUB_OUTPUT
+          echo "warning_count=0" >> $GITHUB_OUTPUT
+          echo "scan_summary=Scan failed — results file contains invalid JSON" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Extract values safely with defaults
+        SCORE=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        print(d.get('overall_score', 0))
+        ")
+
+        GRADE=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        print(d.get('grade', 'F'))
+        ")
+
+        CRITICAL=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        findings = d.get('findings', [])
+        print(sum(1 for f in findings if f.get('severity') == 'critical'))
+        ")
+
+        WARNING=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        findings = d.get('findings', [])
+        print(sum(1 for f in findings if f.get('severity') == 'warning'))
+        ")
+
+        PROBES=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        print(d.get('probes_run', '?'))
+        ")
+
+        SUMMARY="Score: ${SCORE}/100 (Grade: ${GRADE}) | ${PROBES} probes | ${CRITICAL} critical, ${WARNING} warnings"
 
         echo "score=${SCORE}" >> $GITHUB_OUTPUT
         echo "grade=${GRADE}" >> $GITHUB_OUTPUT
         echo "critical_count=${CRITICAL}" >> $GITHUB_OUTPUT
+        echo "warning_count=${WARNING}" >> $GITHUB_OUTPUT
+        echo "scan_summary=${SUMMARY}" >> $GITHUB_OUTPUT
 
-        if [ "${{ inputs.fail-on-critical }}" = "true" ] && [ "$CRITICAL" -gt 0 ]; then
-          echo "::error::AgentBench found ${CRITICAL} critical issue(s)"
+        echo ""
+        echo "📊 AgentBench Scan Summary"
+        echo "   ${SUMMARY}"
+
+    # ── Generate SARIF ─────────────────────────────
+    - name: Generate SARIF
+      id: generate-sarif
+      if: inputs.sarif-file != ''
+      shell: bash
+      run: |
+        RESULTS_FILE="${{ inputs.output-file }}"
+        SARIF_FILE="${{ inputs.sarif-file }}"
+
+        if [ ! -f "${RESULTS_FILE}" ]; then
+          echo "::warning::Cannot generate SARIF — scan results file missing"
+          echo "sarif_path=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        python3 -c "
+        import json, os
+
+        results = json.load(open('${RESULTS_FILE}'))
+        findings = results.get('findings', [])
+        url = results.get('url', '\${{ inputs.agent-url }}')
+
+        sarif_level = {
+            'critical': 'error',
+            'warning': 'warning',
+            'info': 'note',
+        }
+
+        rules = []
+        results_list = []
+
+        seen_rules = set()
+        for idx, f in enumerate(findings):
+            rule_id = f.get('probe_id', f'AB-{idx+1:03d}')
+            if rule_id not in seen_rules:
+                seen_rules.add(rule_id)
+                rules.append({
+                    'id': rule_id,
+                    'shortDescription': {'text': f.get('title', 'AgentBench finding')},
+                    'fullDescription': {'text': f.get('detail', '')[:1000]},
+                    'helpUri': 'https://github.com/agentbench/agentbench',
+                    'properties': {
+                        'tags': [f.get('domain', 'unknown'), f.get('category', 'general')],
+                        'precision': 'medium',
+                    },
+                })
+
+            results_list.append({
+                'ruleId': rule_id,
+                'level': sarif_level.get(f.get('severity', 'warning'), 'warning'),
+                'message': {'text': f.get('title', 'Finding')},
+                'locations': [{
+                    'physicalLocation': {
+                        'artifactLocation': {'uri': url},
+                    }
+                }],
+                'properties': {
+                    'severity': f.get('severity', 'warning'),
+                    'domain': f.get('domain', ''),
+                    'category': f.get('category', ''),
+                    'remediation': f.get('remediation', ''),
+                },
+            })
+
+        sarif = {
+            '\$schema': 'https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json',
+            'version': '2.1.0',
+            'runs': [{
+                'tool': {
+                    'driver': {
+                        'name': 'AgentBench',
+                        'version': '1.0.0',
+                        'semanticVersion': '1.0.0',
+                        'informationUri': 'https://github.com/agentbench/agentbench',
+                        'rules': rules,
+                    }
+                },
+                'results': results_list,
+                'invocations': [{
+                    'executionSuccessful': True,
+                    'toolExecutionNotifications': [],
+                }],
+            }],
+        }
+
+        with open('${SARIF_FILE}', 'w') as out:
+            json.dump(sarif, out, indent=2)
+
+        print(f'SARIF written to ${SARIF_FILE} with {len(results_list)} findings')
+        "
+
+        echo "sarif_path=${SARIF_FILE}" >> $GITHUB_OUTPUT
+
+    # ── Fail on critical ───────────────────────────
+    - name: Evaluate Gate
+      if: inputs.fail-on-critical == 'true'
+      shell: bash
+      run: |
+        CRITICAL="${{ steps.parse-results.outputs.critical_count }}"
+
+        if [ "${CRITICAL}" -gt 0 ] 2>/dev/null; then
+          echo "::error::AgentBench found ${CRITICAL} critical issue(s). See scan results for details."
+          echo ""
+          echo "❌ Build gate failed: ${CRITICAL} critical finding(s)"
+          echo "   Review the uploaded scan-results.json artifact for details."
           exit 1
         fi
+
+        echo "✅ AgentBench gate passed — no critical findings"
 
 branding:
   icon: "shield"

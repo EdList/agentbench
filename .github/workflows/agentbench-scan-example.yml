@@ -1,0 +1,183 @@
+# AgentBench Scan — Example GitHub Actions Workflow
+#
+# Copy this file into your repo at .github/workflows/agentbench-scan.yml
+# and configure the required repository secrets (see below).
+#
+# Required secrets:
+#   AGENT_URL      — Your deployed agent endpoint (e.g. https://my-agent.example.com/chat)
+#   AGENT_API_KEY  — API key for the agent endpoint (can be a no-op key if unused)
+#
+# Optional secrets:
+#   AGENT_MODEL    — Model identifier for OpenRouter-style endpoints
+#
+name: AgentBench Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Prevent concurrent scans on the same branch
+concurrency:
+  group: agentbench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: AgentBench Scan
+    runs-on: ubuntu-latest
+
+    env:
+      # Path where scan results are written
+      RESULTS_FILE: scan-results.json
+
+    steps:
+      # ──────────────────────────────────────────────
+      # 1. Checkout (needed if you use local config)
+      # ──────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ──────────────────────────────────────────────
+      # 2. Set up Python
+      # ──────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ──────────────────────────────────────────────
+      # 3. Install AgentBench CLI from PyPI
+      # ──────────────────────────────────────────────
+      - name: Install AgentBench CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install agentbench-cli
+
+      # ──────────────────────────────────────────────
+      # 4. (Optional) Wait for agent to be healthy
+      #
+      #    If your workflow deploys the agent in an
+      #    earlier job or service container, wait for
+      #    it to become available before scanning.
+      # ──────────────────────────────────────────────
+      - name: Wait for agent availability
+        if: ${{ vars.AGENT_HEALTH_CHECK == 'true' }}
+        run: |
+          echo "Checking agent health at ${{ secrets.AGENT_URL }} ..."
+          MAX_RETRIES=12
+          RETRY_INTERVAL=5
+          for i in $(seq 1 $MAX_RETRIES); do
+            if curl -sf --max-time 5 "${{ secrets.AGENT_URL }}" > /dev/null 2>&1; then
+              echo "Agent is reachable (attempt $i/$MAX_RETRIES)"
+              exit 0
+            fi
+            echo "Agent not ready (attempt $i/$MAX_RETRIES), retrying in ${RETRY_INTERVAL}s..."
+            sleep $RETRY_INTERVAL
+          done
+          echo "::error::Agent at ${{ secrets.AGENT_URL }} did not become healthy in time"
+          exit 1
+
+      # ──────────────────────────────────────────────
+      # 5. Run AgentBench Scan
+      #
+      #    The CLI exits with code 1 when critical
+      #    findings are detected. We capture the exit
+      #    code so we can upload artifacts before
+      #    failing the build.
+      # ──────────────────────────────────────────────
+      - name: Run AgentBench Scan
+        id: scan
+        env:
+          AGENTBENCH_API_KEY: ${{ secrets.AGENT_API_KEY }}
+        run: |
+          echo "::group::Running AgentBench scan"
+          set +e  # Don't fail immediately — we need the results file
+
+          ARGS="${{ secrets.AGENT_URL }}"
+          ARGS="${ARGS} --output ${RESULTS_FILE}"
+          ARGS="${ARGS} --timeout 30"
+
+          # Append model if specified
+          if [ -n "${{ secrets.AGENT_MODEL }}" ]; then
+            ARGS="${ARGS} --model ${{ secrets.AGENT_MODEL }}"
+          fi
+
+          agentbench scan ${ARGS}
+          SCAN_EXIT=$?
+
+          echo "scan-exit-code=${SCAN_EXIT}" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+          # Show a summary from the results file (if it exists)
+          if [ -f "${RESULTS_FILE}" ]; then
+            echo "::group::Scan Summary"
+            python3 -c "
+          import json, sys
+          try:
+              d = json.load(open('${RESULTS_FILE}'))
+              score = d.get('overall_score', 'N/A')
+              grade = d.get('grade', 'N/A')
+              probes = d.get('probes_run', '?')
+              findings = d.get('findings', [])
+              crit = sum(1 for f in findings if f.get('severity') == 'critical')
+              warn = sum(1 for f in findings if f.get('severity') == 'warning')
+              info = sum(1 for f in findings if f.get('severity') == 'info')
+              print(f'  Score: {score}/100  Grade: {grade}')
+              print(f'  Probes: {probes}  Findings: {crit} critical, {warn} warning, {info} info')
+              if crit > 0:
+                  print()
+                  print('  Critical findings:')
+                  for f in findings:
+                      if f.get('severity') == 'critical':
+                          print(f'    ❌ {f[\"title\"]}')
+                          if f.get('remediation'):
+                              print(f'       Fix: {f[\"remediation\"]}')
+          except Exception as e:
+              print(f'Could not parse results: {e}', file=sys.stderr)
+          "
+            echo "::endgroup::"
+          fi
+
+          exit ${SCAN_EXIT}
+
+      # ──────────────────────────────────────────────
+      # 6. Always upload scan results as artifact
+      #     (even on failure, so devs can inspect)
+      # ──────────────────────────────────────────────
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentbench-scan-results
+          path: ${{ env.RESULTS_FILE }}
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ──────────────────────────────────────────────
+      # 7. Annotate the build with critical findings
+      #     ( GitHub annotation for PR review )
+      # ──────────────────────────────────────────────
+      - name: Annotate findings
+        if: failure() && steps.scan.outputs.scan-exit-code == '1'
+        run: |
+          if [ -f "${RESULTS_FILE}" ]; then
+            python3 -c "
+          import json
+          d = json.load(open('${RESULTS_FILE}'))
+          for f in d.get('findings', []):
+              if f.get('severity') == 'critical':
+                  title = f.get('title', 'Unknown')
+                  detail = f.get('detail', '')[:200]
+                  fix = f.get('remediation', '')
+                  msg = f'{title}: {detail}'
+                  if fix:
+                      msg += f' | Fix: {fix[:150]}'
+                  print(f'::error::AgentBench: {msg}')
+          "
+          fi
