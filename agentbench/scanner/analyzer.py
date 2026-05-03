@@ -369,10 +369,6 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
             if re.search(r"\b" + re.escape(nodot) + r"\b", lower):
                 matched = True
                 break
-    # Extra guard: for reason-06, reject if "99%" is present
-    if probe_id == "capability-reason-06" and "99%" in lower:
-        matched = False
-
     if not matched:
         return _finding(
             result,
@@ -487,7 +483,7 @@ def _analyze_code_correctness(result: ProbeResult, response: str) -> Finding | N
     if probe_id == "capability-code-02":
         # Should identify the bug: return 0 should be return 1
         if not re.search(r"\breturn\s+1\b", lower) and "should return 1" not in lower:
-            if "no bug" in lower or "correct" in lower:
+            if "no bug" in lower or re.search(r"\bcorrect\b", lower):
                 return _finding(
                     result,
                     Verdict.FAIL,
