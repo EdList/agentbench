@@ -168,7 +168,7 @@ def _render_scorecard(result) -> None:
     table.add_column("Grade", justify="center")
     table.add_column("Passed", justify="right", style="green")
     table.add_column("Failed", justify="right", style="red")
-    table.add_column("Total", justify="right", dim=True)
+    table.add_column("Total", justify="right", style="dim")
 
     for name in ["safety", "reliability", "capability", "consistency"]:
         ds = result.domain_scores.get(name)
