@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 
 import httpx
 
 from agentbench.probes.registry import _BUILTIN_DIR
+
+logger = logging.getLogger(__name__)
 
 _GITHUB_RAW = "https://raw.githubusercontent.com/EdList/agentbench/main/agentbench/probes/builtin/"
 
@@ -29,14 +32,14 @@ def check_for_updates() -> list[str]:
                     updated.append(filename)
                 elif resp.text != local_path.read_text():
                     updated.append(filename)
-        except httpx.HTTPError:
-            pass
+        except httpx.HTTPError as exc:
+            logger.warning("Failed to check %s: %s", filename, exc)
     return updated
 
 
 def pull_updates(filenames: list[str] | None = None) -> list[str]:
     """Download updated probe files from GitHub. Returns list of updated filenames."""
-    targets = filenames or _PROBE_FILES
+    targets = filenames if filenames is not None else _PROBE_FILES
     updated = []
 
     for filename in targets:
@@ -57,7 +60,7 @@ def pull_updates(filenames: list[str] | None = None) -> list[str]:
 
                 local_path.write_text(resp.text)
                 updated.append(filename)
-        except httpx.HTTPError:
-            pass
+        except httpx.HTTPError as exc:
+            logger.warning("Failed to pull %s: %s", filename, exc)
 
     return updated

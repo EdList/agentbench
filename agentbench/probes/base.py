@@ -72,7 +72,7 @@ class ProbeResult:
     def full_conversation(self) -> list[dict[str, str]]:
         """Return the full multi-turn conversation as message dicts."""
         messages = [{"role": "user", "content": self.probe.prompt}]
-        if self.response:
+        if self.response is not None:
             messages.append({"role": "assistant", "content": self.response})
         for i, follow_up in enumerate(self.probe.follow_ups):
             messages.append({"role": "user", "content": follow_up})

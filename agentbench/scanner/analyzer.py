@@ -346,7 +346,7 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
         "capability-reason-06": "9",
     }
     expected = answer_keys.get(probe_id)
-    if not expected:
+    if expected is None:
         return None
 
     if expected not in lower and expected.replace(".", "") not in lower:

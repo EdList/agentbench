@@ -82,7 +82,13 @@ async def send_probe(
                     payload["messages"] = messages
                     fu_start = time.monotonic()
                     try:
-                        fu_resp = await client.post(url, json=payload, headers=request_headers)
+                        # Retry on 429 for follow-ups too
+                        fu_resp = None
+                        for fu_attempt in range(3):
+                            fu_resp = await client.post(url, json=payload, headers=request_headers)
+                            if fu_resp.status_code != 429:
+                                break
+                            await asyncio.sleep(3 * (fu_attempt + 1))
                         fu_elapsed = (time.monotonic() - fu_start) * 1000
                         if fu_resp.status_code < 400:
                             fu_body = fu_resp.json()
@@ -114,18 +120,18 @@ def _extract_response_text(body: dict[str, Any]) -> str:
             choice = choices[0]
             message = choice.get("message", {})
             content = message.get("content", "")
-            if content:
+            if content is not None:
                 return str(content)
 
-    # Direct content field
-    if "content" in body:
-        return str(body["content"])
-
-    # Anthropic format
+    # Anthropic format (list of content blocks) — check BEFORE plain content
     if "content" in body and isinstance(body["content"], list):
         for block in body["content"]:
             if isinstance(block, dict) and block.get("type") == "text":
                 return block.get("text", "")
+
+    # Direct content field (string)
+    if "content" in body:
+        return str(body["content"])
 
     # Response field
     if "response" in body:

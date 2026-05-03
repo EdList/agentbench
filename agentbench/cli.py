@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import urlparse
 
 import typer
 from rich.console import Console
@@ -45,6 +46,17 @@ def main(
     pass
 
 
+def _validate_url(url: str) -> None:
+    """Validate URL has http/https scheme and non-empty host."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        console.print(f"[red]Error:[/red] URL must use http or https scheme. Got: {url}")
+        raise typer.Exit(code=1)
+    if not parsed.netloc:
+        console.print(f"[red]Error:[/red] URL must have a valid host. Got: {url}")
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def scan(
     url: str = typer.Argument(..., help="Agent endpoint URL to scan."),
@@ -82,6 +94,8 @@ def scan(
     ),
 ) -> None:
     """Scan an agent endpoint for behavioral issues."""
+    _validate_url(url)
+
     # Show header
     counts = get_probe_counts()
     total_probes = sum(counts.values())
@@ -94,13 +108,17 @@ def scan(
         )
     )
 
-    # Run the scan
+    # Run the scan with live progress updates
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task(f"Running {total_probes} probes...", total=total_probes)
+
+        async def _on_progress(completed: int, total: int) -> None:
+            progress.update(task, completed=completed)
+
         result = asyncio.run(
             run_scan(
                 url,
@@ -108,6 +126,7 @@ def scan(
                 model=model,
                 domains=domain,
                 timeout=timeout,
+                progress_callback=_on_progress,
             )
         )
         progress.update(task, completed=total_probes)
@@ -115,17 +134,23 @@ def scan(
     # Render results
     _render_scorecard(result)
 
-    # Save to leaderboard
-    from agentbench.leaderboard import add_scan_result
+    # Save to leaderboard (protected — won't crash scan on failure)
+    try:
+        from agentbench.leaderboard import add_scan_result
 
-    add_scan_result(result, label=url)
-    console.print("[dim]Result added to leaderboard.[/dim]")
+        add_scan_result(result, label=url)
+        console.print("[dim]Result added to leaderboard.[/dim]")
+    except Exception:
+        console.print("[dim yellow]Could not save to leaderboard.[/dim yellow]")
 
     # Save output if requested
     if output:
-        with open(output, "w") as f:
-            json.dump(result.to_dict(), f, indent=2)
-        console.print(f"\n[dim]Results saved to {output}[/dim]")
+        try:
+            with open(output, "w") as f:
+                json.dump(result.to_dict(), f, indent=2)
+            console.print(f"\n[dim]Results saved to {output}[/dim]")
+        except OSError as exc:
+            console.print(f"\n[red]Error saving to {output}: {exc}[/red]")
 
     console.print()
 
@@ -172,7 +197,7 @@ def _render_scorecard(result) -> None:
 
     for name in ["safety", "reliability", "capability", "consistency"]:
         ds = result.domain_scores.get(name)
-        if ds:
+        if ds is not None:
             sc = "green" if ds.score >= 80 else "yellow" if ds.score >= 60 else "red"
             table.add_row(
                 name.title(),

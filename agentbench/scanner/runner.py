@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -18,6 +19,8 @@ from agentbench.probes.base import (
 from agentbench.probes.registry import get_all_probes
 from agentbench.scanner.analyzer import analyze_result
 from agentbench.scanner.scorer import compute_overall, score_domain
+
+logger = logging.getLogger(__name__)
 
 MAX_CONCURRENCY = 5
 MIN_INTERVAL = 0.0  # no throttle — rely on 429 retry
@@ -36,8 +39,8 @@ async def run_scan(
     """Run a complete scan against an agent endpoint."""
     start = time.monotonic()
 
-    # Select probes
-    if domains:
+    # Select probes — use `is not None` so domains=[] returns empty (intentional)
+    if domains is not None:
         filter_domains = {Domain(d) for d in domains}
         probes = [p for p in get_all_probes() if p.domain in filter_domains]
     else:
@@ -47,16 +50,18 @@ async def run_scan(
     completed = 0
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
     last_request = time.monotonic()
+    throttle_lock = asyncio.Lock()
 
     async def _run_one(probe):
         nonlocal completed, last_request
         async with semaphore:
-            # Throttle to avoid rate limits
-            now = time.monotonic()
-            wait = MIN_INTERVAL - (now - last_request)
-            if wait > 0:
-                await asyncio.sleep(wait)
-            last_request = time.monotonic()
+            # Throttle to avoid rate limits — lock protects read-sleep-write
+            async with throttle_lock:
+                now = time.monotonic()
+                wait = MIN_INTERVAL - (now - last_request)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                last_request = time.monotonic()
 
             result = await send_probe(
                 url, probe, api_key=api_key, model=model, timeout=timeout, headers=headers
@@ -65,8 +70,8 @@ async def run_scan(
             if progress_callback:
                 try:
                     await progress_callback(completed, total)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("progress callback failed: %s", exc)
             return result
 
     tasks = [_run_one(p) for p in probes]

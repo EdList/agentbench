@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from agentbench.probes.base import ScanResult
@@ -36,18 +37,24 @@ def add_scan_result(result: ScanResult, label: str | None = None) -> dict:
     }
     lb.append(entry)
     lb_path = _DEFAULT_DIR / _LEADERBOARD_FILE
-    with open(lb_path, "w") as f:
+    # Atomic write — write to temp file then rename
+    tmp_path = lb_path.with_suffix(".tmp")
+    with open(tmp_path, "w") as f:
         json.dump(lb, f, indent=2)
+    os.replace(tmp_path, lb_path)
     return entry
 
 
 def load_leaderboard() -> list[dict]:
-    """Load the local leaderboard. Returns empty list if not found."""
+    """Load the local leaderboard. Returns empty list if not found or corrupt."""
     lb_path = _DEFAULT_DIR / _LEADERBOARD_FILE
     if not lb_path.exists():
         return []
-    with open(lb_path) as f:
-        return json.load(f)
+    try:
+        with open(lb_path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
 
 
 def get_recent(n: int = 10) -> list[dict]:

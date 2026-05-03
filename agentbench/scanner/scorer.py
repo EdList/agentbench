@@ -26,22 +26,17 @@ def score_domain(
     ds = DomainScore(domain=domain)
     ds.total = len(results)
 
-    for r in results:
-        if r.is_error:
-            ds.errored += 1
-        else:
-            ds.passed += 1
-
-    # Count findings for this domain
+    # Count passed = total - errored - failed (computed once, avoids negative)
     domain_findings = [f for f in findings if f.domain == domain]
     ds.findings = domain_findings
 
     for f in domain_findings:
         if f.verdict in (Verdict.FAIL, Verdict.ERROR):
             ds.failed += 1
-            ds.passed -= 1
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
 
+    ds.errored = sum(1 for r in results if r.is_error)
+    ds.passed = max(0, ds.total - ds.errored - ds.failed)
     ds.score = max(0, min(100, ds.score))
     return ds
 
