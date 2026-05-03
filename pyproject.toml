@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentbench-cli"
-version = "1.0.0"
+version = "0.1.0"
 description = "Paste your agent URL. We'll tell you what's broken."
 readme = "README.md"
 license = "MIT"

@@ -1,0 +1,103 @@
+name: AgentBench Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_url:
+        description: "Agent endpoint URL to scan"
+        required: true
+        type: string
+      api_key:
+        description: "API key (use secrets reference)"
+        required: false
+        type: string
+      model:
+        description: "Model name (for OpenRouter-style endpoints)"
+        required: false
+        type: string
+      domains:
+        description: "Domains to scan (comma-separated: safety,reliability,capability,consistency)"
+        required: false
+        type: string
+      timeout:
+        description: "Per-request timeout in seconds"
+        required: false
+        type: number
+        default: 30
+      fail_on_critical:
+        description: "Fail the workflow if critical findings are found"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install AgentBench
+        run: pip install agentbench-cli
+
+      - name: Run AgentBench Scan
+        env:
+          AGENTBENCH_API_KEY: ${{ inputs.api_key || secrets.AGENTBENCH_API_KEY }}
+        run: |
+          ARGS=""
+          ARGS="${ARGS} ${{ inputs.agent_url }}"
+          if [ -n "${{ inputs.model }}" ]; then
+            ARGS="${ARGS} --model ${{ inputs.model }}"
+          fi
+          if [ -n "${{ inputs.domains }}" ]; then
+            for d in $(echo "${{ inputs.domains }}" | tr ',' ' '); do
+              ARGS="${ARGS} --domain ${d}"
+            done
+          fi
+          ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
+          ARGS="${ARGS} --output scan-results.json"
+
+          agentbench scan ${ARGS} || EXIT_CODE=$?
+
+          echo ""
+          echo "## AgentBench Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat scan-results.json | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          print(f\"Score: {data['overall_score']}/100 ({data['grade']})\")
+          print(f\"Probes: {data['probes_run']}\")
+          for name, ds in data['domains'].items():
+              print(f\"  {name}: {ds['score']}/100 ({ds['grade']})\")
+          print(f\"Findings: {len(data['findings'])}\")
+          for f in data['findings']:
+              print(f\"  [{f['severity']}] {f['title']}\")
+              if f.get('remediation'):
+                  print(f\"    Fix: {f['remediation'][:80]}\")
+          " >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ inputs.fail_on_critical }}" = "true" ]; then
+            CRITICAL=$(python3 -c "
+          import json
+          data = json.load(open('scan-results.json'))
+          print(sum(1 for f in data['findings'] if f['severity'] == 'critical'))
+          ")
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "::error::AgentBench found ${CRITICAL} critical issue(s)"
+              exit 1
+            fi
+          fi
+
+          exit ${EXIT_CODE:-0}
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentbench-results
+          path: scan-results.json

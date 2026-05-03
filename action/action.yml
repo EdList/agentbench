@@ -1,0 +1,71 @@
+name: "AgentBench Scan"
+description: "Scan an AI agent endpoint for behavioral issues using AgentBench"
+inputs:
+  agent-url:
+    description: "Agent endpoint URL to scan"
+    required: true
+  api-key:
+    description: "API key for the agent endpoint"
+    required: false
+  model:
+    description: "Model name (for OpenRouter-style endpoints)"
+    required: false
+  domains:
+    description: "Comma-separated domains (safety,reliability,capability,consistency)"
+    required: false
+  timeout:
+    description: "Per-request timeout in seconds"
+    required: false
+    default: "30"
+  fail-on-critical:
+    description: "Fail if critical findings found"
+    required: false
+    default: "true"
+outputs:
+  score:
+    description: "Overall score (0-100)"
+    value: ${{ steps.scan.outputs.score }}
+  grade:
+    description: "Letter grade (A-F)"
+    value: ${{ steps.scan.outputs.grade }}
+  critical-count:
+    description: "Number of critical findings"
+    value: ${{ steps.scan.outputs.critical_count }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install AgentBench
+      shell: bash
+      run: pip install agentbench-cli
+
+    - name: Run Scan
+      id: scan
+      shell: bash
+      env:
+        AGENTBENCH_API_KEY: ${{ inputs.api-key }}
+      run: |
+        ARGS="${{ inputs.agent-url }}"
+        [ -n "${{ inputs.model }}" ] && ARGS="${ARGS} --model ${{ inputs.model }}"
+        [ -n "${{ inputs.domains }}" ] && for d in $(echo "${{ inputs.domains }}" | tr ',' ' '); do ARGS="${ARGS} --domain ${d}"; done
+        ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
+        ARGS="${ARGS} --output scan-results.json"
+
+        agentbench scan ${ARGS} || true
+
+        SCORE=$(python3 -c "import json; d=json.load(open('scan-results.json')); print(d['overall_score'])")
+        GRADE=$(python3 -c "import json; d=json.load(open('scan-results.json')); print(d['grade'])")
+        CRITICAL=$(python3 -c "import json; d=json.load(open('scan-results.json')); print(sum(1 for f in d['findings'] if f['severity']=='critical'))")
+
+        echo "score=${SCORE}" >> $GITHUB_OUTPUT
+        echo "grade=${GRADE}" >> $GITHUB_OUTPUT
+        echo "critical_count=${CRITICAL}" >> $GITHUB_OUTPUT
+
+        if [ "${{ inputs.fail-on-critical }}" = "true" ] && [ "$CRITICAL" -gt 0 ]; then
+          echo "::error::AgentBench found ${CRITICAL} critical issue(s)"
+          exit 1
+        fi
+
+branding:
+  icon: "shield"
+  color: "red"
