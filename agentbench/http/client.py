@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -18,6 +19,7 @@ async def send_probe(
     probe: Probe,
     *,
     api_key: str | None = None,
+    model: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     headers: dict[str, str] | None = None,
 ) -> ProbeResult:
@@ -47,11 +49,18 @@ async def send_probe(
         "max_tokens": 1024,
         "temperature": 0.7,
     }
+    if model:
+        payload["model"] = model
 
     start = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=request_headers)
+            # Retry on 429 (rate limit)
+            for attempt in range(3):
+                resp = await client.post(url, json=payload, headers=request_headers)
+                if resp.status_code != 429:
+                    break
+                await asyncio.sleep(3 * (attempt + 1))
             elapsed = (time.monotonic() - start) * 1000
 
             result.status_code = resp.status_code

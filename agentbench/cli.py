@@ -48,6 +48,10 @@ def scan(
         None, "--api-key", "-k", envvar="AGENTBENCH_API_KEY",
         help="API key for the agent endpoint.",
     ),
+    model: str | None = typer.Option(
+        None, "--model", "-m", envvar="AGENTBENCH_MODEL",
+        help="Model name (required by some endpoints like OpenRouter).",
+    ),
     output: str | None = typer.Option(
         None, "--output", "-o",
         help="Save results as JSON to this file.",
@@ -88,6 +92,7 @@ def scan(
         result = asyncio.run(run_scan(
             url,
             api_key=api_key,
+            model=model,
             domains=domain,
             timeout=timeout,
         ))

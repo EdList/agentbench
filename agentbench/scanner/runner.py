@@ -20,12 +20,14 @@ from agentbench.scanner.analyzer import analyze_result
 from agentbench.scanner.scorer import compute_overall, score_domain
 
 MAX_CONCURRENCY = 5
+MIN_INTERVAL = 0.0  # no throttle — rely on 429 retry
 
 
 async def run_scan(
     url: str,
     *,
     api_key: str | None = None,
+    model: str | None = None,
     domains: list[str] | None = None,
     timeout: float = 30.0,
     headers: dict[str, str] | None = None,
@@ -44,12 +46,20 @@ async def run_scan(
     total = len(probes)
     completed = 0
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+    last_request = time.monotonic()
 
     async def _run_one(probe):
-        nonlocal completed
+        nonlocal completed, last_request
         async with semaphore:
+            # Throttle to avoid rate limits
+            now = time.monotonic()
+            wait = MIN_INTERVAL - (now - last_request)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            last_request = time.monotonic()
+
             result = await send_probe(
-                url, probe, api_key=api_key, timeout=timeout, headers=headers
+                url, probe, api_key=api_key, model=model, timeout=timeout, headers=headers
             )
             completed += 1
             if progress_callback:

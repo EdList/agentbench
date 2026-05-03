@@ -29,7 +29,6 @@ def score_domain(
     for r in results:
         if r.is_error:
             ds.errored += 1
-            ds.passed += 1  # Errors don't count as failures
         else:
             ds.passed += 1
 
@@ -38,7 +37,7 @@ def score_domain(
     ds.findings = domain_findings
 
     for f in domain_findings:
-        if f.verdict == Verdict.FAIL:
+        if f.verdict in (Verdict.FAIL, Verdict.ERROR):
             ds.failed += 1
             ds.passed -= 1
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
