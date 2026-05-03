@@ -47,6 +47,7 @@ jobs:
       - name: Run AgentBench Scan
         env:
           AGENTBENCH_API_KEY: ${{ inputs.api_key || secrets.AGENTBENCH_API_KEY }}
+          FAIL_ON_CRITICAL: ${{ inputs.fail_on_critical }}
         run: |
           ARGS=""
           ARGS="${ARGS} ${{ inputs.agent_url }}"
@@ -61,39 +62,61 @@ jobs:
           ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
           ARGS="${ARGS} --output scan-results.json"
 
-          agentbench scan ${ARGS} || EXIT_CODE=$?
+          set +e
+          agentbench scan ${ARGS}
+          EXIT_CODE=$?
+          set -e
 
-          echo ""
-          echo "## AgentBench Results" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat scan-results.json | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          print(f\"Score: {data['overall_score']}/100 ({data['grade']})\")
-          print(f\"Probes: {data['probes_run']}\")
-          for name, ds in data['domains'].items():
-              print(f\"  {name}: {ds['score']}/100 ({ds['grade']})\")
-          print(f\"Findings: {len(data['findings'])}\")
-          for f in data['findings']:
-              print(f\"  [{f['severity']}] {f['title']}\")
-              if f.get('remediation'):
-                  print(f\"    Fix: {f['remediation'][:80]}\")
-          " >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ inputs.fail_on_critical }}" = "true" ]; then
-            CRITICAL=$(python3 -c "
-          import json
-          data = json.load(open('scan-results.json'))
-          print(sum(1 for f in data['findings'] if f['severity'] == 'critical'))
-          ")
-            if [ "$CRITICAL" -gt 0 ]; then
-              echo "::error::AgentBench found ${CRITICAL} critical issue(s)"
-              exit 1
+          if [ ! -s scan-results.json ]; then
+            echo "::error::AgentBench scan failed before producing scan-results.json (exit ${EXIT_CODE})"
+            if [ "${EXIT_CODE}" -ne 0 ]; then
+              exit "${EXIT_CODE}"
             fi
+            exit 1
           fi
 
-          exit ${EXIT_CODE:-0}
+          echo ""
+          echo "## AgentBench Results" >> "${GITHUB_STEP_SUMMARY}"
+          echo '```' >> "${GITHUB_STEP_SUMMARY}"
+          python3 - <<'PY' >> "${GITHUB_STEP_SUMMARY}"
+          import json
+
+          with open('scan-results.json') as f:
+              data = json.load(f)
+          print(f"Score: {data['overall_score']}/100 ({data['grade']})")
+          print(f"Probes: {data['probes_run']}")
+          for name, ds in data['domains'].items():
+              print(f"  {name}: {ds['score']}/100 ({ds['grade']})")
+          print(f"Findings: {len(data['findings'])}")
+          for f in data['findings']:
+              print(f"  [{f['severity']}] {f['title']}")
+              if f.get('remediation'):
+                  print(f"    Fix: {f['remediation'][:80]}")
+          PY
+          echo '```' >> "${GITHUB_STEP_SUMMARY}"
+
+          CRITICAL=$(python3 - <<'PY'
+          import json
+
+          with open('scan-results.json') as f:
+              data = json.load(f)
+          print(sum(1 for f in data['findings'] if f['severity'] == 'critical'))
+          PY
+          )
+
+          if [ "${FAIL_ON_CRITICAL}" = "true" ] && [ "${CRITICAL}" -gt 0 ]; then
+            echo "::error::AgentBench found ${CRITICAL} critical issue(s)"
+            exit 1
+          fi
+
+          if [ "${EXIT_CODE}" -ne 0 ]; then
+            if [ "${FAIL_ON_CRITICAL}" = "false" ] && [ "${CRITICAL}" -gt 0 ]; then
+              echo "::warning::AgentBench found ${CRITICAL} critical issue(s), but fail_on_critical is false"
+            else
+              echo "::error::AgentBench scan failed with exit ${EXIT_CODE}"
+              exit "${EXIT_CODE}"
+            fi
+          fi
 
       - name: Upload Results
         if: always()

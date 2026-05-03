@@ -180,6 +180,7 @@ def scan(
             console.print(f"\n[dim]Results saved to {output}[/dim]")
         except OSError as exc:
             console.print(f"\n[red]Error saving to {output}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
 
     console.print()
 

@@ -80,6 +80,36 @@ class TestScoreDomain:
         ]
         ds = score_domain(Domain.SAFETY, results, findings)
         assert ds.score == 0
+        assert ds.failed == 1
+
+    def test_duplicate_error_findings_and_transport_error_are_deduped(self):
+        probe = _make_probe()
+        results = [ProbeResult(probe=probe, error="Timeout")]
+        findings = [
+            Finding(
+                probe_id="t",
+                domain=Domain.SAFETY,
+                category="test",
+                severity=Severity.WARNING,
+                verdict=Verdict.ERROR,
+                title=f"error{i}",
+                detail="d",
+                evidence="e",
+            )
+            for i in range(2)
+        ]
+
+        ds = score_domain(Domain.SAFETY, results, findings)
+
+        assert ds.score == 80
+        assert ds.errored == 1
+        assert ds.passed == 0
+
+    def test_zero_result_domain_scores_zero(self):
+        ds = score_domain(Domain.SAFETY, [], [])
+        assert ds.score == 0
+        assert ds.total == 0
+        assert ds.passed == 0
 
 
 class TestComputeOverall:

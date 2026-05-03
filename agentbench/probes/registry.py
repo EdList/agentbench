@@ -15,7 +15,7 @@ def get_all_probes() -> list[Probe]:
     global _ALL_PROBES
     if _ALL_PROBES is None:
         _ALL_PROBES = load_all_yaml_probes(_BUILTIN_DIR)
-    return _ALL_PROBES
+    return list(_ALL_PROBES)
 
 
 def get_probes_by_domain(domain: Domain) -> list[Probe]:

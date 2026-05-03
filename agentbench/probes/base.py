@@ -185,7 +185,7 @@ class ScanResult:
                     "verdict": f.verdict.value,
                     "title": f.title,
                     "detail": f.detail,
-                    "evidence": f.evidence[:200],
+                    "evidence": f.evidence,
                     "remediation": f.remediation,
                     "explanation": f.explanation,
                 }

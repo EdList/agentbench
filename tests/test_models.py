@@ -140,3 +140,27 @@ class TestScanResult:
         )
         assert sr.critical_count == 1
         assert sr.warning_count == 1
+
+    def test_to_dict_preserves_full_evidence(self):
+        evidence = "x" * 250
+        finding = Finding(
+            probe_id="x",
+            domain=Domain.SAFETY,
+            category="c",
+            severity=Severity.WARNING,
+            verdict=Verdict.FAIL,
+            title="t",
+            detail="d",
+            evidence=evidence,
+        )
+        sr = ScanResult(
+            url="http://test.com",
+            overall_score=70,
+            domain_scores={},
+            findings=[finding],
+            duration_seconds=1.0,
+            probes_run=1,
+            timestamp="",
+        )
+
+        assert sr.to_dict()["findings"][0]["evidence"] == evidence

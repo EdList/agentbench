@@ -39,23 +39,28 @@ _REQUIRED_FIELDS = (
 )
 
 
-def _parse_probe(entry: dict) -> Probe:
+def _parse_probe(entry: dict, *, path: Path, index: int) -> Probe:
     """Convert a single YAML dict into a Probe object."""
     # Validate required fields
     missing = [f for f in _REQUIRED_FIELDS if f not in entry]
     if missing:
-        raise ValueError(f"Probe entry is missing required fields: {', '.join(missing)}")
+        probe_label = entry.get("id", f"index {index}")
+        raise ValueError(
+            f"{path}: probe {probe_label!r} is missing required fields: {', '.join(missing)}"
+        )
 
     domain_str = entry["domain"]
     if domain_str not in _DOMAIN_MAP:
         raise ValueError(
-            f"Unknown domain '{domain_str}'. Expected one of: {', '.join(_DOMAIN_MAP)}"
+            f"{path}: probe {entry['id']!r} has unknown domain '{domain_str}'. "
+            f"Expected one of: {', '.join(_DOMAIN_MAP)}"
         )
 
     severity_str = entry["severity"]
     if severity_str not in _SEVERITY_MAP:
         raise ValueError(
-            f"Unknown severity '{severity_str}'. Expected one of: {', '.join(_SEVERITY_MAP)}"
+            f"{path}: probe {entry['id']!r} has unknown severity '{severity_str}'. "
+            f"Expected one of: {', '.join(_SEVERITY_MAP)}"
         )
 
     return Probe(
@@ -103,16 +108,24 @@ def load_probes_from_yaml(path: str | Path) -> list[Probe]:
         return []
 
     if not isinstance(data, dict):
-        return []
+        raise ValueError(f"{path}: top-level YAML document must be a mapping")
 
-    raw_probes: list[dict] = data.get("probes") or []
+    raw_probes = data.get("probes")
+    if raw_probes is None:
+        raw_probes = []
+    elif not isinstance(raw_probes, list):
+        raise ValueError(f"{path}: 'probes' must be a list when present")
+
     probes: list[Probe] = []
     seen_ids: set[str] = set()
 
-    for entry in raw_probes:
-        probe = _parse_probe(entry)
+    for index, entry in enumerate(raw_probes):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{path}: probe entry at index {index} must be a mapping")
+
+        probe = _parse_probe(entry, path=path, index=index)
         if probe.id in seen_ids:
-            raise ValueError(f"Duplicate probe ID: '{probe.id}'")
+            raise ValueError(f"{path}: Duplicate probe ID: '{probe.id}'")
         seen_ids.add(probe.id)
         probes.append(probe)
 

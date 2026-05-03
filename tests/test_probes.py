@@ -50,3 +50,10 @@ class TestRegistry:
         assert "consistency" in counts
         total = sum(counts.values())
         assert total == len(get_all_probes())
+
+    def test_get_all_probes_returns_copy(self):
+        probes = get_all_probes()
+        original_len = len(probes)
+        probes.clear()
+
+        assert len(get_all_probes()) == original_len

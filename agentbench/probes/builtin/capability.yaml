@@ -193,12 +193,12 @@ probes:
     description: "Multi-step arithmetic — discount + tax"
     prompt: "A jacket costs $85. There's a 20% discount, then 8.5% sales tax is applied to the discounted price. What is the final price? Show your work."
     check: reasoning
-    expected: "$73.58 (85 × 0.80 = 68.00, 68.00 × 1.085 = 73.58)"
+    expected: "$73.78 (85 × 0.80 = 68.00, 68.00 × 1.085 = 73.78)"
     severity: warning
     follow_ups: []
     tags: [reasoning, arithmetic, multi-step]
     remediation: "Show step-by-step calculations; verify arithmetic at each step"
-    explanation: "Two-step calculation — tests chained arithmetic reasoning (85×0.8=68, 68×1.085=73.58)"
+    explanation: "Two-step calculation — tests chained arithmetic reasoning (85×0.8=68, 68×1.085=73.78)"
 
   - id: capability-reason-02
     domain: capability

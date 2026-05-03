@@ -55,18 +55,22 @@ async def send_probe(
     start = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            # Retry on 429 (rate limit)
-            for attempt in range(3):
-                resp = await client.post(url, json=payload, headers=request_headers)
-                if resp.status_code != 429:
-                    break
-                await asyncio.sleep(3 * (attempt + 1))
+            resp = await _post_with_rate_limit(client, url, payload, request_headers)
             elapsed = (time.monotonic() - start) * 1000
 
             result.status_code = resp.status_code
             result.latency_ms = elapsed
 
             if resp.status_code >= 400:
+                # Some non-OpenAI endpoints reject chat-completions payloads but
+                # accept a simple JSON prompt. Retry once only when no model was
+                # specified, so OpenAI/OpenRouter-style usage is unaffected.
+                if model is None and resp.status_code in (400, 422):
+                    fallback = await _try_simple_json_fallback(
+                        client, url, probe, request_headers, start
+                    )
+                    if fallback is not None:
+                        return fallback
                 result.error = f"HTTP {resp.status_code}: {resp.text[:500]}"
                 return result
 
@@ -82,13 +86,9 @@ async def send_probe(
                     payload["messages"] = messages
                     fu_start = time.monotonic()
                     try:
-                        # Retry on 429 for follow-ups too
-                        fu_resp = None
-                        for fu_attempt in range(3):
-                            fu_resp = await client.post(url, json=payload, headers=request_headers)
-                            if fu_resp.status_code != 429:
-                                break
-                            await asyncio.sleep(3 * (fu_attempt + 1))
+                        fu_resp = await _post_with_rate_limit(
+                            client, url, payload, request_headers
+                        )
                         fu_elapsed = (time.monotonic() - fu_start) * 1000
                         result.latency_ms += fu_elapsed
                         if fu_resp.status_code < 400:
@@ -119,6 +119,78 @@ async def send_probe(
         result.latency_ms = (time.monotonic() - start) * 1000
 
     return result
+
+
+async def _post_with_rate_limit(
+    client: httpx.AsyncClient,
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+) -> httpx.Response:
+    """POST a payload, retrying briefly on rate limits."""
+    for attempt in range(3):
+        resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code != 429:
+            return resp
+        await asyncio.sleep(3 * (attempt + 1))
+    return resp
+
+
+async def _try_simple_json_fallback(
+    client: httpx.AsyncClient,
+    url: str,
+    probe: Probe,
+    headers: dict[str, str],
+    start: float,
+) -> ProbeResult | None:
+    """Retry using simple JSON-in/JSON-out.
+
+    Returns a populated result only if the fallback succeeds. If it also fails,
+    the caller keeps reporting the original OpenAI-format error.
+    """
+    resp = await _post_with_rate_limit(client, url, {"prompt": probe.prompt}, headers)
+    if resp.status_code >= 400:
+        return None
+
+    result = ProbeResult(probe=probe)
+    result.status_code = resp.status_code
+    result.latency_ms = (time.monotonic() - start) * 1000
+    body = resp.json()
+    result.response = _extract_response_text(body)
+
+    history: list[dict[str, str]] = [
+        {"role": "user", "content": probe.prompt},
+        {"role": "assistant", "content": result.response},
+    ]
+    for follow_up in probe.follow_ups:
+        fu_start = time.monotonic()
+        fu_payload = {"prompt": _format_simple_prompt(history, follow_up)}
+        try:
+            fu_resp = await _post_with_rate_limit(client, url, fu_payload, headers)
+            result.latency_ms += (time.monotonic() - fu_start) * 1000
+            if fu_resp.status_code >= 400:
+                fu_text = f"[HTTP {fu_resp.status_code}]"
+            else:
+                fu_text = _extract_response_text(fu_resp.json())
+        except Exception as e:
+            result.latency_ms += (time.monotonic() - fu_start) * 1000
+            fu_text = f"[Error: {e}]"
+
+        result.follow_up_responses.append(fu_text)
+        history.extend([
+            {"role": "user", "content": follow_up},
+            {"role": "assistant", "content": fu_text},
+        ])
+
+    return result
+
+
+def _format_simple_prompt(history: list[dict[str, str]], follow_up: str) -> str:
+    """Flatten conversation history for simple JSON endpoints."""
+    transcript = "\n".join(
+        f"{turn['role'].title()}: {turn['content']}" for turn in history
+    )
+    return f"{transcript}\nUser: {follow_up}"
 
 
 def _extract_response_text(body: dict[str, Any]) -> str:

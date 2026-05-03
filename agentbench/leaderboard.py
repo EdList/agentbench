@@ -39,7 +39,7 @@ def add_scan_result(result: ScanResult, label: str | None = None) -> dict:
     lb_path = _DEFAULT_DIR / _LEADERBOARD_FILE
     # Atomic write — write to temp file then rename
     tmp_path = lb_path.with_suffix(".tmp")
-    with open(tmp_path, "w") as f:
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(lb, f, indent=2)
     os.replace(tmp_path, lb_path)
     return entry
@@ -51,14 +51,19 @@ def load_leaderboard() -> list[dict]:
     if not lb_path.exists():
         return []
     try:
-        with open(lb_path) as f:
-            return json.load(f)
+        with open(lb_path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list) or not all(isinstance(entry, dict) for entry in data):
+            return []
+        return data
     except (json.JSONDecodeError, OSError):
         return []
 
 
 def get_recent(n: int = 10) -> list[dict]:
     """Get the N most recent leaderboard entries."""
+    if n <= 0:
+        return []
     lb = load_leaderboard()
     return lb[-n:]
 

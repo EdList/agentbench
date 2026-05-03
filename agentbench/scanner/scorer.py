@@ -26,24 +26,27 @@ def score_domain(
     ds = DomainScore(domain=domain)
     ds.total = len(results)
 
-    # Count passed = total - errored - failed (computed once, avoids negative)
     domain_findings = [f for f in findings if f.domain == domain]
     ds.findings = domain_findings
 
+    if ds.total == 0:
+        ds.score = 0
+        return ds
+
+    failed_probe_ids: set[str] = set()
+    error_probe_ids: set[str] = {r.probe.id for r in results if r.is_error}
+
     for f in domain_findings:
         if f.verdict == Verdict.FAIL:
-            ds.failed += 1
+            failed_probe_ids.add(f.probe_id)
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
         elif f.verdict == Verdict.ERROR:
+            error_probe_ids.add(f.probe_id)
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
-            # Don't double-count: skip if this probe is already in error results
-            if not any(r.probe.id == f.probe_id and r.is_error for r in results):
-                ds.errored += 1
 
-    # Count transport-level errors not already covered by ERROR findings
-    error_probe_ids = {f.probe_id for f in domain_findings if f.verdict == Verdict.ERROR}
-    ds.errored += sum(1 for r in results if r.is_error and r.probe.id not in error_probe_ids)
-    ds.passed = max(0, ds.total - ds.errored - ds.failed)
+    ds.failed = len(failed_probe_ids)
+    ds.errored = len(error_probe_ids)
+    ds.passed = max(0, ds.total - len(failed_probe_ids | error_probe_ids))
     ds.score = max(0, min(100, ds.score))
     return ds
 

@@ -139,6 +139,32 @@ class TestLoadProbesFromYaml:
         p = _write_yaml(tmp_path, "empty.yaml", "")
         assert load_probes_from_yaml(p) == []
 
+    def test_missing_probes_key_returns_empty_list(self, tmp_path: Path):
+        p = _write_yaml(tmp_path, "metadata_only.yaml", 'version: "1.0"\n')
+        assert load_probes_from_yaml(p) == []
+
+    def test_null_probes_key_returns_empty_list(self, tmp_path: Path):
+        p = _write_yaml(tmp_path, "null_probes.yaml", "probes:\n")
+        assert load_probes_from_yaml(p) == []
+
+    def test_top_level_must_be_mapping(self, tmp_path: Path):
+        p = _write_yaml(tmp_path, "bad_top.yaml", "- not\n- a\n- mapping\n")
+        with pytest.raises(
+            ValueError,
+            match="bad_top.yaml.*top-level YAML document must be a mapping",
+        ):
+            load_probes_from_yaml(p)
+
+    def test_probes_key_must_be_list_when_present(self, tmp_path: Path):
+        p = _write_yaml(tmp_path, "bad_probes.yaml", "probes: nope\n")
+        with pytest.raises(ValueError, match="bad_probes.yaml.*'probes' must be a list"):
+            load_probes_from_yaml(p)
+
+    def test_probe_entries_must_be_mapping(self, tmp_path: Path):
+        p = _write_yaml(tmp_path, "bad_entry.yaml", "probes:\n  - nope\n")
+        with pytest.raises(ValueError, match="bad_entry.yaml.*index 0.*mapping"):
+            load_probes_from_yaml(p)
+
     def test_file_not_found_raises(self):
         with pytest.raises(FileNotFoundError):
             load_probes_from_yaml("/nonexistent/path.yaml")
