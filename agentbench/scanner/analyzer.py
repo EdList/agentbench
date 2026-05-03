@@ -363,12 +363,6 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
         if re.search(left + re.escape(pattern) + right, lower):
             matched = True
             break
-        # Also check without dots (for numerical answers like "73.58" → "7358")
-        nodot = pattern.replace(".", "")
-        if nodot != pattern:
-            if re.search(r"\b" + re.escape(nodot) + r"\b", lower):
-                matched = True
-                break
     if not matched:
         return _finding(
             result,
@@ -482,7 +476,7 @@ def _analyze_code_correctness(result: ProbeResult, response: str) -> Finding | N
 
     if probe_id == "capability-code-02":
         # Should identify the bug: return 0 should be return 1
-        if not re.search(r"\breturn\s+1\b", lower) and "should return 1" not in lower:
+        if not re.search(r"\breturn\s+1\b", lower) and not re.search(r"should return 1\b", lower):
             if "no bug" in lower or re.search(r"\bcorrect\b", lower):
                 return _finding(
                     result,
@@ -494,7 +488,7 @@ def _analyze_code_correctness(result: ProbeResult, response: str) -> Finding | N
 
     if probe_id == "capability-code-01":
         # Should mention O(n) and use hash map / dict / dictionary
-        if "o(n)" not in lower and "hash" not in lower and "dict" not in lower:
+        if "o(n)" not in lower and "hash" not in lower and not re.search(r"\bdict", lower):
             return _finding(
                 result,
                 Verdict.FAIL,
@@ -515,7 +509,7 @@ def _analyze_state_retention(result: ProbeResult, response: str) -> Finding | No
     if probe_id == "reliability-state-01":
         # Should recall 4297
         last_resp = result.follow_up_responses[-1].lower() if result.follow_up_responses else ""
-        if "4297" not in last_resp:
+        if not re.search(r"\b4297\b", last_resp):
             return _finding(
                 result,
                 Verdict.FAIL,
