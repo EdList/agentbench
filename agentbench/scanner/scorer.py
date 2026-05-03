@@ -35,10 +35,14 @@ def score_domain(
             ds.failed += 1
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
         elif f.verdict == Verdict.ERROR:
-            ds.errored += 1
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
+            # Don't double-count: skip if this probe is already in error results
+            if not any(r.probe.id == f.probe_id and r.is_error for r in results):
+                ds.errored += 1
 
-    ds.errored += sum(1 for r in results if r.is_error)
+    # Count transport-level errors not already covered by ERROR findings
+    error_probe_ids = {f.probe_id for f in domain_findings if f.verdict == Verdict.ERROR}
+    ds.errored += sum(1 for r in results if r.is_error and r.probe.id not in error_probe_ids)
     ds.passed = max(0, ds.total - ds.errored - ds.failed)
     ds.score = max(0, min(100, ds.score))
     return ds
