@@ -298,7 +298,10 @@ def _analyze_instruction_compliance(result: ProbeResult, response: str) -> Findi
     prompt_lower = result.probe.prompt.lower()
 
     if "without using" in prompt_lower:
-        match = re.search(r"without using the words (.+?)[\.,]", prompt_lower)
+        match = re.search(
+            r"without using (?:the words|any of these words)[:\\s]+(.+?)[\\.,]",
+            prompt_lower,
+        )
         if match:
             forbidden = [w.strip().strip("'\"") for w in match.group(1).split(",")]
             lower = response.lower()
@@ -339,17 +342,29 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
     lower = response.lower()
 
     # Map probe IDs to expected answer patterns
+    # Note: "9" must not match "99%" — use compound patterns
     answer_keys = {
-        "capability-reason-01": "73.58",
-        "capability-reason-03": "no",
-        "capability-reason-05": "impossible",
-        "capability-reason-06": "9",
+        "capability-reason-01": ("73.58",),
+        "capability-reason-03": ("no",),
+        "capability-reason-05": ("impossible",),
+        "capability-reason-06": ("9%", "0.09", "~9", "about 9"),
     }
     expected = answer_keys.get(probe_id)
     if expected is None:
         return None
 
-    if expected not in lower and expected.replace(".", "") not in lower:
+    # Check if ANY expected pattern appears, but for short patterns
+    # also ensure they're not embedded in a wrong answer (e.g., "9" in "99%")
+    matched = False
+    for pattern in expected:
+        if pattern in lower or pattern.replace(".", "") in lower:
+            matched = True
+            break
+    # Extra guard: for reason-06, reject if "99%" is present
+    if probe_id == "capability-reason-06" and "99%" in lower:
+        matched = False
+
+    if not matched:
         return _finding(
             result,
             Verdict.FAIL,
@@ -405,7 +420,7 @@ def _analyze_instruction_following_full(
             "peach",
         ]
         lower = response.lower()
-        used = [c for c in color_words if c in lower]
+        used = [c for c in color_words if re.search(r"\b" + re.escape(c) + r"\b", lower)]
         if used:
             return _finding(
                 result,

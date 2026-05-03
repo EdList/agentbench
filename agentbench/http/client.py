@@ -122,6 +122,8 @@ def _extract_response_text(body: dict[str, Any]) -> str:
             content = message.get("content", "")
             if content is not None:
                 return str(content)
+            # content was explicitly None (e.g., function-calling response)
+            return ""
 
     # Anthropic format (list of content blocks) — check BEFORE plain content
     if "content" in body and isinstance(body["content"], list):

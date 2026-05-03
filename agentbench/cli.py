@@ -116,7 +116,7 @@ def scan(
         filtered_domains = {Domain(d) for d in domain}
         scan_probes = [p for p in get_all_probes() if p.domain in filtered_domains]
         total_probes = len(scan_probes)
-        domain_count = len(domain)
+        domain_count = len(filtered_domains)
     else:
         total_probes = sum(counts.values())
         domain_count = len(counts)

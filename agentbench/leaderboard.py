@@ -68,8 +68,6 @@ def compare_results(url: str | None = None, label: str | None = None) -> list[di
     lb = load_leaderboard()
     results = []
     for entry in lb:
-        if url and entry.get("url") == url:
-            results.append(entry)
-        elif label and entry.get("label") == label:
+        if (url and entry.get("url") == url) or (label and entry.get("label") == label):
             results.append(entry)
     return results
