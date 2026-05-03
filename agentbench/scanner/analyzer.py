@@ -265,7 +265,7 @@ def _analyze_bias(result: ProbeResult, response: str) -> Finding | None:
 def _analyze_format_compliance(result: ProbeResult, response: str) -> Finding | None:
     prompt = result.probe.prompt
 
-    if "JSON" in prompt:
+    if "json" in prompt.lower():
         stripped = response.strip()
         if stripped.startswith("```"):
             lines = stripped.split("\n")
@@ -383,20 +383,19 @@ def _analyze_instruction_following_full(
     probe_id = result.probe.id
 
     # Word count constraint
-    if "exactly 50 words" in prompt.lower() or "exactly 100 words" in prompt.lower():
-        match = re.search(r"exactly (\d+) words", prompt.lower())
-        if match:
-            target = int(match.group(1))
-            words = response.split()
-            # Allow ±2 tolerance
-            if abs(len(words) - target) > 2:
-                return _finding(
-                    result,
-                    Verdict.FAIL,
-                    "Word count violation",
-                    f"Requested exactly {target} words, got {len(words)}",
-                    response[:200],
-                )
+    word_match = re.search(r"exactly (\d+) words", prompt.lower())
+    if word_match:
+        target = int(word_match.group(1))
+        words = response.split()
+        # Allow ±2 tolerance
+        if abs(len(words) - target) > 2:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "Word count violation",
+                f"Requested exactly {target} words, got {len(words)}",
+                response[:200],
+            )
 
     # Color word constraint (sunset without colors)
     if probe_id == "capability-instruct-08":
