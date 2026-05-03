@@ -84,9 +84,10 @@ async def run_scan(
         if finding is not None:
             all_findings.append(finding)
 
-    # Score per domain
+    # Score per domain — only domains that were actually probed
     domain_scores: dict[str, DomainScore] = {}
-    for domain in Domain:
+    probed_domains = {r.probe.domain for r in results} if results else set(Domain)
+    for domain in probed_domains:
         d_results = [r for r in results if r.probe.domain == domain]
         d_findings = [f for f in all_findings if f.domain == domain]
         domain_scores[domain.value] = score_domain(domain, d_results, d_findings)

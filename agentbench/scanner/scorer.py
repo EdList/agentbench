@@ -31,8 +31,11 @@ def score_domain(
     ds.findings = domain_findings
 
     for f in domain_findings:
-        if f.verdict in (Verdict.FAIL, Verdict.ERROR):
+        if f.verdict == Verdict.FAIL:
             ds.failed += 1
+            ds.score -= _DEDUCTIONS.get(f.severity, 5)
+        elif f.verdict == Verdict.ERROR:
+            # Error verdicts are already counted in ds.errored
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
 
     ds.errored = sum(1 for r in results if r.is_error)

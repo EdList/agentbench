@@ -13,7 +13,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from agentbench import __version__
-from agentbench.probes.base import Severity
+from agentbench.probes.base import Domain, Severity
 from agentbench.probes.registry import get_probe_counts
 from agentbench.scanner.runner import run_scan
 
@@ -96,13 +96,35 @@ def scan(
     """Scan an agent endpoint for behavioral issues."""
     _validate_url(url)
 
-    # Show header
+    # Validate domain names
+    _valid_domains = {d.value for d in Domain}
+    if domain:
+        for d in domain:
+            if d not in _valid_domains:
+                valid = ", ".join(sorted(_valid_domains))
+                console.print(
+                    f"[red]Error:[/red] Invalid domain '{d}'. "
+                    f"Must be one of: {valid}"
+                )
+                raise typer.Exit(code=1)
+
+    # Show header — compute actual probe count (respects domain filtering)
+    from agentbench.probes.registry import get_all_probes
+
     counts = get_probe_counts()
-    total_probes = sum(counts.values())
+    if domain:
+        filtered_domains = {Domain(d) for d in domain}
+        scan_probes = [p for p in get_all_probes() if p.domain in filtered_domains]
+        total_probes = len(scan_probes)
+        domain_count = len(domain)
+    else:
+        total_probes = sum(counts.values())
+        domain_count = len(counts)
     console.print()
     console.print(
         Panel(
-            f"[bold]Scanning:[/] {url}\n[dim]{total_probes} probes across {len(counts)} domains[/]",
+            f"[bold]Scanning:[/] {url}\n"
+            f"[dim]{total_probes} probes across {domain_count} domains[/]",
             title="🔍 AgentBench Scanner",
             border_style="blue",
         )
