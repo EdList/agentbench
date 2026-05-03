@@ -333,6 +333,192 @@ def _analyze_response_consistency(result: ProbeResult, response: str) -> Finding
     return None
 
 
+def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
+    """Check reasoning probes for correct numerical answers."""
+    probe_id = result.probe.id
+    lower = response.lower()
+
+    # Map probe IDs to expected answer patterns
+    answer_keys = {
+        "capability-reason-01": "73.58",
+        "capability-reason-03": "no",
+        "capability-reason-05": "impossible",
+        "capability-reason-06": "9",
+    }
+    expected = answer_keys.get(probe_id)
+    if not expected:
+        return None
+
+    if expected not in lower and expected.replace(".", "") not in lower:
+        return _finding(
+            result,
+            Verdict.FAIL,
+            "Incorrect reasoning",
+            f"Expected answer containing '{expected}' but got: {response[:120]}",
+            response[:300],
+        )
+    return None
+
+
+def _analyze_instruction_following_full(
+    result: ProbeResult,
+    response: str,
+) -> Finding | None:
+    """Deep instruction following checks — word counts, constraints, format."""
+    prompt = result.probe.prompt
+    probe_id = result.probe.id
+
+    # Word count constraint
+    if "exactly 50 words" in prompt.lower() or "exactly 100 words" in prompt.lower():
+        match = re.search(r"exactly (\d+) words", prompt.lower())
+        if match:
+            target = int(match.group(1))
+            words = response.split()
+            # Allow ±2 tolerance
+            if abs(len(words) - target) > 2:
+                return _finding(
+                    result,
+                    Verdict.FAIL,
+                    "Word count violation",
+                    f"Requested exactly {target} words, got {len(words)}",
+                    response[:200],
+                )
+
+    # Color word constraint (sunset without colors)
+    if probe_id == "capability-instruct-08":
+        color_words = [
+            "red",
+            "orange",
+            "yellow",
+            "pink",
+            "purple",
+            "blue",
+            "gold",
+            "amber",
+            "crimson",
+            "scarlet",
+            "magenta",
+            "violet",
+            "indigo",
+            "maroon",
+            "coral",
+            "peach",
+        ]
+        lower = response.lower()
+        used = [c for c in color_words if c in lower]
+        if used:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "Constraint violation",
+                f"Used forbidden color words: {', '.join(used[:5])}",
+                response[:200],
+            )
+
+    # JSON-only response
+    if probe_id == "capability-instruct-04":
+        stripped = response.strip()
+        if stripped.startswith("```"):
+            lines = stripped.split("\n")
+            stripped = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        try:
+            json.loads(stripped)
+        except json.JSONDecodeError:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "Format non-compliance",
+                "Agent failed to return valid JSON as requested",
+                response[:200],
+            )
+
+    # "Only the city names separated by commas. No other text."
+    if probe_id == "capability-instruct-01":
+        # Should be just comma-separated city names
+        stripped = response.strip()
+        has_extra = (
+            stripped.startswith("Here")
+            or stripped.startswith("Sure")
+            or stripped.startswith("The")
+            or "\n" in stripped[:80]
+        )
+        if has_extra:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "Format non-compliance",
+                "Agent added preamble or extra text despite 'no other text' instruction",
+                response[:200],
+            )
+
+    # Run the existing forbidden-words check too
+    return _analyze_instruction_compliance(result, response)
+
+
+def _analyze_code_correctness(result: ProbeResult, response: str) -> Finding | None:
+    """Check code probe responses for correctness indicators."""
+    probe_id = result.probe.id
+    lower = response.lower()
+
+    if probe_id == "capability-code-02":
+        # Should identify the bug: return 0 should be return 1
+        if "return 1" not in lower and "should return 1" not in lower:
+            if "no bug" in lower or "correct" in lower:
+                return _finding(
+                    result,
+                    Verdict.FAIL,
+                    "Missed code bug",
+                    "Agent failed to identify factorial(0) should return 1, not 0",
+                    response[:300],
+                )
+
+    if probe_id == "capability-code-01":
+        # Should mention O(n) and use hash map / dict / dictionary
+        if "o(n)" not in lower and "hash" not in lower and "dict" not in lower:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "Suboptimal algorithm",
+                "Agent didn't use O(n) hash map approach for two-sum",
+                response[:300],
+            )
+    return None
+
+
+def _analyze_state_retention(result: ProbeResult, response: str) -> Finding | None:
+    """Check if model remembers state across turns."""
+    if not result.follow_up_responses:
+        return None
+
+    probe_id = result.probe.id
+
+    if probe_id == "reliability-state-01":
+        # Should recall 4297
+        last_resp = result.follow_up_responses[-1].lower() if result.follow_up_responses else ""
+        if "4297" not in last_resp:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "State not retained",
+                "Agent failed to recall the number 4297 after filler content",
+                result.follow_up_responses[-1][:200] if result.follow_up_responses else "",
+            )
+
+    if probe_id == "reliability-state-04":
+        # Should say hello exactly 100 times
+        words = response.lower().split()
+        hellos = [w for w in words if "hello" in w]
+        if abs(len(hellos) - 100) > 5:
+            return _finding(
+                result,
+                Verdict.FAIL,
+                "Counting error",
+                f"Expected 100 'hello's, got approximately {len(hellos)}",
+                response[:200],
+            )
+    return None
+
+
 def _analyze_generic(result: ProbeResult, response: str) -> Finding | None:
     return None
 
@@ -354,18 +540,18 @@ _CHECK_ANALYZERS: dict[str, callable] = {
     "bias": _analyze_bias,
     "format_compliance": _analyze_format_compliance,
     "instruction_compliance": _analyze_instruction_compliance,
-    "instruction_following": _analyze_instruction_compliance,
+    "instruction_following": _analyze_instruction_following_full,
     "response_consistency": _analyze_response_consistency,
     "behavioral_consistency": _analyze_response_consistency,
     "rule_consistency": _analyze_response_consistency,
     "persona_consistency": _analyze_generic,
     "tone_consistency": _analyze_generic,
     "coherence": _analyze_generic,
-    "state_retention": _analyze_generic,
+    "state_retention": _analyze_state_retention,
     "reliability": _analyze_generic,
-    "reasoning": _analyze_generic,
+    "reasoning": _analyze_reasoning,
     "tool_use": _analyze_generic,
-    "code_correctness": _analyze_generic,
+    "code_correctness": _analyze_code_correctness,
 }
 
 
