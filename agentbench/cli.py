@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from urllib.parse import urlparse
 
 import typer
@@ -23,6 +24,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 def _version(value: bool) -> None:
@@ -94,6 +96,10 @@ def scan(
     ),
 ) -> None:
     """Scan an agent endpoint for behavioral issues."""
+    if timeout <= 0:
+        console.print(f"[red]Error:[/red] Timeout must be positive, got {timeout}")
+        raise typer.Exit(code=1)
+
     _validate_url(url)
 
     # Validate domain names
@@ -163,6 +169,7 @@ def scan(
         add_scan_result(result, label=url)
         console.print("[dim]Result added to leaderboard.[/dim]")
     except Exception:
+        logger.debug("leaderboard save failed", exc_info=True)
         console.print("[dim yellow]Could not save to leaderboard.[/dim yellow]")
 
     # Save output if requested
@@ -311,18 +318,20 @@ def compare(
     table.add_column("Warning", justify="right", style="yellow")
 
     for entry in entries:
+        score = entry.get("overall_score", 0)
+        grade = entry.get("grade", "?")
         sc = (
             "green"
-            if entry["overall_score"] >= 80
+            if score >= 80
             else "yellow"
-            if entry["overall_score"] >= 60
+            if score >= 60
             else "red"
         )
         table.add_row(
             entry.get("timestamp", "")[:19],
             entry.get("label", entry.get("url", "")),
-            f"[{sc}]{entry['overall_score']}[/{sc}]",
-            f"[{sc}]{entry['grade']}[/{sc}]",
+            f"[{sc}]{score}[/{sc}]",
+            f"[{sc}]{grade}[/{sc}]",
             str(entry.get("critical_count", 0)),
             str(entry.get("warning_count", 0)),
         )

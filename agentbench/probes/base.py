@@ -175,6 +175,7 @@ class ScanResult:
             "probes_run": self.probes_run,
             "duration_seconds": round(self.duration_seconds, 1),
             "timestamp": self.timestamp,
+            "agent_info": self.agent_info,
             "findings": [
                 {
                     "probe_id": f.probe_id,
@@ -186,6 +187,7 @@ class ScanResult:
                     "detail": f.detail,
                     "evidence": f.evidence[:200],
                     "remediation": f.remediation,
+                    "explanation": f.explanation,
                 }
                 for f in self.findings
             ],

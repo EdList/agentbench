@@ -37,3 +37,9 @@ def get_probe_counts() -> dict[str, int]:
     for p in get_all_probes():
         counts[p.domain.value] = counts.get(p.domain.value, 0) + 1
     return counts
+
+
+def reset_cache() -> None:
+    """Clear the cached probe list so the next call reloads from disk."""
+    global _ALL_PROBES
+    _ALL_PROBES = None

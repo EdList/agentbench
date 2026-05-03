@@ -102,6 +102,9 @@ def load_probes_from_yaml(path: str | Path) -> list[Probe]:
     if data is None:
         return []
 
+    if not isinstance(data, dict):
+        return []
+
     raw_probes: list[dict] = data.get("probes") or []
     probes: list[Probe] = []
     seen_ids: set[str] = set()

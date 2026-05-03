@@ -7,7 +7,7 @@ import shutil
 
 import httpx
 
-from agentbench.probes.registry import _BUILTIN_DIR
+from agentbench.probes.registry import _BUILTIN_DIR, reset_cache
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,13 @@ def check_for_updates() -> list[str]:
             if resp.status_code == 200:
                 if not local_path.exists():
                     updated.append(filename)
-                elif resp.text != local_path.read_text():
-                    updated.append(filename)
+                else:
+                    try:
+                        local_text = local_path.read_text()
+                    except OSError:
+                        local_text = None
+                    if local_text is None or resp.text != local_text:
+                        updated.append(filename)
         except httpx.HTTPError as exc:
             logger.warning("Failed to check %s: %s", filename, exc)
     return updated
@@ -63,4 +68,6 @@ def pull_updates(filenames: list[str] | None = None) -> list[str]:
         except httpx.HTTPError as exc:
             logger.warning("Failed to pull %s: %s", filename, exc)
 
+    if updated:
+        reset_cache()
     return updated

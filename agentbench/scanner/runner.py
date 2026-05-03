@@ -83,9 +83,6 @@ async def run_scan(
                             "rate-limited %d times, increasing delay to %.1fs",
                             consecutive_429s, adaptive_delay,
                         )
-                        # Reduce concurrency: shrink semaphore permits
-                        if semaphore._value > 1:
-                            semaphore._value -= 1
                 else:
                     # Success — recover gradually
                     if consecutive_429s > 0:

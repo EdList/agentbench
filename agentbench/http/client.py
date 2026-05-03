@@ -90,16 +90,26 @@ async def send_probe(
                                 break
                             await asyncio.sleep(3 * (fu_attempt + 1))
                         fu_elapsed = (time.monotonic() - fu_start) * 1000
+                        result.latency_ms += fu_elapsed
                         if fu_resp.status_code < 400:
                             fu_body = fu_resp.json()
                             fu_text = _extract_response_text(fu_body)
                             result.follow_up_responses.append(fu_text)
                             messages.append({"role": "assistant", "content": fu_text})
-                            result.latency_ms += fu_elapsed
                         else:
-                            result.follow_up_responses.append(f"[HTTP {fu_resp.status_code}]")
+                            result.follow_up_responses.append(
+                                f"[HTTP {fu_resp.status_code}]"
+                            )
+                            messages.append({
+                                "role": "assistant",
+                                "content": result.follow_up_responses[-1],
+                            })
                     except Exception as e:
                         result.follow_up_responses.append(f"[Error: {e}]")
+                        messages.append({
+                            "role": "assistant",
+                            "content": result.follow_up_responses[-1],
+                        })
 
     except httpx.TimeoutException:
         result.error = f"Timeout after {timeout}s"

@@ -35,10 +35,10 @@ def score_domain(
             ds.failed += 1
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
         elif f.verdict == Verdict.ERROR:
-            # Error verdicts are already counted in ds.errored
+            ds.errored += 1
             ds.score -= _DEDUCTIONS.get(f.severity, 5)
 
-    ds.errored = sum(1 for r in results if r.is_error)
+    ds.errored += sum(1 for r in results if r.is_error)
     ds.passed = max(0, ds.total - ds.errored - ds.failed)
     ds.score = max(0, min(100, ds.score))
     return ds
