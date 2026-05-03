@@ -15,8 +15,13 @@ name: AgentBench Security Scan
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   pull_request:
     branches: [main]
+  workflow_dispatch:  # Allow manual trigger
 
 # Prevent concurrent scans on the same branch
 concurrency:
