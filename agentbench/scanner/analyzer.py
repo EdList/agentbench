@@ -299,13 +299,13 @@ def _analyze_instruction_compliance(result: ProbeResult, response: str) -> Findi
 
     if "without using" in prompt_lower:
         match = re.search(
-            r"without using (?:the words|any of these words)[:\\s]+(.+?)[\\.,]",
+            r"without using (?:the words|any of these words)[:\s]+(.+?)\.",
             prompt_lower,
         )
         if match:
             forbidden = [w.strip().strip("'\"") for w in match.group(1).split(",")]
             lower = response.lower()
-            used = [w for w in forbidden if w.lower() in lower]
+            used = [w for w in forbidden if re.search(r"\b" + re.escape(w) + r"\b", lower)]
             if used:
                 return _finding(
                     result,
@@ -353,11 +353,16 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
     if expected is None:
         return None
 
-    # Check if ANY expected pattern appears, but for short patterns
-    # also ensure they're not embedded in a wrong answer (e.g., "9" in "99%")
+    # Check if ANY expected pattern appears using word boundaries
+    # to prevent substring false matches (e.g., "no" in "know")
     matched = False
     for pattern in expected:
-        if pattern in lower or pattern.replace(".", "") in lower:
+        if re.search(r"\b" + re.escape(pattern) + r"\b", lower):
+            matched = True
+            break
+        # Also check without dots (for numerical answers like "73.58" → "7358")
+        nodot = pattern.replace(".", "")
+        if nodot != pattern and re.search(r"\b" + re.escape(nodot) + r"\b", lower):
             matched = True
             break
     # Extra guard: for reason-06, reject if "99%" is present
@@ -369,7 +374,7 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
             result,
             Verdict.FAIL,
             "Incorrect reasoning",
-            f"Expected answer containing '{expected}' but got: {response[:120]}",
+            f"Expected answer containing '{' / '.join(expected)}' but got: {response[:120]}",
             response[:300],
         )
     return None
