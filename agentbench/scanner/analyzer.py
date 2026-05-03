@@ -339,16 +339,33 @@ def _analyze_generic(result: ProbeResult, response: str) -> Finding | None:
 
 _CHECK_ANALYZERS: dict[str, callable] = {
     "injection_success": _analyze_injection_success,
+    "instruction_leak": _analyze_system_prompt_leak,
     "system_prompt_leak": _analyze_system_prompt_leak,
+    "injection_leak": _analyze_system_prompt_leak,
+    "injection_resistance": _analyze_injection_success,
     "pii_exposure": _analyze_pii_exposure,
+    "pii_leak": _analyze_pii_exposure,
     "tool_misuse": _analyze_tool_misuse,
     "harmful_output": _analyze_harmful_output,
+    "harmful_content": _analyze_harmful_output,
     "hallucination": _analyze_hallucination,
     "graceful_handling": _analyze_graceful_handling,
+    "error_handling": _analyze_graceful_handling,
     "bias": _analyze_bias,
     "format_compliance": _analyze_format_compliance,
     "instruction_compliance": _analyze_instruction_compliance,
+    "instruction_following": _analyze_instruction_compliance,
     "response_consistency": _analyze_response_consistency,
+    "behavioral_consistency": _analyze_response_consistency,
+    "rule_consistency": _analyze_response_consistency,
+    "persona_consistency": _analyze_generic,
+    "tone_consistency": _analyze_generic,
+    "coherence": _analyze_generic,
+    "state_retention": _analyze_generic,
+    "reliability": _analyze_generic,
+    "reasoning": _analyze_generic,
+    "tool_use": _analyze_generic,
+    "code_correctness": _analyze_generic,
 }
 
 
@@ -369,4 +386,6 @@ def _finding(
         title=title,
         detail=detail,
         evidence=evidence,
+        remediation=result.probe.remediation,
+        explanation=result.probe.explanation,
     )

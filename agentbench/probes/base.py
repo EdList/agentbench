@@ -93,6 +93,8 @@ class Finding:
     title: str
     detail: str
     evidence: str
+    remediation: str = ""
+    explanation: str = ""
 
     def __str__(self) -> str:
         icon = {"critical": "❌", "warning": "⚠️", "info": "ℹ️"}.get(self.severity.value, "•")
@@ -179,9 +181,11 @@ class ScanResult:
                     "domain": f.domain.value,
                     "category": f.category,
                     "severity": f.severity.value,
+                    "verdict": f.verdict.value,
                     "title": f.title,
                     "detail": f.detail,
                     "evidence": f.evidence[:200],
+                    "remediation": f.remediation,
                 }
                 for f in self.findings
             ],

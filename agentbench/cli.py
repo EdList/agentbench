@@ -115,6 +115,12 @@ def scan(
     # Render results
     _render_scorecard(result)
 
+    # Save to leaderboard
+    from agentbench.leaderboard import add_scan_result
+
+    add_scan_result(result, label=url)
+    console.print("[dim]Result added to leaderboard.[/dim]")
+
     # Save output if requested
     if output:
         with open(output, "w") as f:
@@ -191,12 +197,16 @@ def _render_scorecard(result) -> None:
             for f in crit:
                 console.print(f"    • {f.title}")
                 console.print(f"      [dim]{f.detail[:120]}[/dim]")
+                if f.remediation:
+                    console.print(f"      [green]↳ Fix: {f.remediation[:100]}[/green]")
 
         if warn:
             console.print(f"  [yellow]⚠️  Warnings ({len(warn)})[/yellow]")
             for f in warn:
                 console.print(f"    • {f.title}")
                 console.print(f"      [dim]{f.detail[:120]}[/dim]")
+                if f.remediation:
+                    console.print(f"      [green]↳ Fix: {f.remediation[:100]}[/green]")
 
         if info:
             console.print(f"  [dim]ℹ️  Info ({len(info)})[/dim]")
@@ -224,3 +234,74 @@ def probes() -> None:
 
     console.print(table)
     console.print()
+
+
+@app.command()
+def compare(
+    url: str | None = typer.Argument(None, help="Agent URL to compare."),
+    label: str | None = typer.Option(None, "--label", "-l", help="Label to filter by."),
+    last: int = typer.Option(10, "--last", "-n", help="Show last N entries."),
+) -> None:
+    """Compare scan results over time."""
+    from agentbench.leaderboard import compare_results, get_recent
+
+    if url or label:
+        entries = compare_results(url=url, label=label)
+    else:
+        entries = get_recent(last)
+
+    if not entries:
+        console.print("\n[yellow]No scan results found.[/yellow] Run a scan first.\n")
+        return
+
+    console.print()
+    table = Table(title="Scan History", show_header=True, header_style="bold")
+    table.add_column("Timestamp", style="dim")
+    table.add_column("Label")
+    table.add_column("Score", justify="right")
+    table.add_column("Grade", justify="center")
+    table.add_column("Critical", justify="right", style="red")
+    table.add_column("Warning", justify="right", style="yellow")
+
+    for entry in entries:
+        sc = (
+            "green"
+            if entry["overall_score"] >= 80
+            else "yellow"
+            if entry["overall_score"] >= 60
+            else "red"
+        )
+        table.add_row(
+            entry.get("timestamp", "")[:19],
+            entry.get("label", entry.get("url", "")),
+            f"[{sc}]{entry['overall_score']}[/{sc}]",
+            f"[{sc}]{entry['grade']}[/{sc}]",
+            str(entry.get("critical_count", 0)),
+            str(entry.get("warning_count", 0)),
+        )
+
+    console.print(table)
+    console.print()
+
+
+@app.command()
+def update() -> None:
+    """Check for and pull latest probe definitions."""
+    from agentbench.updater import check_for_updates, pull_updates
+
+    console.print("\n[bold]Checking for probe updates...[/bold]\n")
+
+    available = check_for_updates()
+    if not available:
+        console.print("[green]✅ All probes are up to date.[/green]\n")
+        return
+
+    console.print(f"Updates available for: {', '.join(available)}")
+    updated = pull_updates(available)
+
+    if updated:
+        for f in updated:
+            console.print(f"  [green]✅ Updated {f}[/green]")
+        console.print(f"\n[bold]{len(updated)} probe file(s) updated.[/bold]\n")
+    else:
+        console.print("[yellow]Failed to download updates.[/yellow]\n")
