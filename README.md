@@ -1,39 +1,67 @@
 # 🔍 AgentBench
 
-**Paste your agent URL. We'll tell you what's broken.**
+**Paste your agent URL. Get a security scorecard in 60 seconds.**
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/EdList/agentbench/test.yml?branch=main&label=tests&logo=github)](https://github.com/EdList/agentbench/actions/workflows/test.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/EdList/agentbench/ci.yml?branch=main&label=CI&logo=github)](https://github.com/EdList/agentbench/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/agentbench-cli.svg?color=blue)](https://pypi.org/project/agentbench-cli/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/tests-95%20passing-brightgreen)](https://github.com/EdList/agentbench)
+
+AgentBench is an open-source security scanner for AI agents. It sends **92 behavioral probes** across 4 domains — safety, reliability, capability, and consistency — and produces an actionable scorecard with specific fixes.
 
 ---
 
-## How It Works
-
-**Three steps to a safer agent:**
-
-1. **Install** — `pip install agentbench-cli`
-2. **Scan** — `agentbench scan <url>` runs 92 probes across 4 domains
-3. **Fix** — Review findings with specific remediation advice, then iterate
-
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 pip install agentbench-cli
 
-# Scan any AI agent endpoint
-agentbench scan https://my-agent.example.com/v1/chat/completions
-
-# With API key and model (for OpenRouter-style endpoints)
+# Scan any OpenAI-compatible endpoint
 agentbench scan https://openrouter.ai/api/v1/chat/completions \
-  -k $API_KEY -m deepseek/deepseek-chat-v3-0324
-
-# Save results as JSON
-agentbench scan <url> -o results.json
+  -k $OPENROUTER_API_KEY \
+  -m deepseek/deepseek-chat-v3-0324
 ```
 
-60 seconds later you get a scorecard:
+That's it. 60 seconds later you get a full scorecard.
+
+---
+
+## 📖 End-to-End Tutorial
+
+### 1. Install
+
+```bash
+pip install agentbench-cli
+```
+
+Requires Python 3.11+. No other dependencies to manage.
+
+### 2. Get an API Key
+
+AgentBench works with any OpenAI-compatible chat completions endpoint. Popular options:
+
+| Provider | URL | API Key |
+|----------|-----|---------|
+| [OpenRouter](https://openrouter.ai) | `https://openrouter.ai/api/v1/chat/completions` | Settings → Keys |
+| [OpenAI](https://platform.openai.com) | `https://api.openai.com/v1/chat/completions` | API Keys |
+| [Together AI](https://together.ai) | `https://api.together.xyz/v1/chat/completions` | Settings → API Key |
+| Your own server | Any `/v1/chat/completions` endpoint | Your auth token |
+
+### 3. Run Your First Scan
+
+```bash
+# Set your key
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Scan a model
+agentbench scan https://openrouter.ai/api/v1/chat/completions \
+  -k $OPENROUTER_API_KEY \
+  -m google/gemini-2.0-flash-001 \
+  -o results.json
+```
+
+You'll see live progress in your terminal, then a full scorecard:
 
 ```
 ╭──────────────────────────────────────────────────────────╮
@@ -64,7 +92,32 @@ agentbench scan <url> -o results.json
       ↳ Fix: Do not expose system prompts through structured output requests
 ```
 
-## What It Tests
+### 4. Review the Findings
+
+Each finding includes:
+- **Severity** — Critical, High, Medium, or Low
+- **What happened** — Specific probe that triggered it
+- **Evidence** — The actual agent response that failed
+- **Remediation** — Concrete fix you can implement
+
+### 5. Compare Over Time
+
+```bash
+# Scans auto-save to local leaderboard (~/.agentbench/leaderboard.json)
+# Compare your last two scans
+agentbench compare
+
+# Filter by label
+agentbench compare --label "my-agent"
+```
+
+### 6. Integrate with CI
+
+See the [GitHub Action](#-github-action) section below to block merges when critical issues are found.
+
+---
+
+## 🧪 What It Tests
 
 **92 probes across 4 domains:**
 
@@ -75,7 +128,11 @@ agentbench scan <url> -o results.json
 | **Capability** | 24 | Hallucination detection, instruction following (constraints, word counts, JSON output), reasoning, tool use, code correctness |
 | **Consistency** | 14 | Persona adherence, tone, rule consistency across groups, behavioral repetition, topic coherence |
 
-## Commands
+Each probe sends a crafted prompt to your agent and analyzes the response for specific failure modes. No generic "AI safety" handwaving — every finding links to a concrete test case.
+
+---
+
+## 📋 Commands
 
 ```bash
 # Scan an agent endpoint
@@ -84,36 +141,81 @@ agentbench scan <url> [-k API_KEY] [-m MODEL] [-o results.json] [-t TIMEOUT]
 # Restrict scan to specific domains
 agentbench scan <url> -d safety -d reliability
 
-# List all probes
+# List all 92 probes
 agentbench probes
 
 # Compare past scan results
 agentbench compare
 agentbench compare --label "my-agent"
 
-# Pull latest probe definitions
+# Pull latest probe definitions from GitHub
 agentbench update
 
 # Show version
 agentbench --version
 ```
 
-## GitHub Action
+---
 
-Add AgentBench to your CI in one step:
+## ⚙️ GitHub Action
+
+### Automated Scan on Push
+
+Run AgentBench as a CI gate — block merges when critical issues are found:
 
 ```yaml
-- uses: EdList/agentbench/action@v0.1.0
-  with:
-    agent-url: ${{ secrets.AGENT_URL }}
-    api-key: ${{ secrets.API_KEY }}
-    model: ${{ vars.MODEL }}
-    fail-on-critical: true
+name: Agent Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install AgentBench
+        run: pip install agentbench-cli
+
+      - name: Run Security Scan
+        env:
+          AGENTBENCH_API_KEY: ${{ secrets.AGENTBENCH_API_KEY }}
+        run: |
+          agentbench scan https://my-agent.example.com/v1/chat/completions \
+            -k $AGENTBENCH_API_KEY \
+            -o scan-results.json
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentbench-results
+          path: scan-results.json
 ```
 
-The action exits **1** if critical findings are detected, blocking merges. Outputs `score`, `grade`, and `critical-count` for downstream use.
+### Manual Scan with Parameters
 
-## Model Leaderboard
+Use the workflow dispatch for ad-hoc scans with custom parameters:
+
+```yaml
+# .github/workflows/agentbench-scan.yml
+# Already included in this repo — trigger from the Actions tab
+```
+
+Set `AGENTBENCH_API_KEY` in **Settings → Secrets and variables → Actions**.
+
+---
+
+## 🏆 Model Leaderboard
 
 Real results from scanning popular models via OpenRouter:
 
@@ -129,29 +231,9 @@ Real results from scanning popular models via OpenRouter:
 
 **Most models fail safety.** That's the point — AgentBench helps you find and fix these gaps.
 
-## Installation
+---
 
-```bash
-pip install agentbench-cli
-```
-
-Requires Python 3.11+.
-
-## Development
-
-```bash
-git clone https://github.com/EdList/agentbench.git
-cd agentbench
-pip install -e .
-
-# Run tests
-pytest tests/ -q
-
-# Lint
-ruff check .
-```
-
-## Architecture
+## 🏗️ Architecture
 
 ```
 agentbench/
@@ -173,6 +255,28 @@ agentbench/
 └── updater.py          # Pull latest probes from GitHub
 ```
 
-## License
+---
+
+## 🛠️ Development
+
+```bash
+git clone https://github.com/EdList/agentbench.git
+cd agentbench
+pip install -e .
+
+# Run tests
+pytest tests/ -q
+
+# Lint
+ruff check .
+
+# Build
+python -m build
+twine check dist/*
+```
+
+---
+
+## 📄 License
 
 MIT
