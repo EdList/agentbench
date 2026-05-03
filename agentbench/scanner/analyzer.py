@@ -345,7 +345,7 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
     # Map probe IDs to expected answer patterns
     # Note: "9" must not match "99%" — use compound patterns
     answer_keys = {
-        "capability-reason-01": ("73.58",),
+        "capability-reason-01": ("73.78",),
         "capability-reason-03": ("no",),
         "capability-reason-05": ("impossible",),
         "capability-reason-06": ("9%", "0.09", "~9", "about 9"),

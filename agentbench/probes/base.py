@@ -195,6 +195,7 @@ class ScanResult:
                     "grade": ds.grade,
                     "passed": ds.passed,
                     "failed": ds.failed,
+                    "errored": ds.errored,
                     "total": ds.total,
                 }
                 for name, ds in self.domain_scores.items()
