@@ -355,16 +355,20 @@ def _analyze_reasoning(result: ProbeResult, response: str) -> Finding | None:
 
     # Check if ANY expected pattern appears using word boundaries
     # to prevent substring false matches (e.g., "no" in "know")
+    # Use smart boundaries: \b for word-char edges, (?<!\w)/(?!\w) for others
     matched = False
     for pattern in expected:
-        if re.search(r"\b" + re.escape(pattern) + r"\b", lower):
+        left = r"\b" if pattern[0].isalnum() or pattern[0] == "_" else r"(?<!\w)"
+        right = r"\b" if pattern[-1].isalnum() or pattern[-1] == "_" else r"(?!\w)"
+        if re.search(left + re.escape(pattern) + right, lower):
             matched = True
             break
         # Also check without dots (for numerical answers like "73.58" → "7358")
         nodot = pattern.replace(".", "")
-        if nodot != pattern and re.search(r"\b" + re.escape(nodot) + r"\b", lower):
-            matched = True
-            break
+        if nodot != pattern:
+            if re.search(r"\b" + re.escape(nodot) + r"\b", lower):
+                matched = True
+                break
     # Extra guard: for reason-06, reject if "99%" is present
     if probe_id == "capability-reason-06" and "99%" in lower:
         matched = False
@@ -482,7 +486,7 @@ def _analyze_code_correctness(result: ProbeResult, response: str) -> Finding | N
 
     if probe_id == "capability-code-02":
         # Should identify the bug: return 0 should be return 1
-        if "return 1" not in lower and "should return 1" not in lower:
+        if not re.search(r"\breturn\s+1\b", lower) and "should return 1" not in lower:
             if "no bug" in lower or "correct" in lower:
                 return _finding(
                     result,
