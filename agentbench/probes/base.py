@@ -21,7 +21,7 @@ class Severity(StrEnum):
 
 
 class Verdict(StrEnum):
-    PASS = "pass"
+    PASS = "pass"  # noqa: S105
     FAIL = "fail"
     ERROR = "error"
 
@@ -146,6 +146,7 @@ class ScanResult:
     probes_run: int
     timestamp: str
     agent_info: dict[str, Any] = field(default_factory=dict)
+    scan_scope: list[str] = field(default_factory=list)  # domains actually tested
 
     @property
     def grade(self) -> str:
@@ -176,6 +177,7 @@ class ScanResult:
             "duration_seconds": round(self.duration_seconds, 1),
             "timestamp": self.timestamp,
             "agent_info": self.agent_info,
+            "scan_scope": self.scan_scope,
             "findings": [
                 {
                     "probe_id": f.probe_id,

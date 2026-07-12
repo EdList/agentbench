@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import time
 from typing import Any
 
@@ -13,6 +15,17 @@ from agentbench.probes.base import Probe, ProbeResult
 # Default timeout per request
 DEFAULT_TIMEOUT = 30.0
 
+# CRITICAL-1: Maximum seconds to honour a Retry-After header.  Even if a
+# server demands a multi-hour backoff, we cap the sleep so a scan is not
+# blocked indefinitely.
+MAX_RETRY_AFTER_SLEEP = 60.0
+
+# MEDIUM-4: Reject response bodies larger than this to avoid loading
+# multi-GB responses into memory.
+MAX_RESPONSE_SIZE = 1_048_576  # 1 MiB
+
+logger = logging.getLogger(__name__)
+
 
 async def send_probe(
     url: str,
@@ -22,11 +35,15 @@ async def send_probe(
     model: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     headers: dict[str, str] | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> ProbeResult:
     """Send a single probe to an agent endpoint and return the result.
 
     Supports OpenAI-compatible chat completions format.
     Falls back to simple JSON-in/JSON-out for non-OpenAI endpoints.
+
+    If *client* is provided, it is used for all HTTP requests (enabling
+    connection pooling).  Otherwise a one-shot client is created internally.
     """
     result = ProbeResult(probe=probe)
 
@@ -53,72 +70,140 @@ async def send_probe(
         payload["model"] = model
 
     start = time.monotonic()
+    # AB-H1 FIX: Use shared client if provided (connection pooling); otherwise
+    # create a one-shot client for backward compatibility.
+    _owns_client = client is None
+    if _owns_client:
+        active_client = httpx.AsyncClient(timeout=timeout)
+    else:
+        active_client = client
+
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await _post_with_rate_limit(client, url, payload, request_headers)
-            elapsed = (time.monotonic() - start) * 1000
+        resp = await _post_with_rate_limit(active_client, url, payload, request_headers)
+        elapsed = (time.monotonic() - start) * 1000
 
-            result.status_code = resp.status_code
-            result.latency_ms = elapsed
+        result.status_code = resp.status_code
+        result.latency_ms = elapsed
 
-            if resp.status_code >= 400:
-                # Some non-OpenAI endpoints reject chat-completions payloads but
-                # accept a simple JSON prompt. Retry once only when no model was
-                # specified, so OpenAI/OpenRouter-style usage is unaffected.
-                if model is None and resp.status_code in (400, 422):
-                    fallback = await _try_simple_json_fallback(
-                        client, url, probe, request_headers, start
-                    )
-                    if fallback is not None:
-                        return fallback
-                result.error = f"HTTP {resp.status_code}: {resp.text[:500]}"
-                return result
+        # MEDIUM-4: Reject oversized responses before attempting to parse.
+        if _is_oversized(resp):
+            result.error = (
+                f"Response too large: {_response_size(resp)} bytes "
+                f"exceeds limit {MAX_RESPONSE_SIZE}"
+            )
+            return result
 
-            # Parse response — try OpenAI format
+        if resp.status_code >= 400:
+            # Some non-OpenAI endpoints reject chat-completions payloads but
+            # accept a simple JSON prompt. Retry once only when no model was
+            # specified, so OpenAI/OpenRouter-style usage is unaffected.
+            if model is None and resp.status_code in (400, 422):
+                fallback = await _try_simple_json_fallback(
+                    active_client, url, probe, request_headers, start
+                )
+                if fallback is not None:
+                    return fallback
+            result.error = f"HTTP {resp.status_code}: {resp.text[:500]}"
+            return result
+
+        # Parse response — try OpenAI format
+        try:
             body = resp.json()
-            result.response = _extract_response_text(body)
+        except json.JSONDecodeError as exc:
+            result.error = _json_decode_error_message(resp, exc)
+            return result
+        result.response = _extract_response_text(body)
 
-            # Handle follow-ups
-            if probe.follow_ups and result.response:
-                messages.append({"role": "assistant", "content": result.response})
-                for follow_up in probe.follow_ups:
-                    messages.append({"role": "user", "content": follow_up})
-                    payload["messages"] = messages
-                    fu_start = time.monotonic()
-                    try:
-                        fu_resp = await _post_with_rate_limit(
-                            client, url, payload, request_headers
-                        )
-                        fu_elapsed = (time.monotonic() - fu_start) * 1000
-                        result.latency_ms += fu_elapsed
-                        if fu_resp.status_code < 400:
-                            fu_body = fu_resp.json()
-                            fu_text = _extract_response_text(fu_body)
-                            result.follow_up_responses.append(fu_text)
-                            messages.append({"role": "assistant", "content": fu_text})
-                        else:
-                            result.follow_up_responses.append(
-                                f"[HTTP {fu_resp.status_code}]"
-                            )
-                            messages.append({
-                                "role": "assistant",
-                                "content": result.follow_up_responses[-1],
-                            })
-                    except Exception as e:
-                        result.follow_up_responses.append(f"[Error: {e}]")
-                        messages.append({
-                            "role": "assistant",
-                            "content": result.follow_up_responses[-1],
-                        })
+        # Handle follow-ups
+        if probe.follow_ups and result.response:
+            await _handle_follow_ups(
+                active_client, url, probe, payload, request_headers, messages, result
+            )
 
     except httpx.TimeoutException:
         result.error = f"Timeout after {timeout}s"
         result.latency_ms = (time.monotonic() - start) * 1000
-    except Exception as e:
+    except (httpx.HTTPError, OSError, ValueError) as e:
         result.error = str(e)
         result.latency_ms = (time.monotonic() - start) * 1000
+    finally:
+        if _owns_client:
+            close = getattr(active_client, "aclose", None)
+            if close is not None:
+                await close()
 
     return result
+
+
+async def _handle_follow_ups(
+    client: httpx.AsyncClient,
+    url: str,
+    probe: Probe,
+    payload: dict[str, Any],
+    request_headers: dict[str, str],
+    messages: list[dict[str, str]],
+    result: ProbeResult,
+) -> None:
+    """Send follow-up messages and append responses to *result*."""
+    if result.response is None:
+        raise ValueError("result.response must not be None when handling follow-ups")
+    messages.append({"role": "assistant", "content": result.response})
+    for follow_up in probe.follow_ups:
+        messages.append({"role": "user", "content": follow_up})
+        payload["messages"] = messages
+        fu_start = time.monotonic()
+        try:
+            fu_resp = await _post_with_rate_limit(
+                client, url, payload, request_headers
+            )
+            fu_elapsed = (time.monotonic() - fu_start) * 1000
+            result.latency_ms += fu_elapsed
+            if fu_resp.status_code < 400:
+                try:
+                    fu_body = fu_resp.json()
+                except json.JSONDecodeError as exc:
+                    fu_text = _json_decode_error_message(fu_resp, exc)
+                    result.error = fu_text
+                    result.follow_up_responses.append(f"[Error: {fu_text}]")
+                    messages.append({
+                        "role": "assistant",
+                        "content": result.follow_up_responses[-1],
+                    })
+                    continue
+                fu_text = _extract_response_text(fu_body)
+                result.follow_up_responses.append(fu_text)
+                messages.append({"role": "assistant", "content": fu_text})
+            else:
+                result.follow_up_responses.append(
+                    f"[HTTP {fu_resp.status_code}]"
+                )
+                messages.append({
+                    "role": "assistant",
+                    "content": result.follow_up_responses[-1],
+                })
+        except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError) as e:
+            logger.debug("follow-up request failed", exc_info=True)
+            result.follow_up_responses.append(f"[Error: {e}]")
+            messages.append({
+                "role": "assistant",
+                "content": result.follow_up_responses[-1],
+            })
+
+
+def _response_size(resp: httpx.Response) -> int:
+    """Determine the response body size from Content-Length or actual content."""
+    cl = resp.headers.get("content-length")
+    if cl:
+        try:
+            return int(cl)
+        except ValueError:
+            pass
+    return len(resp.content)
+
+
+def _is_oversized(resp: httpx.Response) -> bool:
+    """MEDIUM-4: Return True if the response exceeds MAX_RESPONSE_SIZE."""
+    return _response_size(resp) > MAX_RESPONSE_SIZE
 
 
 async def _post_with_rate_limit(
@@ -127,13 +212,78 @@ async def _post_with_rate_limit(
     payload: dict[str, Any],
     headers: dict[str, str],
 ) -> httpx.Response:
-    """POST a payload, retrying briefly on rate limits."""
+    """POST a payload, retrying on rate-limit (429) and server errors (503).
+
+    CRITICAL-1: Retry-After is capped at MAX_RETRY_AFTER_SLEEP so a
+    malicious or misconfigured server cannot block the scan indefinitely.
+    MEDIUM-5: 503 (Service Unavailable) is retried alongside 429.
+    """
+    # HIGH-1 FIX: Use streaming so we can check Content-Length BEFORE the
+    # body is loaded into memory.  httpx eagerly reads the full body with
+    # client.post(); streaming defers the read until aread().
     for attempt in range(3):
-        resp = await client.post(url, json=payload, headers=headers)
-        if resp.status_code != 429:
-            return resp
-        await asyncio.sleep(3 * (attempt + 1))
-    return resp
+        req = client.build_request("POST", url, json=payload, headers=headers)
+        resp = await client.send(req, stream=True)
+
+        # Retry on 429 (rate limit) and 503 (service unavailable).
+        if resp.status_code in (429, 503):
+            # L1 FIX: On the final retry, read the body before closing so the
+            # returned response has usable content (status_code + body).
+            if attempt + 1 >= 3:
+                await resp.aread()
+                await resp.aclose()
+                return resp
+            await resp.aclose()
+
+            # AB-H2 FIX / CRITICAL-1: Respect Retry-After header but cap at 60s.
+            delay: float = 3.0 * (attempt + 1)
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    requested = float(retry_after)
+                    if requested > MAX_RETRY_AFTER_SLEEP:
+                        logger.warning(
+                            "Retry-After %ss exceeds cap %ss — capping",
+                            retry_after, MAX_RETRY_AFTER_SLEEP,
+                        )
+                        delay = MAX_RETRY_AFTER_SLEEP
+                    else:
+                        delay = max(requested, delay)
+                except ValueError:
+                    pass  # Retry-After might be HTTP-date; fall back to default
+            await asyncio.sleep(delay)
+            continue
+
+        # Check Content-Length BEFORE reading the body to avoid loading
+        # a multi-GB response into memory.
+        cl = resp.headers.get("content-length")
+        if cl:
+            try:
+                cl_int = int(cl)
+            except ValueError:
+                cl_int = None  # Non-numeric Content-Length — proceed
+            if cl_int is not None and cl_int > MAX_RESPONSE_SIZE:
+                await resp.aclose()
+                raise ValueError(
+                    f"Response too large: Content-Length {cl} "
+                    f"exceeds limit {MAX_RESPONSE_SIZE}"
+                )
+
+        # Body size is acceptable — read it now.
+        await resp.aread()
+        # C1 FIX: Post-read size check for responses that arrive without a
+        # Content-Length header (chunked encoding, buggy servers).  The
+        # pre-read check above only guards the Content-Length path.
+        if len(resp.content) > MAX_RESPONSE_SIZE:
+            await resp.aclose()
+            raise ValueError(
+                f"Response too large: body size {len(resp.content)} "
+                f"bytes exceeds limit {MAX_RESPONSE_SIZE}"
+            )
+        await resp.aclose()
+        return resp
+
+    return resp  # type: ignore[possibly-undefined]
 
 
 async def _try_simple_json_fallback(
@@ -155,7 +305,11 @@ async def _try_simple_json_fallback(
     result = ProbeResult(probe=probe)
     result.status_code = resp.status_code
     result.latency_ms = (time.monotonic() - start) * 1000
-    body = resp.json()
+    try:
+        body = resp.json()
+    except json.JSONDecodeError as exc:
+        result.error = _json_decode_error_message(resp, exc)
+        return result
     result.response = _extract_response_text(body)
 
     history: list[dict[str, str]] = [
@@ -171,8 +325,15 @@ async def _try_simple_json_fallback(
             if fu_resp.status_code >= 400:
                 fu_text = f"[HTTP {fu_resp.status_code}]"
             else:
-                fu_text = _extract_response_text(fu_resp.json())
-        except Exception as e:
+                try:
+                    fu_body = fu_resp.json()
+                except json.JSONDecodeError as exc:
+                    fu_text = f"[Error: {_json_decode_error_message(fu_resp, exc)}]"
+                    result.error = fu_text
+                else:
+                    fu_text = _extract_response_text(fu_body)
+        except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError) as e:
+            logger.debug("simple JSON follow-up request failed", exc_info=True)
             result.latency_ms += (time.monotonic() - fu_start) * 1000
             fu_text = f"[Error: {e}]"
 
@@ -193,19 +354,31 @@ def _format_simple_prompt(history: list[dict[str, str]], follow_up: str) -> str:
     return f"{transcript}\nUser: {follow_up}"
 
 
+def _json_decode_error_message(resp: httpx.Response, exc: json.JSONDecodeError) -> str:
+    """Build a useful error message for non-JSON responses."""
+    content_type = resp.headers.get("content-type", "<missing>")
+    snippet = resp.text[:500].replace("\n", "\\n")
+    return (
+        f"Invalid JSON response: {exc.msg} at line {exc.lineno} column {exc.colno}; "
+        f"content-type={content_type!r}; body[:500]={snippet!r}"
+    )
+
+
 def _extract_response_text(body: dict[str, Any]) -> str:
     """Extract the text response from various API response formats."""
     # OpenAI-compatible
     if "choices" in body:
         choices = body["choices"]
-        if choices and isinstance(choices, list):
+        if isinstance(choices, list) and choices:
             choice = choices[0]
-            message = choice.get("message", {})
-            content = message.get("content", "")
-            if content is not None:
-                return str(content)
-            # content was explicitly None (e.g., function-calling response)
-            return ""
+            if isinstance(choice, dict):
+                message = choice.get("message", {})
+                if isinstance(message, dict):
+                    content = message.get("content", "")
+                    if content is not None:
+                        return str(content)
+                    # content was explicitly None (e.g., function-calling response)
+                    return ""
 
     # Anthropic format (list of content blocks) — check BEFORE plain content
     if "content" in body and isinstance(body["content"], list):

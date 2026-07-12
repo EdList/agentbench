@@ -9,10 +9,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agentbench.http.client import send_probe
+import httpx
 from agentbench.probes.base import (
     Domain,
     DomainScore,
     Finding,
+    Probe,
     ProbeResult,
     ScanResult,
 )
@@ -56,7 +58,7 @@ async def run_scan(
     adaptive_delay = MIN_INTERVAL  # grows on repeated 429s
     consecutive_429s = 0
 
-    async def _run_one(probe):
+    async def _run_one(probe: Probe, shared_client: httpx.AsyncClient | None = None) -> ProbeResult:
         nonlocal completed, last_request, adaptive_delay, consecutive_429s
         async with semaphore:
             # Throttle — lock protects read-sleep-write + adaptive state
@@ -69,7 +71,8 @@ async def run_scan(
                 last_request = time.monotonic()
 
             result = await send_probe(
-                url, probe, api_key=api_key, model=model, timeout=timeout, headers=headers
+                url, probe, api_key=api_key, model=model, timeout=timeout,
+                headers=headers, client=shared_client,
             )
 
             # Adaptive backoff: track consecutive 429s
@@ -94,12 +97,15 @@ async def run_scan(
             if progress_callback:
                 try:
                     await progress_callback(completed, total)
-                except Exception as exc:
+                except (RuntimeError, ValueError) as exc:
                     logger.warning("progress callback failed: %s", exc)
             return result
 
-    tasks = [_run_one(p) for p in probes]
-    results: list[ProbeResult] = await asyncio.gather(*tasks)
+    # AB-H1 FIX: Use a shared httpx.AsyncClient for connection pooling.
+    async with httpx.AsyncClient(timeout=timeout) as shared_client:
+        results: list[ProbeResult] = await asyncio.gather(
+            *[_run_one(p, shared_client) for p in probes]
+        )
 
     # Analyze
     all_findings: list[Finding] = []
@@ -127,4 +133,5 @@ async def run_scan(
         duration_seconds=duration,
         probes_run=total,
         timestamp=datetime.now(UTC).isoformat(),
+        scan_scope=sorted(domain_scores.keys()),
     )

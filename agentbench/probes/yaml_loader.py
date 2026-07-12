@@ -38,6 +38,87 @@ _REQUIRED_FIELDS = (
     "severity",
 )
 
+_MAX_TEXT_LENGTH = 50_000
+_STRING_FIELDS = (
+    "id",
+    "domain",
+    "category",
+    "description",
+    "prompt",
+    "check",
+    "expected",
+    "severity",
+)
+
+
+def _probe_label(entry: dict, index: int) -> str:
+    probe_id = entry.get("id")
+    return repr(probe_id) if isinstance(probe_id, str) and probe_id else f"index {index}"
+
+
+def _require_non_empty_string(
+    entry: dict,
+    field: str,
+    *,
+    path: Path,
+    index: int,
+    max_length: int = _MAX_TEXT_LENGTH,
+) -> str:
+    value = entry[field]
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{path}: probe {_probe_label(entry, index)} field '{field}' must be a string"
+        )
+    if not value.strip():
+        if field == "prompt" and "empty-input" in (entry.get("tags") or []):
+            # The built-in empty-input reliability probe intentionally sends an
+            # empty prompt; all other prompts must be non-empty.
+            return value
+        raise ValueError(
+            f"{path}: probe {_probe_label(entry, index)} field '{field}' must be non-empty"
+        )
+    if len(value) > max_length:
+        raise ValueError(
+            f"{path}: probe {_probe_label(entry, index)} field '{field}' exceeds "
+            f"maximum length of {max_length} characters"
+        )
+    return value
+
+
+def _optional_string(entry: dict, field: str, *, path: Path, index: int) -> str | None:
+    if field not in entry or entry[field] is None:
+        return None
+    return _require_non_empty_string(entry, field, path=path, index=index)
+
+
+def _optional_string_list(entry: dict, field: str, *, path: Path, index: int) -> list[str]:
+    if field not in entry:
+        return []
+    value = entry[field]
+    if not isinstance(value, list):
+        raise ValueError(
+            f"{path}: probe {_probe_label(entry, index)} field '{field}' must be a list"
+        )
+    items: list[str] = []
+    for item_index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(
+                f"{path}: probe {_probe_label(entry, index)} field '{field}' item "
+                f"{item_index} must be a string"
+            )
+        if field == "follow_ups" and not item.strip():
+            raise ValueError(
+                f"{path}: probe {_probe_label(entry, index)} field '{field}' item "
+                f"{item_index} must be non-empty"
+            )
+        if len(item) > _MAX_TEXT_LENGTH:
+            raise ValueError(
+                f"{path}: probe {_probe_label(entry, index)} field '{field}' item "
+                f"{item_index} exceeds maximum length of {_MAX_TEXT_LENGTH} characters"
+            )
+        items.append(item)
+    return items
+
 
 def _parse_probe(entry: dict, *, path: Path, index: int) -> Probe:
     """Convert a single YAML dict into a Probe object."""
@@ -48,6 +129,15 @@ def _parse_probe(entry: dict, *, path: Path, index: int) -> Probe:
         raise ValueError(
             f"{path}: probe {probe_label!r} is missing required fields: {', '.join(missing)}"
         )
+
+    for field in _STRING_FIELDS:
+        _require_non_empty_string(entry, field, path=path, index=index)
+
+    system_prompt = _optional_string(entry, "system_prompt", path=path, index=index)
+    remediation = _optional_string(entry, "remediation", path=path, index=index) or ""
+    explanation = _optional_string(entry, "explanation", path=path, index=index) or ""
+    follow_ups = _optional_string_list(entry, "follow_ups", path=path, index=index)
+    tags = _optional_string_list(entry, "tags", path=path, index=index)
 
     domain_str = entry["domain"]
     if domain_str not in _DOMAIN_MAP:
@@ -69,14 +159,14 @@ def _parse_probe(entry: dict, *, path: Path, index: int) -> Probe:
         category=entry["category"],
         description=entry["description"],
         prompt=entry["prompt"],
-        system_prompt=entry.get("system_prompt"),
-        follow_ups=entry.get("follow_ups") or [],
+        system_prompt=system_prompt,
+        follow_ups=follow_ups,
         severity=_SEVERITY_MAP[severity_str],
-        tags=entry.get("tags") or [],
+        tags=tags,
         check=entry["check"],
         expected=entry["expected"],
-        remediation=entry.get("remediation", ""),
-        explanation=entry.get("explanation", ""),
+        remediation=remediation,
+        explanation=explanation,
     )
 
 
@@ -101,6 +191,14 @@ def load_probes_from_yaml(path: str | Path) -> list[Probe]:
         If *path* does not exist.
     """
     path = Path(path)
+    # SECURITY: Cap YAML file size before parsing to prevent memory exhaustion.
+    MAX_YAML_BYTES = 10 * 1024 * 1024  # 10 MiB
+    file_size = path.stat().st_size
+    if file_size > MAX_YAML_BYTES:
+        raise ValueError(
+            f"{path}: file size {file_size} bytes exceeds maximum "
+            f"allowed {MAX_YAML_BYTES} bytes"
+        )
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
 

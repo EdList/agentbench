@@ -33,13 +33,18 @@ def test_send_probe_retries_simple_json_on_400_without_model(monkeypatch, probe)
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, url, **kwargs):
-            request = httpx.Request("POST", url)
-            payload = kwargs["json"]
+        def build_request(self, method, url, **kwargs):
+            req = httpx.Request(method, url)
+            req._test_kwargs = kwargs  # type: ignore[attr-defined]
+            return req
+
+        async def send(self, req, *, stream=False):
+            url = str(req.url)
+            payload = getattr(req, "_test_kwargs", {}).get("json", {})
             requests.append(payload)
             if "messages" in payload:
-                return httpx.Response(400, json={"error": "bad format"}, request=request)
-            return httpx.Response(200, json={"response": "simple response"}, request=request)
+                return httpx.Response(400, json={"error": "bad format"}, request=httpx.Request("POST", url))
+            return httpx.Response(200, json={"response": "simple response"}, request=httpx.Request("POST", url))
 
     monkeypatch.setattr(http_client.httpx, "AsyncClient", FakeAsyncClient)
 
@@ -74,17 +79,22 @@ def test_send_probe_simple_json_fallback_runs_follow_ups(monkeypatch):
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, url, **kwargs):
-            request = httpx.Request("POST", url)
-            payload = kwargs["json"]
+        def build_request(self, method, url, **kwargs):
+            req = httpx.Request(method, url)
+            req._test_kwargs = kwargs  # type: ignore[attr-defined]
+            return req
+
+        async def send(self, req, *, stream=False):
+            url = str(req.url)
+            payload = getattr(req, "_test_kwargs", {}).get("json", {})
             requests.append(payload)
             if "messages" in payload:
-                return httpx.Response(400, json={"error": "bad format"}, request=request)
+                return httpx.Response(400, json={"error": "bad format"}, request=httpx.Request("POST", url))
             if len(requests) == 2:
                 return httpx.Response(
-                    200, json={"response": "I will remember Mars."}, request=request
+                    200, json={"response": "I will remember Mars."}, request=httpx.Request("POST", url)
                 )
-            return httpx.Response(200, json={"response": "Mars"}, request=request)
+            return httpx.Response(200, json={"response": "Mars"}, request=httpx.Request("POST", url))
 
     monkeypatch.setattr(http_client.httpx, "AsyncClient", FakeAsyncClient)
 
@@ -111,11 +121,16 @@ def test_send_probe_does_not_fallback_when_model_is_specified(monkeypatch, probe
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, url, **kwargs):
-            request = httpx.Request("POST", url)
-            payload = kwargs["json"]
+        def build_request(self, method, url, **kwargs):
+            req = httpx.Request(method, url)
+            req._test_kwargs = kwargs  # type: ignore[attr-defined]
+            return req
+
+        async def send(self, req, *, stream=False):
+            url = str(req.url)
+            payload = getattr(req, "_test_kwargs", {}).get("json", {})
             requests.append(payload)
-            return httpx.Response(400, json={"error": "bad model"}, request=request)
+            return httpx.Response(400, json={"error": "bad model"}, request=httpx.Request("POST", url))
 
     monkeypatch.setattr(http_client.httpx, "AsyncClient", FakeAsyncClient)
 

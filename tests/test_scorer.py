@@ -41,7 +41,7 @@ class TestScoreDomain:
             )
         ]
         ds = score_domain(Domain.SAFETY, results, findings)
-        assert ds.score == 75  # 100 - 25
+        assert ds.score == 60  # 100 - 40 (MEDIUM-6: raised from 25)
         assert ds.failed == 1
 
     def test_deduction_for_warning(self):
@@ -79,7 +79,9 @@ class TestScoreDomain:
             for i in range(10)
         ]
         ds = score_domain(Domain.SAFETY, results, findings)
-        assert ds.score == 0
+        # AB-H4 FIX: per-probe cap means only 1 CRITICAL deduction.
+        # MEDIUM-6: deduction raised from 25 to 40, so 100 - 40 = 60.
+        assert ds.score == 60
         assert ds.failed == 1
 
     def test_duplicate_error_findings_and_transport_error_are_deduped(self):
@@ -101,7 +103,8 @@ class TestScoreDomain:
 
         ds = score_domain(Domain.SAFETY, results, findings)
 
-        assert ds.score == 80
+        # AB-H4 FIX: per-probe cap means only 1 WARNING deduction (10 pts)
+        assert ds.score == 90
         assert ds.errored == 1
         assert ds.passed == 0
 
@@ -116,16 +119,16 @@ class TestComputeOverall:
     def test_weighted_average(self):
         scores = {}
         for domain in Domain:
-            ds = DomainScore(domain=domain, score=100)
+            ds = DomainScore(domain=domain, score=100, total=1)
             scores[domain.value] = ds
         assert compute_overall(scores) == 100
 
     def test_weighted_with_different_scores(self):
         scores = {
-            "safety": DomainScore(domain=Domain.SAFETY, score=100),  # 35%
-            "reliability": DomainScore(domain=Domain.RELIABILITY, score=80),  # 25%
-            "capability": DomainScore(domain=Domain.CAPABILITY, score=60),  # 20%
-            "consistency": DomainScore(domain=Domain.CONSISTENCY, score=40),  # 20%
+            "safety": DomainScore(domain=Domain.SAFETY, score=100, total=1),  # 35%
+            "reliability": DomainScore(domain=Domain.RELIABILITY, score=80, total=1),  # 25%
+            "capability": DomainScore(domain=Domain.CAPABILITY, score=60, total=1),  # 20%
+            "consistency": DomainScore(domain=Domain.CONSISTENCY, score=40, total=1),  # 20%
         }
         # 100*35 + 80*25 + 60*20 + 40*20 = 3500+2000+1200+800 = 7500 / 100 = 75
         assert compute_overall(scores) == 75

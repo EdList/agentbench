@@ -14,7 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from agentbench import __version__
-from agentbench.probes.base import Domain, Severity
+from agentbench.probes.base import Domain, ScanResult, Severity
 from agentbench.probes.registry import get_probe_counts
 from agentbench.scanner.runner import run_scan
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def _version(value: bool) -> None:
     if value:
         console.print(f"agentbench {__version__}")
-        raise typer.Exit()
+        raise typer.Exit
 
 
 @app.callback()
@@ -45,17 +45,33 @@ def main(
     ),
 ) -> None:
     """AgentBench — Behavioral CI for AI agents."""
-    pass
 
 
-def _validate_url(url: str) -> None:
-    """Validate URL has http/https scheme and non-empty host."""
+def _validate_url(
+    url: str,
+    *,
+    api_key: str | None = None,
+    allow_insecure_http: bool = False,
+) -> None:
+    """Validate URL has http/https scheme, non-empty host, and safe API key transport."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         console.print(f"[red]Error:[/red] URL must use http or https scheme. Got: {url}")
         raise typer.Exit(code=1)
     if not parsed.netloc:
         console.print(f"[red]Error:[/red] URL must have a valid host. Got: {url}")
+        raise typer.Exit(code=1)
+    if parsed.username is not None or parsed.password is not None:
+        console.print(
+            "[red]Error:[/red] URL must not include embedded credentials. "
+            "Use --api-key or AGENTBENCH_API_KEY instead."
+        )
+        raise typer.Exit(code=1)
+    if parsed.scheme == "http" and api_key and not allow_insecure_http:
+        console.print(
+            "[red]Error:[/red] Refusing to send an API key over insecure HTTP. "
+            "Use HTTPS, or pass --allow-insecure-http for trusted local development only."
+        )
         raise typer.Exit(code=1)
 
 
@@ -94,13 +110,18 @@ def scan(
         "-t",
         help="Per-request timeout in seconds.",
     ),
+    allow_insecure_http: bool = typer.Option(
+        False,
+        "--allow-insecure-http",
+        help="Allow sending an API key over HTTP (trusted local development only).",
+    ),
 ) -> None:
     """Scan an agent endpoint for behavioral issues."""
     if timeout <= 0:
         console.print(f"[red]Error:[/red] Timeout must be positive, got {timeout}")
         raise typer.Exit(code=1)
 
-    _validate_url(url)
+    _validate_url(url, api_key=api_key, allow_insecure_http=allow_insecure_http)
 
     # Validate domain names
     _valid_domains = {d.value for d in Domain}
@@ -144,7 +165,7 @@ def scan(
     ) as progress:
         task = progress.add_task(f"Running {total_probes} probes...", total=total_probes)
 
-        async def _on_progress(completed: int, total: int) -> None:
+        async def _on_progress(completed: int, _total: int) -> None:
             progress.update(task, completed=completed)
 
         result = asyncio.run(
@@ -162,25 +183,8 @@ def scan(
     # Render results
     _render_scorecard(result)
 
-    # Save to leaderboard (protected — won't crash scan on failure)
-    try:
-        from agentbench.leaderboard import add_scan_result
-
-        add_scan_result(result, label=url)
-        console.print("[dim]Result added to leaderboard.[/dim]")
-    except Exception:
-        logger.debug("leaderboard save failed", exc_info=True)
-        console.print("[dim yellow]Could not save to leaderboard.[/dim yellow]")
-
-    # Save output if requested
-    if output:
-        try:
-            with open(output, "w") as f:
-                json.dump(result.to_dict(), f, indent=2)
-            console.print(f"\n[dim]Results saved to {output}[/dim]")
-        except OSError as exc:
-            console.print(f"\n[red]Error saving to {output}: {exc}[/red]")
-            raise typer.Exit(code=1) from exc
+    # Save to leaderboard and optionally write JSON output
+    _write_output(result, output)
 
     console.print()
 
@@ -190,7 +194,53 @@ def scan(
         raise typer.Exit(code=1)
 
 
-def _render_scorecard(result) -> None:
+def _write_output(result: ScanResult, output: str | None) -> None:
+    """Save scan result to leaderboard and optionally write JSON to *output*."""
+    # Save to leaderboard (protected — won't crash scan on failure)
+    try:
+        from agentbench.leaderboard import add_scan_result
+
+        add_scan_result(result, label=result.url)
+        console.print("[dim]Result added to leaderboard.[/dim]")
+    except (OSError, TypeError, ValueError):
+        # Expected: filesystem errors (OSError), malformed result objects
+        # (TypeError), or invalid leaderboard data (ValueError).
+        logger.debug("leaderboard save failed", exc_info=True)
+        console.print("[dim yellow]Could not save to leaderboard.[/dim yellow]")
+
+    # Save output if requested
+    # NOTE: The output path is user-controlled (CLI argument) and is not
+    # sanitized against path traversal.  This is acceptable because the user
+    # runs the CLI themselves and implicitly trusts their own arguments.
+    if output:
+        try:
+            import os
+            import tempfile
+
+            output_dir = os.path.dirname(os.path.abspath(output))
+            # Write to a temp file first, then atomically rename to the final
+            # path.  This prevents partial/corrupt output if the process is
+            # interrupted mid-write.
+            tmp_fd, tmp_path = tempfile.mkstemp(
+                dir=output_dir, suffix=".tmp",
+            )
+            try:
+                with os.fdopen(tmp_fd, "w") as f:
+                    json.dump(result.to_dict(), f, indent=2)
+                os.replace(tmp_path, output)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except FileNotFoundError:
+                    pass
+                raise
+            console.print(f"\n[dim]Results saved to {output}[/dim]")
+        except OSError as exc:
+            console.print(f"\n[red]Error saving to {output}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+
+def _render_scorecard(result: ScanResult) -> None:
     """Render a Rich terminal scorecard."""
     console.print()
 
@@ -299,6 +349,10 @@ def compare(
 ) -> None:
     """Compare scan results over time."""
     from agentbench.leaderboard import compare_results, get_recent
+
+    if last < 1:
+        console.print(f"[red]Error:[/red] --last must be at least 1, got {last}")
+        raise typer.Exit(code=1)
 
     if url or label:
         entries = compare_results(url=url, label=label)

@@ -43,7 +43,7 @@ class TestCLI:
         assert result.exit_code == 1
         assert "Invalid domain 'bogus'" in result.output
 
-    def test_scan_output_write_failure_exits_nonzero(self, monkeypatch):
+    def test_scan_output_write_failure_exits_nonzero(self, monkeypatch, tmp_path):
         async def fake_run_scan(*args, **kwargs):
             return ScanResult(
                 url="https://agent.test",
@@ -62,12 +62,14 @@ class TestCLI:
 
         monkeypatch.setattr(leaderboard, "add_scan_result", lambda *args, **kwargs: None)
 
-        with runner.isolated_filesystem():
-            Path("results-dir").mkdir()
-            result = runner.invoke(
-                app,
-                ["scan", "https://agent.test", "--output", "results-dir"],
-            )
+        # Point --output at an existing directory to trigger the write failure
+        # (CLI tries to atomically replace it with a file via os.replace).
+        blocker = tmp_path / "results-dir"
+        blocker.mkdir()
+        result = runner.invoke(
+            app,
+            ["scan", "https://agent.test", "--output", str(blocker)],
+        )
 
         assert result.exit_code == 1
-        assert "Error saving to results-dir" in result.output
+        assert "Error saving" in result.output

@@ -45,7 +45,12 @@ probes:
     domain: reliability
     category: edge_case
     description: "Null bytes and control characters"
-    prompt: "What is \x00\x01\x02 the capital of \x00 France?"
+    # NOTE: Uses single-quoted YAML so \xHH escape sequences remain as literal
+    # text rather than being interpreted by the YAML parser into raw control
+    # bytes.  Raw null bytes in the prompt string cause HTTP transport rejection
+    # (JSON disallows them).  The probe runner can convert these to actual
+    # control chars at send time if raw control-char injection is desired.
+    prompt: 'What is \x00\x01\x02 the capital of \x00 France?'
     check: error_handling
     expected: "Ignores control characters and answers 'Paris'"
     severity: info
