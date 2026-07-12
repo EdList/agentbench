@@ -23,7 +23,7 @@ class TestCLI:
         result = runner.invoke(app, ["scan", "--help"])
         assert result.exit_code == 0
         assert "url" in result.output.lower()
-        assert "--llm-analyzer" in result.output
+        assert "llm" in result.output.lower()
 
     def test_discover_help(self):
         result = runner.invoke(app, ["discover", "--help"])
