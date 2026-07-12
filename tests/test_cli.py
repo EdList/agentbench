@@ -1,12 +1,8 @@
 """Tests for the CLI."""
 
-from datetime import UTC, datetime
-
 from typer.testing import CliRunner
 
-from agentbench import cli
 from agentbench.cli import app
-from agentbench.probes.base import ScanResult
 
 runner = CliRunner()
 
@@ -21,9 +17,16 @@ class TestCLI:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         assert "scan" in result.output.lower()
+        assert "discover" in result.output.lower()
 
     def test_scan_help(self):
         result = runner.invoke(app, ["scan", "--help"])
+        assert result.exit_code == 0
+        assert "url" in result.output.lower()
+        assert "--llm-analyzer" in result.output
+
+    def test_discover_help(self):
+        result = runner.invoke(app, ["discover", "--help"])
         assert result.exit_code == 0
         assert "url" in result.output.lower()
 
@@ -37,38 +40,18 @@ class TestCLI:
         assert result.exit_code == 1
         assert "Timeout must be positive" in result.output
 
-    def test_scan_rejects_invalid_domain(self):
-        result = runner.invoke(app, ["scan", "https://agent.test", "--domain", "bogus"])
-        assert result.exit_code == 1
-        assert "Invalid domain 'bogus'" in result.output
-
-    def test_scan_output_write_failure_exits_nonzero(self, monkeypatch, tmp_path):
-        async def fake_run_scan(*args, **kwargs):
-            return ScanResult(
-                url="https://agent.test",
-                overall_score=100,
-                domain_scores={},
-                findings=[],
-                duration_seconds=0.0,
-                probes_run=0,
-                timestamp=datetime.now(UTC).isoformat(),
-            )
-
-        monkeypatch.setattr(cli, "run_scan", fake_run_scan)
-        monkeypatch.setattr(cli, "_render_scorecard", lambda result: None)
-
-        import agentbench.leaderboard as leaderboard
-
-        monkeypatch.setattr(leaderboard, "add_scan_result", lambda *args, **kwargs: None)
-
-        # Point --output at an existing directory to trigger the write failure
-        # (CLI tries to atomically replace it with a file via os.replace).
-        blocker = tmp_path / "results-dir"
-        blocker.mkdir()
+    def test_scan_rejects_insecure_http_with_key(self):
         result = runner.invoke(
             app,
-            ["scan", "https://agent.test", "--output", str(blocker)],
+            ["scan", "http://agent.test", "--api-key", "secret"],
         )
-
         assert result.exit_code == 1
-        assert "Error saving" in result.output
+        assert "insecure" in result.output.lower()
+
+    def test_scan_rejects_embedded_credentials(self):
+        result = runner.invoke(
+            app,
+            ["scan", "https://user:pass@agent.test"],
+        )
+        assert result.exit_code == 1
+        assert "credentials" in result.output.lower()

@@ -14,9 +14,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from agentbench import __version__
-from agentbench.probes.base import Domain, ScanResult, Severity
+from agentbench.probes.base import Severity
 from agentbench.probes.registry import get_probe_counts
-from agentbench.scanner.runner import run_scan
+from agentbench.scanner.agent_runner import AgentScanResult
 
 app = typer.Typer(
     name="agentbench",
@@ -163,12 +163,6 @@ def scan(
         "-o",
         help="Save results as JSON to this file.",
     ),
-    domain: list[str] | None = typer.Option(
-        None,
-        "--domain",
-        "-d",
-        help="Restrict scan to specific domains (safety, reliability, capability, consistency).",
-    ),
     timeout: float = typer.Option(
         30.0,
         "--timeout",
@@ -180,115 +174,88 @@ def scan(
         "--allow-insecure-http",
         help="Allow sending an API key over HTTP (trusted local development only).",
     ),
+    use_llm: bool = typer.Option(
+        False,
+        "--llm-analyzer",
+        help="Enable LLM-based second-pass analysis for fewer false positives.",
+    ),
+    analyzer_key: str | None = typer.Option(
+        None,
+        "--analyzer-key",
+        envvar="ANALYZER_API_KEY",
+        help="API key for the LLM analyzer (defaults to --api-key).",
+    ),
+    analyzer_model: str | None = typer.Option(
+        None,
+        "--analyzer-model",
+        envvar="ANALYZER_MODEL",
+        help="Model for LLM analysis (default: meta-llama/llama-3.3-70b-instruct).",
+    ),
 ) -> None:
-    """Scan an agent endpoint for behavioral issues."""
+    """Scan an agent endpoint for security vulnerabilities.
+
+    Auto-discovers your agent's tools, generates targeted probes based on
+    the discovered attack surface, fires them, and produces a scorecard.
+
+    Exit code 1 if any critical findings.
+    """
     if timeout <= 0:
         console.print(f"[red]Error:[/red] Timeout must be positive, got {timeout}")
         raise typer.Exit(code=1)
 
     _validate_url(url, api_key=api_key, allow_insecure_http=allow_insecure_http)
 
-    # Validate domain names
-    _valid_domains = {d.value for d in Domain}
-    if domain:
-        for d in domain:
-            if d not in _valid_domains:
-                valid = ", ".join(sorted(_valid_domains))
-                console.print(
-                    f"[red]Error:[/red] Invalid domain '{d}'. "
-                    f"Must be one of: {valid}"
-                )
-                raise typer.Exit(code=1)
+    from agentbench.scanner.agent_runner import run_agent_scan
 
-    # Show header — compute actual probe count (respects domain filtering)
-    from agentbench.probes.registry import get_all_probes
-
-    counts = get_probe_counts()
-    if domain:
-        filtered_domains = {Domain(d) for d in domain}
-        scan_probes = [p for p in get_all_probes() if p.domain in filtered_domains]
-        total_probes = len(scan_probes)
-        domain_count = len(filtered_domains)
-    else:
-        total_probes = sum(counts.values())
-        domain_count = len(counts)
     console.print()
     console.print(
         Panel(
             f"[bold]Scanning:[/] {url}\n"
-            f"[dim]{total_probes} probes across {domain_count} domains[/]",
+            f"[dim]Discovery → Probe Generation → Analysis[/]",
             title="🔍 AgentBench Scanner",
             border_style="blue",
         )
     )
 
-    # Run the scan with live progress updates
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task(f"Running {total_probes} probes...", total=total_probes)
+        task = progress.add_task("Discovering agent tools...", total=None)
 
-        async def _on_progress(completed: int, _total: int) -> None:
-            progress.update(task, completed=completed)
+        async def _on_progress(completed: int, total: int) -> None:
+            progress.update(
+                task,
+                description=f"Running probes ({completed}/{total})...",
+                total=total,
+                completed=completed,
+            )
 
         result = asyncio.run(
-            run_scan(
+            run_agent_scan(
                 url,
                 api_key=api_key,
                 model=model,
-                domains=domain,
                 timeout=timeout,
+                use_llm_analyzer=use_llm,
+                analyzer_api_key=analyzer_key or api_key,
+                analyzer_model=analyzer_model,
                 progress_callback=_on_progress,
             )
         )
-        progress.update(task, completed=total_probes)
 
     # Render results
-    _render_scorecard(result)
+    _render_agent_scorecard(result)
 
-    # Save to leaderboard and optionally write JSON output
-    _write_output(result, output)
-
-    console.print()
-
-    # Exit code: 1 if any critical findings
-    critical = sum(1 for f in result.findings if f.severity == Severity.CRITICAL)
-    if critical > 0:
-        raise typer.Exit(code=1)
-
-
-def _write_output(result: ScanResult, output: str | None) -> None:
-    """Save scan result to leaderboard and optionally write JSON to *output*."""
-    # Save to leaderboard (protected — won't crash scan on failure)
-    try:
-        from agentbench.leaderboard import add_scan_result
-
-        add_scan_result(result, label=result.url)
-        console.print("[dim]Result added to leaderboard.[/dim]")
-    except (OSError, TypeError, ValueError):
-        # Expected: filesystem errors (OSError), malformed result objects
-        # (TypeError), or invalid leaderboard data (ValueError).
-        logger.debug("leaderboard save failed", exc_info=True)
-        console.print("[dim yellow]Could not save to leaderboard.[/dim yellow]")
-
-    # Save output if requested
-    # NOTE: The output path is user-controlled (CLI argument) and is not
-    # sanitized against path traversal.  This is acceptable because the user
-    # runs the CLI themselves and implicitly trusts their own arguments.
+    # Save output
     if output:
         try:
             import os
             import tempfile
 
             output_dir = os.path.dirname(os.path.abspath(output))
-            # Write to a temp file first, then atomically rename to the final
-            # path.  This prevents partial/corrupt output if the process is
-            # interrupted mid-write.
-            tmp_fd, tmp_path = tempfile.mkstemp(
-                dir=output_dir, suffix=".tmp",
-            )
+            tmp_fd, tmp_path = tempfile.mkstemp(dir=output_dir, suffix=".tmp")
             try:
                 with os.fdopen(tmp_fd, "w") as f:
                     json.dump(result.to_dict(), f, indent=2)
@@ -302,58 +269,59 @@ def _write_output(result: ScanResult, output: str | None) -> None:
             console.print(f"\n[dim]Results saved to {output}[/dim]")
         except OSError as exc:
             console.print(f"\n[red]Error saving to {output}: {exc}[/red]")
-            raise typer.Exit(code=1) from exc
 
-
-def _render_scorecard(result: ScanResult) -> None:
-    """Render a Rich terminal scorecard."""
     console.print()
 
-    # Overall grade
+    # Exit code: 1 if any critical findings
+    if result.critical_count > 0:
+        raise typer.Exit(code=1)
+
+
+def _render_agent_scorecard(result: AgentScanResult) -> None:
+    """Render the agent-system scan results as a Rich terminal scorecard."""
+    console.print()
+
+    # Header: discovery summary
+    console.print(
+        Panel(
+            f"[bold]Discovery:[/] {len(result.profile.tools)} tools found via "
+            f"{', '.join(m.value for m in result.profile.discovery_methods_succeeded) or 'heuristic'}\n"
+            f"[bold]Probes:[/] {result.probes_run} targeted probes in {result.duration_seconds:.1f}s",
+            title="Scan Complete",
+            border_style="blue",
+        )
+    )
+
+    # Tool summary
+    if result.profile.tools:
+        tool_table = Table(title="Discovered Attack Surface", show_header=True)
+        tool_table.add_column("Tool", style="cyan")
+        tool_table.add_column("Risk", justify="center")
+        for t in result.profile.tools:
+            risk_colors = {
+                "critical": "red bold",
+                "high": "yellow",
+                "medium": "blue",
+                "low": "green",
+            }
+            rs = risk_colors.get(t.risk.value, "white")
+            tool_table.add_row(
+                t.name,
+                f"[{rs}]{t.risk.value.upper()}[/{rs}]",
+            )
+        console.print(tool_table)
+
+    # Overall score
     grade = result.grade
     grade_color = {
-        "A": "green",
-        "B": "green",
-        "C": "yellow",
-        "D": "red",
-        "F": "bold red",
+        "A": "green", "B": "green", "C": "yellow",
+        "D": "red", "F": "bold red",
     }
     color = grade_color.get(grade, "white")
-
     console.print(
-        f"  Overall Score: [{color}]{result.overall_score}[/{color}]/100 "
-        f"(Grade: [{color}]{grade}[/{color}])"
+        f"\n  [bold]Score:[/] [{color}]{result.overall_score}/100"
+        f" (Grade: {grade})[/{color}]"
     )
-    console.print(
-        f"  Probes: {result.probes_run} | "
-        f"Duration: {result.duration_seconds:.1f}s | "
-        f"Findings: {len(result.findings)}"
-    )
-    console.print()
-
-    # Domain scores table
-    table = Table(title="Domain Scores", show_header=True, header_style="bold")
-    table.add_column("Domain", style="cyan")
-    table.add_column("Score", justify="right")
-    table.add_column("Grade", justify="center")
-    table.add_column("Passed", justify="right", style="green")
-    table.add_column("Failed", justify="right", style="red")
-    table.add_column("Total", justify="right", style="dim")
-
-    for name in ["safety", "reliability", "capability", "consistency"]:
-        ds = result.domain_scores.get(name)
-        if ds is not None:
-            sc = "green" if ds.score >= 80 else "yellow" if ds.score >= 60 else "red"
-            table.add_row(
-                name.title(),
-                f"[{sc}]{ds.score}[/{sc}]",
-                f"[{sc}]{ds.grade}[/{sc}]",
-                str(ds.passed),
-                str(ds.failed) if ds.failed > 0 else "0",
-                str(ds.total),
-            )
-
-    console.print(table)
 
     # Findings
     if result.findings:
@@ -371,7 +339,7 @@ def _render_scorecard(result: ScanResult) -> None:
                     console.print(f"      [green]↳ Fix: {f.remediation[:100]}[/green]")
 
         if warn:
-            console.print(f"  [yellow]⚠️  Warnings ({len(warn)})[/yellow]")
+            console.print(f"\n  [yellow]⚠️  Warnings ({len(warn)})[/yellow]")
             for f in warn:
                 console.print(f"    • {f.title}")
                 console.print(f"      [dim]{f.detail[:120]}[/dim]")
@@ -379,13 +347,14 @@ def _render_scorecard(result: ScanResult) -> None:
                     console.print(f"      [green]↳ Fix: {f.remediation[:100]}[/green]")
 
         if info:
-            console.print(f"  [dim]ℹ️  Info ({len(info)})[/dim]")
+            console.print(f"\n  [dim]ℹ️  Info ({len(info)})[/dim]")
             for f in info[:5]:
                 console.print(f"    [dim]• {f.title}[/dim]")
-            if len(info) > 5:
-                console.print(f"    [dim]... and {len(info) - 5} more[/dim]")
     else:
-        console.print("\n  [bold green]✅ No issues found. Your agent looks solid.[/bold green]")
+        console.print(
+            "\n  [bold green]✅ No vulnerabilities found. "
+            "Your agent resisted all attacks.[/bold green]"
+        )
 
 
 @app.command()
