@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
-
-import fcntl
 
 from agentbench.probes.base import ScanResult
 
@@ -51,7 +50,10 @@ def _read_leaderboard_unlocked() -> list[dict]:
             return []
         return data
     except (json.JSONDecodeError, OSError):
-        logging.warning("Failed to read leaderboard JSON; returning empty leaderboard", exc_info=True)
+        logging.warning(
+            "Failed to read leaderboard JSON; returning empty leaderboard",
+            exc_info=True,
+        )
         return []
 
 

@@ -8,8 +8,9 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from agentbench.http.client import send_probe
 import httpx
+
+from agentbench.http.client import send_probe
 from agentbench.probes.base import (
     Domain,
     DomainScore,

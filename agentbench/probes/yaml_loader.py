@@ -192,12 +192,12 @@ def load_probes_from_yaml(path: str | Path) -> list[Probe]:
     """
     path = Path(path)
     # SECURITY: Cap YAML file size before parsing to prevent memory exhaustion.
-    MAX_YAML_BYTES = 10 * 1024 * 1024  # 10 MiB
+    max_yaml_bytes = 10 * 1024 * 1024  # 10 MiB
     file_size = path.stat().st_size
-    if file_size > MAX_YAML_BYTES:
+    if file_size > max_yaml_bytes:
         raise ValueError(
             f"{path}: file size {file_size} bytes exceeds maximum "
-            f"allowed {MAX_YAML_BYTES} bytes"
+            f"allowed {max_yaml_bytes} bytes"
         )
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)

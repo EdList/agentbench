@@ -1,7 +1,6 @@
 """Tests for the CLI."""
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 from typer.testing import CliRunner
 
