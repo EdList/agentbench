@@ -76,6 +76,71 @@ def _validate_url(
 
 
 @app.command()
+def discover(
+    url: str = typer.Argument(..., help="Agent endpoint URL to discover."),
+    api_key: str | None = typer.Option(
+        None, "--api-key", "-k",
+        envvar="AGENTBENCH_API_KEY",
+        help="API key for the agent endpoint.",
+    ),
+    timeout: float = typer.Option(15.0, "--timeout", "-t"),
+    allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http"),
+) -> None:
+    """Auto-discover an agent's tools and attack surface."""
+    from agentbench.discovery import discover_agent
+
+    _validate_url(url, api_key=api_key, allow_insecure_http=allow_insecure_http)
+
+    console.print()
+    console.print(
+        Panel(
+            f"[bold]Discovering:[/] {url}",
+            title="🔍 AgentBench Discovery",
+            border_style="blue",
+        )
+    )
+
+    profile = asyncio.run(
+        discover_agent(url, api_key=api_key, timeout=timeout)
+    )
+
+    console.print("\n[bold]Discovery methods tried:[/]")
+    for method in profile.discovery_methods_tried:
+        status = "✓" if method in profile.discovery_methods_succeeded else "✗"
+        color = "green" if method in profile.discovery_methods_succeeded else "dim"
+        console.print(f"  [{color}]{status}[/{color}] {method.value}")
+
+    if profile.tools:
+        console.print(f"\n[bold green]Found {len(profile.tools)} tools[/]")
+        tool_table = Table(title="Discovered Tools", show_header=True)
+        tool_table.add_column("Name", style="cyan")
+        tool_table.add_column("Risk", justify="center")
+        tool_table.add_column("Description", style="dim")
+
+        risk_colors = {
+            "critical": "red bold",
+            "high": "yellow",
+            "medium": "blue",
+            "low": "green",
+        }
+        for tool in profile.tools:
+            risk_style = risk_colors.get(tool.risk.value, "white")
+            desc = tool.description[:60] + "..." if len(tool.description) > 60 else tool.description
+            tool_table.add_row(
+                tool.name,
+                f"[{risk_style}]{tool.risk.value.upper()}[/{risk_style}]",
+                desc,
+            )
+        console.print(tool_table)
+    else:
+        console.print("\n[dim]No tools discovered via standard protocols.[/]")
+        console.print("[dim]Heuristic probing will be used during scan.[/]")
+
+    console.print("\n[bold]Attack Surface Summary[/]")
+    console.print(profile.attack_surface_summary)
+
+
+@app.command()
 def scan(
     url: str = typer.Argument(..., help="Agent endpoint URL to scan."),
     api_key: str | None = typer.Option(
