@@ -28,7 +28,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.6"]
+dev = [
+    "build>=1.2",
+    "mypy>=1.11",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "twine>=5.1",
+    "types-PyYAML>=6.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/EdList/agentbench"

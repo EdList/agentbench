@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 import httpx
 
@@ -27,6 +28,31 @@ MAX_RESPONSE_SIZE = 1_048_576  # 1 MiB
 logger = logging.getLogger(__name__)
 
 
+def redact_url_for_display(url: str) -> str:
+    """Remove query values and fragments before logging or serialization."""
+    parts = urlsplit(url)
+    redacted_query = urlencode([
+        (name, "[REDACTED]") for name, _value in parse_qsl(
+            parts.query, keep_blank_values=True,
+        )
+    ])
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, redacted_query, ""))
+
+
+def validate_secure_api_key_transport(
+    url: str,
+    api_key: str | None,
+    *,
+    allow_insecure_http: bool = False,
+) -> None:
+    """Fail closed before sending credentials over cleartext HTTP."""
+    if api_key and urlparse(url).scheme.lower() == "http" and not allow_insecure_http:
+        raise ValueError(
+            "Refusing to send an API key over insecure HTTP; use HTTPS or "
+            "explicitly allow insecure HTTP for trusted local development"
+        )
+
+
 async def send_probe(
     url: str,
     probe: Probe,
@@ -36,6 +62,7 @@ async def send_probe(
     timeout: float = DEFAULT_TIMEOUT,
     headers: dict[str, str] | None = None,
     client: httpx.AsyncClient | None = None,
+    allow_insecure_http: bool = False,
 ) -> ProbeResult:
     """Send a single probe to an agent endpoint and return the result.
 
@@ -45,6 +72,9 @@ async def send_probe(
     If *client* is provided, it is used for all HTTP requests (enabling
     connection pooling).  Otherwise a one-shot client is created internally.
     """
+    validate_secure_api_key_transport(
+        url, api_key, allow_insecure_http=allow_insecure_http,
+    )
     result = ProbeResult(probe=probe)
 
     # Build request
@@ -73,10 +103,9 @@ async def send_probe(
     # AB-H1 FIX: Use shared client if provided (connection pooling); otherwise
     # create a one-shot client for backward compatibility.
     _owns_client = client is None
-    if _owns_client:
-        active_client = httpx.AsyncClient(timeout=timeout)
-    else:
-        active_client = client
+    active_client: httpx.AsyncClient = (
+        httpx.AsyncClient(timeout=timeout) if client is None else client
+    )
 
     try:
         resp = await _post_with_rate_limit(active_client, url, payload, request_headers)
@@ -163,31 +192,22 @@ async def _handle_follow_ups(
                     fu_body = fu_resp.json()
                 except json.JSONDecodeError as exc:
                     fu_text = _json_decode_error_message(fu_resp, exc)
-                    result.error = fu_text
+                    result.error = f"Required follow-up failed: {fu_text}"
                     result.follow_up_responses.append(f"[Error: {fu_text}]")
-                    messages.append({
-                        "role": "assistant",
-                        "content": result.follow_up_responses[-1],
-                    })
-                    continue
+                    break
                 fu_text = _extract_response_text(fu_body)
                 result.follow_up_responses.append(fu_text)
                 messages.append({"role": "assistant", "content": fu_text})
             else:
-                result.follow_up_responses.append(
-                    f"[HTTP {fu_resp.status_code}]"
-                )
-                messages.append({
-                    "role": "assistant",
-                    "content": result.follow_up_responses[-1],
-                })
+                error_text = f"Required follow-up failed: HTTP {fu_resp.status_code}"
+                result.error = error_text
+                result.follow_up_responses.append(f"[HTTP {fu_resp.status_code}]")
+                break
         except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError) as e:
             logger.debug("follow-up request failed", exc_info=True)
+            result.error = f"Required follow-up failed: {e}"
             result.follow_up_responses.append(f"[Error: {e}]")
-            messages.append({
-                "role": "assistant",
-                "content": result.follow_up_responses[-1],
-            })
+            break
 
 
 def _response_size(resp: httpx.Response) -> int:
@@ -230,8 +250,7 @@ async def _post_with_rate_limit(
             # L1 FIX: On the final retry, read the body before closing so the
             # returned response has usable content (status_code + body).
             if attempt + 1 >= 3:
-                await resp.aread()
-                await resp.aclose()
+                await _read_response_limited(resp)
                 return resp
             await resp.aclose()
 
@@ -269,21 +288,31 @@ async def _post_with_rate_limit(
                     f"exceeds limit {MAX_RESPONSE_SIZE}"
                 )
 
-        # Body size is acceptable — read it now.
-        await resp.aread()
-        # C1 FIX: Post-read size check for responses that arrive without a
-        # Content-Length header (chunked encoding, buggy servers).  The
-        # pre-read check above only guards the Content-Length path.
-        if len(resp.content) > MAX_RESPONSE_SIZE:
-            await resp.aclose()
-            raise ValueError(
-                f"Response too large: body size {len(resp.content)} "
-                f"bytes exceeds limit {MAX_RESPONSE_SIZE}"
-            )
-        await resp.aclose()
+        # Enforce the limit while streaming, including chunked and decoded
+        # compressed bodies. This avoids buffering an attacker-controlled
+        # response before discovering that it is oversized.
+        await _read_response_limited(resp)
         return resp
 
     return resp  # type: ignore[possibly-undefined]
+
+
+async def _read_response_limited(resp: httpx.Response) -> None:
+    """Read a streamed response into memory without exceeding the body cap."""
+    content = bytearray()
+    try:
+        async for chunk in resp.aiter_bytes():
+            if len(content) + len(chunk) > MAX_RESPONSE_SIZE:
+                raise ValueError(
+                    f"Response too large: streamed body exceeds limit {MAX_RESPONSE_SIZE}"
+                )
+            content.extend(chunk)
+    finally:
+        await resp.aclose()
+
+    # httpx sets this same private cache from Response.aread(); retaining the
+    # buffered bytes keeps downstream .json()/.text behavior unchanged.
+    resp._content = bytes(content)
 
 
 async def _try_simple_json_fallback(
@@ -324,24 +353,28 @@ async def _try_simple_json_fallback(
             result.latency_ms += (time.monotonic() - fu_start) * 1000
             if fu_resp.status_code >= 400:
                 fu_text = f"[HTTP {fu_resp.status_code}]"
+                result.error = f"Required follow-up failed: HTTP {fu_resp.status_code}"
             else:
                 try:
                     fu_body = fu_resp.json()
                 except json.JSONDecodeError as exc:
                     fu_text = f"[Error: {_json_decode_error_message(fu_resp, exc)}]"
-                    result.error = fu_text
+                    result.error = f"Required follow-up failed: {fu_text}"
                 else:
                     fu_text = _extract_response_text(fu_body)
         except (httpx.HTTPError, OSError, ValueError, json.JSONDecodeError) as e:
             logger.debug("simple JSON follow-up request failed", exc_info=True)
             result.latency_ms += (time.monotonic() - fu_start) * 1000
             fu_text = f"[Error: {e}]"
+            result.error = f"Required follow-up failed: {e}"
 
         result.follow_up_responses.append(fu_text)
         history.extend([
             {"role": "user", "content": follow_up},
             {"role": "assistant", "content": fu_text},
         ])
+        if result.error is not None:
+            break
 
     return result
 

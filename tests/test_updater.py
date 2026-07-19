@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 from types import SimpleNamespace
 
 from agentbench import updater
+
+
+def test_trusted_update_manifest_matches_shipped_probe_bundle():
+    assert set(updater._EXPECTED_SHA256) == set(updater._PROBE_FILES)
+    for filename, expected in updater._EXPECTED_SHA256.items():
+        content = (updater._BUILTIN_DIR / filename).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == expected, filename
 
 VALID_OLD = """\
 version: "1.0"

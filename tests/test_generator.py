@@ -54,6 +54,9 @@ class TestGenerateProbes:
         assert "tool_output_injection_send_email" in ids
         assert "exfil_send_email" in ids
         assert "social_eng_send_email" in ids
+        prompts = "\n".join(generated.probe.prompt for generated in probes)
+        assert "security-audit.com" not in prompts
+        assert "agentbench.invalid" in prompts
 
     def test_medium_risk_tool_generates_probes(self):
         profile = AgentProfile(
@@ -122,3 +125,26 @@ class TestGenerateProbes:
         probes = generate_probes(profile)
         for gp in probes:
             assert gp.probe.remediation, f"Probe {gp.probe.id} missing remediation"
+
+    def test_probe_expansion_is_capped_and_keeps_baselines(self, monkeypatch):
+        import agentbench.probes.generator as generator
+
+        monkeypatch.setattr(generator, "MAX_GENERATED_PROBES", 5)
+        profile = AgentProfile(
+            endpoint="https://agent.test",
+            tools=[
+                DiscoveredTool(
+                    name=f"send_email_{index}",
+                    description="Send email externally",
+                    risk=ToolRisk.HIGH,
+                )
+                for index in range(20)
+            ],
+        )
+
+        probes = generate_probes(profile)
+        ids = {generated.probe.id for generated in probes}
+
+        assert len(probes) <= 5
+        assert "baseline_prompt_extraction" in ids
+        assert "baseline_prompt_extraction_multi" in ids

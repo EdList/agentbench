@@ -26,6 +26,9 @@ jobs:
       - name: Ruff check
         run: ruff check .
 
+      - name: MyPy
+        run: mypy agentbench
+
   test:
     runs-on: ubuntu-latest
     strategy:

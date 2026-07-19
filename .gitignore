@@ -6,5 +6,10 @@ dist/
 build/
 .venv/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.codegraph/
+.coverage
+htmlcov/
 *.db
 .agentbench/

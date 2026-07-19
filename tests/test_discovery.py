@@ -11,8 +11,43 @@ from agentbench.discovery import (
     DiscoveryMethod,
     ToolRisk,
     _parse_json_schema_params,
+    _read_json_limited,
     classify_tool_risk,
 )
+
+
+@pytest.mark.asyncio
+async def test_discovery_json_stream_stops_at_response_cap(monkeypatch):
+    import agentbench.discovery as discovery
+
+    monkeypatch.setattr(discovery, "MAX_DISCOVERY_RESPONSE_SIZE", 5)
+    chunks_read = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal chunks_read
+
+        class Stream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                nonlocal chunks_read
+                for chunk in (b"1234", b"56", b"unread"):
+                    chunks_read += 1
+                    yield chunk
+
+        return httpx.Response(200, stream=Stream())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError, match="exceeds limit 5"):
+            await _read_json_limited(client, "GET", "https://agent.test/openapi.json")
+
+    assert chunks_read == 2
+
+
+@pytest.mark.asyncio
+async def test_library_discovery_rejects_api_key_over_plain_http():
+    from agentbench.discovery import discover_agent
+
+    with pytest.raises(ValueError, match="insecure HTTP"):
+        await discover_agent("http://agent.test", api_key="target-secret")
 
 
 class TestClassifyToolRisk:
@@ -132,6 +167,74 @@ class TestMCPDiscovery:
             assert tools == []
         finally:
             await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_count_is_capped(self, monkeypatch):
+        import agentbench.discovery as discovery
+
+        monkeypatch.setattr(discovery, "MAX_DISCOVERED_TOOLS", 2)
+        payload = {
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"tools": [
+                {"name": f"tool_{index}", "description": "read", "inputSchema": {}}
+                for index in range(10)
+            ]},
+        }
+
+        async def handler(request):
+            return httpx.Response(200, json=payload)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            tools = await discovery._try_mcp_discovery("https://agent.test", client)
+
+        assert len(tools) == 2
+
+    @pytest.mark.asyncio
+    async def test_mcp_initializes_session_before_retrying_tools_list(self):
+        methods: list[str] = []
+
+        async def handler(request: httpx.Request):
+            body = __import__("json").loads(request.content)
+            method = body["method"]
+            methods.append(method)
+            if method == "tools/list" and methods.count("tools/list") == 1:
+                return httpx.Response(
+                    200,
+                    json={"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "not initialized"}},
+                )
+            if method == "initialize":
+                return httpx.Response(
+                    200,
+                    headers={"Mcp-Session-Id": "session-123"},
+                    json={
+                        "jsonrpc": "2.0", "id": 2,
+                        "result": {"protocolVersion": "2025-03-26", "capabilities": {}},
+                    },
+                )
+            if method == "notifications/initialized":
+                assert request.headers["Mcp-Session-Id"] == "session-123"
+                return httpx.Response(202)
+            assert request.headers["Mcp-Session-Id"] == "session-123"
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0", "id": 3,
+                    "result": {"tools": [{
+                        "name": "search_docs", "description": "Search documents",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    }]},
+                },
+            )
+
+        from agentbench.discovery import _try_mcp_discovery
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            tools = await _try_mcp_discovery("https://agent.test/mcp", client)
+
+        assert [tool.name for tool in tools] == ["search_docs"]
+        assert methods == [
+            "tools/list", "initialize", "notifications/initialized", "tools/list",
+        ]
 
 
 class TestAgentProfile:

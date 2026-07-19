@@ -15,10 +15,7 @@ on:
         description: "Model name (for OpenRouter-style endpoints)"
         required: false
         type: string
-      domains:
-        description: "Domains to scan (comma-separated: safety,reliability,capability,consistency)"
-        required: false
-        type: string
+
       timeout:
         description: "Per-request timeout in seconds"
         required: false
@@ -48,22 +45,17 @@ jobs:
         env:
           AGENTBENCH_API_KEY: ${{ inputs.api_key || secrets.AGENTBENCH_API_KEY }}
           FAIL_ON_CRITICAL: ${{ inputs.fail_on_critical }}
+          AGENTBENCH_TARGET_URL: ${{ inputs.agent_url }}
+          AGENTBENCH_TARGET_MODEL: ${{ inputs.model }}
+          AGENTBENCH_TIMEOUT: ${{ inputs.timeout }}
         run: |
-          ARGS=""
-          ARGS="${ARGS} ${{ inputs.agent_url }}"
-          if [ -n "${{ inputs.model }}" ]; then
-            ARGS="${ARGS} --model ${{ inputs.model }}"
+          ARGS=("${AGENTBENCH_TARGET_URL}" --timeout "${AGENTBENCH_TIMEOUT}" --output scan-results.json)
+          if [ -n "${AGENTBENCH_TARGET_MODEL}" ]; then
+            ARGS+=(--model "${AGENTBENCH_TARGET_MODEL}")
           fi
-          if [ -n "${{ inputs.domains }}" ]; then
-            for d in $(echo "${{ inputs.domains }}" | tr ',' ' '); do
-              ARGS="${ARGS} --domain ${d}"
-            done
-          fi
-          ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
-          ARGS="${ARGS} --output scan-results.json"
 
           set +e
-          agentbench scan ${ARGS}
+          agentbench scan "${ARGS[@]}"
           EXIT_CODE=$?
           set -e
 
@@ -100,9 +92,14 @@ jobs:
 
           with open('scan-results.json') as f:
               data = json.load(f)
-          print(sum(1 for f in data['findings'] if f['severity'] == 'critical'))
+          print(data.get('critical_count', 0))
           PY
           )
+
+          if [ "${EXIT_CODE}" -eq 2 ]; then
+            echo "::error::AgentBench scan was incomplete; inspect probe errors before retrying"
+            exit 2
+          fi
 
           if [ "${FAIL_ON_CRITICAL}" = "true" ] && [ "${CRITICAL}" -gt 0 ]; then
             echo "::error::AgentBench found ${CRITICAL} critical issue(s)"

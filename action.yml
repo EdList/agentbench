@@ -11,9 +11,6 @@ inputs:
   model:
     description: "Model name (for OpenRouter-style endpoints)"
     required: false
-  domains:
-    description: "Comma-separated domains (safety,reliability,capability,consistency)"
-    required: false
   timeout:
     description: "Per-request timeout in seconds"
     required: false
@@ -36,14 +33,20 @@ outputs:
     description: "Overall score (0-100)"
     value: ${{ steps.parse-results.outputs.score }}
   grade:
-    description: "Letter grade (A-F)"
+    description: "Letter grade (A-F), or N/A when the scan is incomplete"
     value: ${{ steps.parse-results.outputs.grade }}
   critical-count:
-    description: "Number of critical findings"
+    description: "Number of confirmed critical findings"
     value: ${{ steps.parse-results.outputs.critical_count }}
   warning-count:
-    description: "Number of warning findings"
+    description: "Number of confirmed warning findings"
     value: ${{ steps.parse-results.outputs.warning_count }}
+  error-count:
+    description: "Number of probes that could not be completed"
+    value: ${{ steps.parse-results.outputs.error_count }}
+  scan-complete:
+    description: "Whether every generated probe completed (true/false)"
+    value: ${{ steps.parse-results.outputs.scan_complete }}
   scan-summary:
     description: "One-line human-readable summary of the scan"
     value: ${{ steps.parse-results.outputs.scan_summary }}
@@ -58,8 +61,7 @@ runs:
     - name: Install AgentBench
       shell: bash
       run: |
-        python3 -m pip install --upgrade pip
-        pip install agentbench-cli
+        python3 -m pip install "${{ github.action_path }}"
 
     # ── Run scan ───────────────────────────────────
     - name: Run Scan
@@ -67,16 +69,19 @@ runs:
       shell: bash
       env:
         AGENTBENCH_API_KEY: ${{ inputs.api-key }}
+        AGENTBENCH_TARGET_URL: ${{ inputs.agent-url }}
+        AGENTBENCH_TARGET_MODEL: ${{ inputs.model }}
+        AGENTBENCH_TIMEOUT: ${{ inputs.timeout }}
+        AGENTBENCH_OUTPUT_FILE: ${{ inputs.output-file }}
       run: |
-        ARGS="${{ inputs.agent-url }}"
-        [ -n "${{ inputs.model }}" ] && ARGS="${ARGS} --model ${{ inputs.model }}"
-        [ -n "${{ inputs.domains }}" ] && for d in $(echo "${{ inputs.domains }}" | tr ',' ' '); do ARGS="${ARGS} --domain ${d}"; done
-        ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
-        ARGS="${ARGS} --output ${{ inputs.output-file }}"
+        ARGS=("${AGENTBENCH_TARGET_URL}" --timeout "${AGENTBENCH_TIMEOUT}" --output "${AGENTBENCH_OUTPUT_FILE}")
+        if [ -n "${AGENTBENCH_TARGET_MODEL}" ]; then
+          ARGS+=(--model "${AGENTBENCH_TARGET_MODEL}")
+        fi
 
-        # Run the scan; capture exit code without failing the step
+        # Run the scan; capture exit code without failing this step.
         set +e
-        agentbench scan ${ARGS}
+        agentbench scan "${ARGS[@]}"
         SCAN_EXIT=$?
         set -e
 
@@ -99,6 +104,8 @@ runs:
           echo "grade=F" >> $GITHUB_OUTPUT
           echo "critical_count=0" >> $GITHUB_OUTPUT
           echo "warning_count=0" >> $GITHUB_OUTPUT
+          echo "error_count=1" >> $GITHUB_OUTPUT
+          echo "scan_complete=false" >> $GITHUB_OUTPUT
           echo "scan_summary=Scan failed — no results file produced" >> $GITHUB_OUTPUT
           exit 1
         fi
@@ -110,6 +117,8 @@ runs:
           echo "grade=F" >> $GITHUB_OUTPUT
           echo "critical_count=0" >> $GITHUB_OUTPUT
           echo "warning_count=0" >> $GITHUB_OUTPUT
+          echo "error_count=1" >> $GITHUB_OUTPUT
+          echo "scan_complete=false" >> $GITHUB_OUTPUT
           echo "scan_summary=Scan failed — results file contains invalid JSON" >> $GITHUB_OUTPUT
           exit 1
         fi
@@ -130,15 +139,25 @@ runs:
         CRITICAL=$(python3 -c "
         import json
         d = json.load(open('${RESULTS_FILE}'))
-        findings = d.get('findings', [])
-        print(sum(1 for f in findings if f.get('severity') == 'critical'))
+        print(d.get('critical_count', 0))
         ")
 
         WARNING=$(python3 -c "
         import json
         d = json.load(open('${RESULTS_FILE}'))
-        findings = d.get('findings', [])
-        print(sum(1 for f in findings if f.get('severity') == 'warning'))
+        print(d.get('warning_count', 0))
+        ")
+
+        ERROR_COUNT=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        print(d.get('error_count', 0))
+        ")
+
+        SCAN_COMPLETE=$(python3 -c "
+        import json
+        d = json.load(open('${RESULTS_FILE}'))
+        print(str(bool(d.get('scan_complete', False))).lower())
         ")
 
         PROBES=$(python3 -c "
@@ -147,12 +166,14 @@ runs:
         print(d.get('probes_run', '?'))
         ")
 
-        SUMMARY="Score: ${SCORE}/100 (Grade: ${GRADE}) | ${PROBES} probes | ${CRITICAL} critical, ${WARNING} warnings"
+        SUMMARY="Score: ${SCORE}/100 (Grade: ${GRADE}) | ${PROBES} probes | ${CRITICAL} critical, ${WARNING} warnings, ${ERROR_COUNT} errors"
 
         echo "score=${SCORE}" >> $GITHUB_OUTPUT
         echo "grade=${GRADE}" >> $GITHUB_OUTPUT
         echo "critical_count=${CRITICAL}" >> $GITHUB_OUTPUT
         echo "warning_count=${WARNING}" >> $GITHUB_OUTPUT
+        echo "error_count=${ERROR_COUNT}" >> $GITHUB_OUTPUT
+        echo "scan_complete=${SCAN_COMPLETE}" >> $GITHUB_OUTPUT
         echo "scan_summary=${SUMMARY}" >> $GITHUB_OUTPUT
 
         echo ""
@@ -178,7 +199,7 @@ runs:
         import json, os
 
         results = json.load(open('${RESULTS_FILE}'))
-        findings = results.get('findings', [])
+        findings = [f for f in results.get('findings', []) if f.get('verdict') == 'fail']
         url = results.get('url', '\${{ inputs.agent-url }}')
 
         sarif_level = {
@@ -199,7 +220,7 @@ runs:
                     'id': rule_id,
                     'shortDescription': {'text': f.get('title', 'AgentBench finding')},
                     'fullDescription': {'text': f.get('detail', '')[:1000]},
-                    'helpUri': 'https://github.com/agentbench/agentbench',
+                    'helpUri': 'https://github.com/EdList/agentbench',
                     'properties': {
                         'tags': [f.get('domain', 'unknown'), f.get('category', 'general')],
                         'precision': 'medium',
@@ -230,16 +251,23 @@ runs:
                 'tool': {
                     'driver': {
                         'name': 'AgentBench',
-                        'version': '1.0.0',
-                        'semanticVersion': '1.0.0',
-                        'informationUri': 'https://github.com/agentbench/agentbench',
+                        'version': __import__('agentbench').__version__,
+                        'semanticVersion': __import__('agentbench').__version__,
+                        'informationUri': 'https://github.com/EdList/agentbench',
                         'rules': rules,
                     }
                 },
                 'results': results_list,
                 'invocations': [{
-                    'executionSuccessful': True,
-                    'toolExecutionNotifications': [],
+                    'executionSuccessful': bool(results.get('scan_complete', False)),
+                    'toolExecutionNotifications': [
+                        {
+                            'descriptor': {'id': f.get('probe_id', 'probe-error')},
+                            'level': 'error',
+                            'message': {'text': f.get('detail', 'Probe execution failed')},
+                        }
+                        for f in results.get('findings', []) if f.get('verdict') == 'error'
+                    ],
                 }],
             }],
         }
@@ -252,14 +280,26 @@ runs:
 
         echo "sarif_path=${SARIF_FILE}" >> $GITHUB_OUTPUT
 
-    # ── Fail on critical ───────────────────────────
+    # ── Preserve CLI gate semantics ────────────────
     - name: Evaluate Gate
-      if: inputs.fail-on-critical == 'true'
+      if: always()
       shell: bash
       run: |
         CRITICAL="${{ steps.parse-results.outputs.critical_count }}"
+        SCAN_EXIT="${{ steps.run-scan.outputs.scan-exit-code }}"
+        SCAN_COMPLETE="${{ steps.parse-results.outputs.scan_complete }}"
 
-        if [ "${CRITICAL}" -gt 0 ] 2>/dev/null; then
+        if [ "${SCAN_EXIT}" = "2" ] || [ "${SCAN_COMPLETE}" != "true" ]; then
+          echo "::error::AgentBench scan was incomplete. Probe errors must not be treated as a pass."
+          exit 2
+        fi
+
+        if [ "${SCAN_EXIT}" != "0" ] && [ "${SCAN_EXIT}" != "1" ]; then
+          echo "::error::AgentBench scan failed with unexpected exit ${SCAN_EXIT}."
+          exit "${SCAN_EXIT}"
+        fi
+
+        if [ "${{ inputs.fail-on-critical }}" = "true" ] && [ "${CRITICAL}" -gt 0 ] 2>/dev/null; then
           echo "::error::AgentBench found ${CRITICAL} critical issue(s). See scan results for details."
           echo ""
           echo "❌ Build gate failed: ${CRITICAL} critical finding(s)"
@@ -267,7 +307,11 @@ runs:
           exit 1
         fi
 
-        echo "✅ AgentBench gate passed — no critical findings"
+        if [ "${CRITICAL}" -gt 0 ] 2>/dev/null; then
+          echo "::warning::AgentBench found ${CRITICAL} critical issue(s), but fail-on-critical is false."
+        else
+          echo "✅ AgentBench gate passed — complete scan with no critical findings"
+        fi
 
 branding:
   icon: "shield"

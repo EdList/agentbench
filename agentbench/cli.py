@@ -14,7 +14,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from agentbench import __version__
-from agentbench.probes.base import Severity
+from agentbench.http.client import redact_url_for_display
+from agentbench.probes.base import Severity, Verdict
 from agentbench.probes.registry import get_probe_counts
 from agentbench.scanner.agent_runner import AgentScanResult
 
@@ -25,6 +26,15 @@ app = typer.Typer(
 )
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+def _scan_exit_code(result: AgentScanResult) -> int:
+    """Return stable CI semantics: 0 clean, 1 vulnerable, 2 incomplete."""
+    if not result.scan_complete:
+        return 2
+    if result.critical_count > 0:
+        return 1
+    return 0
 
 
 def _version(value: bool) -> None:
@@ -94,14 +104,17 @@ def discover(
     console.print()
     console.print(
         Panel(
-            f"[bold]Discovering:[/] {url}",
+            f"[bold]Discovering:[/] {redact_url_for_display(url)}",
             title="🔍 AgentBench Discovery",
             border_style="blue",
         )
     )
 
     profile = asyncio.run(
-        discover_agent(url, api_key=api_key, timeout=timeout)
+        discover_agent(
+            url, api_key=api_key, timeout=timeout,
+            allow_insecure_http=allow_insecure_http,
+        )
     )
 
     console.print("\n[bold]Discovery methods tried:[/]")
@@ -197,7 +210,7 @@ def scan(
     Auto-discovers your agent's tools, generates targeted probes based on
     the discovered attack surface, fires them, and produces a scorecard.
 
-    Exit code 1 if any critical findings.
+    Exit code 1 for confirmed critical findings; 2 when the scan is incomplete.
     """
     if timeout <= 0:
         console.print(f"[red]Error:[/red] Timeout must be positive, got {timeout}")
@@ -205,12 +218,20 @@ def scan(
 
     _validate_url(url, api_key=api_key, allow_insecure_http=allow_insecure_http)
 
+    if use_llm and not analyzer_key:
+        console.print(
+            "[red]Error:[/red] --llm-analyzer requires a separate analyzer key. "
+            "Pass --analyzer-key or set ANALYZER_API_KEY; the target agent key "
+            "is never forwarded to an analyzer provider."
+        )
+        raise typer.Exit(code=1)
+
     from agentbench.scanner.agent_runner import run_agent_scan
 
     console.print()
     console.print(
         Panel(
-            f"[bold]Scanning:[/] {url}\n"
+            f"[bold]Scanning:[/] {redact_url_for_display(url)}\n"
             f"[dim]Discovery → Probe Generation → Analysis[/]",
             title="🔍 AgentBench Scanner",
             border_style="blue",
@@ -239,9 +260,10 @@ def scan(
                 model=model,
                 timeout=timeout,
                 use_llm_analyzer=use_llm,
-                analyzer_api_key=analyzer_key or api_key,
+                analyzer_api_key=analyzer_key,
                 analyzer_model=analyzer_model,
                 progress_callback=_on_progress,
+                allow_insecure_http=allow_insecure_http,
             )
         )
 
@@ -249,6 +271,7 @@ def scan(
     _render_agent_scorecard(result)
 
     # Save output
+    output_failed = False
     if output:
         try:
             import os
@@ -269,12 +292,13 @@ def scan(
             console.print(f"\n[dim]Results saved to {output}[/dim]")
         except OSError as exc:
             console.print(f"\n[red]Error saving to {output}: {exc}[/red]")
+            output_failed = True
 
     console.print()
 
-    # Exit code: 1 if any critical findings
-    if result.critical_count > 0:
-        raise typer.Exit(code=1)
+    exit_code = 2 if output_failed else _scan_exit_code(result)
+    if exit_code:
+        raise typer.Exit(code=exit_code)
 
 
 def _render_agent_scorecard(result: AgentScanResult) -> None:
@@ -326,9 +350,27 @@ def _render_agent_scorecard(result: AgentScanResult) -> None:
     # Findings
     if result.findings:
         console.print()
-        crit = [f for f in result.findings if f.severity == Severity.CRITICAL]
-        warn = [f for f in result.findings if f.severity == Severity.WARNING]
-        info = [f for f in result.findings if f.severity == Severity.INFO]
+        errors = [f for f in result.findings if f.verdict == Verdict.ERROR]
+        crit = [
+            f for f in result.findings
+            if f.verdict == Verdict.FAIL and f.severity == Severity.CRITICAL
+        ]
+        warn = [
+            f for f in result.findings
+            if f.verdict == Verdict.FAIL and f.severity == Severity.WARNING
+        ]
+        info = [
+            f for f in result.findings
+            if f.verdict == Verdict.FAIL and f.severity == Severity.INFO
+        ]
+
+        if errors:
+            console.print(f"\n  [bold red]⛔ Scan errors ({len(errors)})[/bold red]")
+            for f in errors:
+                console.print(f"    • {f.probe_id}: {f.detail[:120]}")
+            console.print(
+                "    [yellow]This scan is incomplete and must not be treated as a pass.[/yellow]"
+            )
 
         if crit:
             console.print(f"  [bold red]❌ Critical ({len(crit)})[/bold red]")

@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from agentbench.http.client import send_probe
+from agentbench.http.client import redact_url_for_display, send_probe
 from agentbench.probes.base import (
     Domain,
     DomainScore,
@@ -40,6 +40,7 @@ async def run_scan(
     timeout: float = 30.0,
     headers: dict[str, str] | None = None,
     progress_callback: Any = None,
+    allow_insecure_http: bool = False,
 ) -> ScanResult:
     """Run a complete scan against an agent endpoint."""
     start = time.monotonic()
@@ -74,6 +75,7 @@ async def run_scan(
             result = await send_probe(
                 url, probe, api_key=api_key, model=model, timeout=timeout,
                 headers=headers, client=shared_client,
+                allow_insecure_http=allow_insecure_http,
             )
 
             # Adaptive backoff: track consecutive 429s
@@ -127,7 +129,7 @@ async def run_scan(
     duration = time.monotonic() - start
 
     return ScanResult(
-        url=url,
+        url=redact_url_for_display(url),
         overall_score=overall,
         domain_scores=domain_scores,
         findings=all_findings,

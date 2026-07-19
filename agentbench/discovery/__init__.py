@@ -17,7 +17,51 @@ from typing import Any
 
 import httpx
 
+from agentbench.http.client import validate_secure_api_key_transport
+
 logger = logging.getLogger(__name__)
+
+MAX_DISCOVERY_RESPONSE_SIZE = 2_000_000
+MAX_DISCOVERED_TOOLS = 500
+
+
+async def _read_json_limited(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    response_headers: dict[str, str] | None = None,
+) -> tuple[int, Any | None]:
+    """Read and decode a discovery response without unbounded buffering."""
+    async with client.stream(
+        method, url, json=json_body, headers=headers,
+    ) as response:
+        if response_headers is not None:
+            response_headers.update(response.headers)
+        if response.status_code != 200:
+            return response.status_code, None
+        content_length = response.headers.get("content-length")
+        if content_length and content_length.isdigit():
+            if int(content_length) > MAX_DISCOVERY_RESPONSE_SIZE:
+                raise ValueError(
+                    f"Discovery response exceeds limit {MAX_DISCOVERY_RESPONSE_SIZE}"
+                )
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            if len(body) + len(chunk) > MAX_DISCOVERY_RESPONSE_SIZE:
+                raise ValueError(
+                    f"Discovery response exceeds limit {MAX_DISCOVERY_RESPONSE_SIZE}"
+                )
+            body.extend(chunk)
+        content_type = response.headers.get("content-type", "").lower()
+    if "text/event-stream" in content_type:
+        for line in reversed(body.decode("utf-8", errors="replace").splitlines()):
+            if line.startswith("data:"):
+                return 200, json.loads(line.removeprefix("data:").strip())
+        raise ValueError("MCP event stream contained no JSON data event")
+    return 200, json.loads(body)
 
 
 class DiscoveryMethod(StrEnum):
@@ -133,6 +177,7 @@ async def discover_agent(
     api_key: str | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = 15.0,
+    allow_insecure_http: bool = False,
 ) -> AgentProfile:
     """Auto-discover an agent's tools and attack surface.
 
@@ -144,6 +189,9 @@ async def discover_agent(
 
     Returns a complete AgentProfile regardless of which methods succeed.
     """
+    validate_secure_api_key_transport(
+        endpoint, api_key, allow_insecure_http=allow_insecure_http,
+    )
     profile = AgentProfile(endpoint=endpoint)
     base_headers = {"Content-Type": "application/json"}
     if api_key:
@@ -183,6 +231,11 @@ async def discover_agent(
         if tool.name not in seen:
             seen.add(tool.name)
             deduped.append(tool)
+            if len(deduped) >= MAX_DISCOVERED_TOOLS:
+                profile.errors.append(
+                    f"Discovery truncated at {MAX_DISCOVERED_TOOLS} unique tools"
+                )
+                break
     profile.tools = deduped
 
     # If nothing was discovered, mark heuristic as needed
@@ -197,56 +250,115 @@ async def discover_agent(
 # MCP Discovery
 # ---------------------------------------------------------------------------
 
+def _parse_mcp_tools(data: Any) -> list[DiscoveredTool]:
+    if not isinstance(data, dict) or data.get("jsonrpc") != "2.0":
+        return []
+    result = data.get("result")
+    if not isinstance(result, dict):
+        return []
+    raw_tools = result.get("tools", [])
+    if not isinstance(raw_tools, list):
+        return []
+
+    tools: list[DiscoveredTool] = []
+    for raw in raw_tools[:MAX_DISCOVERED_TOOLS]:
+        if not isinstance(raw, dict):
+            continue
+        name = raw.get("name", "")
+        if not isinstance(name, str) or not name:
+            continue
+        description = raw.get("description", "")
+        if not isinstance(description, str):
+            description = ""
+        schema = raw.get("inputSchema", {})
+        if not isinstance(schema, dict):
+            schema = {}
+        tools.append(DiscoveredTool(
+            name=name,
+            description=description,
+            parameters=_parse_json_schema_params(schema),
+            risk=classify_tool_risk(name, description),
+            discovery_method=DiscoveryMethod.MCP,
+            raw_schema=raw,
+        ))
+    return tools
+
+
 async def _try_mcp_discovery(
     endpoint: str,
     client: httpx.AsyncClient,
 ) -> list[DiscoveredTool]:
-    """Attempt MCP tools/list JSON-RPC call.
-
-    MCP servers expose tools via JSON-RPC 2.0. The client sends:
-      {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
-    And receives:
-      {"jsonrpc": "2.0", "result": {"tools": [...]}, "id": 1}
-    """
-    tools: list[DiscoveredTool] = []
-
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "tools/list",
-        "id": 1,
-    }
-
+    """Discover MCP tools, including streamable-HTTP initialization/session flow."""
+    accept_headers = {"Accept": "application/json, text/event-stream"}
     try:
-        resp = await client.post(endpoint, json=payload)
-        if resp.status_code != 200:
+        status_code, data = await _read_json_limited(
+            client,
+            "POST",
+            endpoint,
+            json_body={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+            headers=accept_headers,
+        )
+        tools = _parse_mcp_tools(data)
+        if tools or (
+            status_code == 200 and isinstance(data, dict)
+            and isinstance(data.get("result"), dict)
+            and isinstance(data["result"].get("tools"), list)
+        ):
             return tools
 
-        data = resp.json()
-        if data.get("jsonrpc") != "2.0" or "result" not in data:
-            return tools
+        initialize_response_headers: dict[str, str] = {}
+        status_code, initialized = await _read_json_limited(
+            client,
+            "POST",
+            endpoint,
+            json_body={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "id": 2,
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "agentbench", "version": "0.1.0"},
+                },
+            },
+            headers=accept_headers,
+            response_headers=initialize_response_headers,
+        )
+        if (
+            status_code != 200
+            or not isinstance(initialized, dict)
+            or not isinstance(initialized.get("result"), dict)
+        ):
+            return []
 
-        raw_tools = data.get("result", {}).get("tools", [])
-        for raw in raw_tools:
-            name = raw.get("name", "")
-            description = raw.get("description", "")
-            schema = raw.get("inputSchema", {})
+        session_headers = dict(accept_headers)
+        session_id = initialize_response_headers.get("mcp-session-id")
+        if session_id:
+            session_headers["Mcp-Session-Id"] = session_id
+        protocol_version = initialized["result"].get("protocolVersion")
+        if isinstance(protocol_version, str):
+            session_headers["MCP-Protocol-Version"] = protocol_version
 
-            params = _parse_json_schema_params(schema)
-            risk = classify_tool_risk(name, description)
+        async with client.stream(
+            "POST",
+            endpoint,
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            headers=session_headers,
+        ) as response:
+            if response.status_code not in (200, 202, 204):
+                return []
 
-            tools.append(DiscoveredTool(
-                name=name,
-                description=description,
-                parameters=params,
-                risk=risk,
-                discovery_method=DiscoveryMethod.MCP,
-                raw_schema=raw,
-            ))
-
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
+        status_code, data = await _read_json_limited(
+            client,
+            "POST",
+            endpoint,
+            json_body={"jsonrpc": "2.0", "method": "tools/list", "id": 3},
+            headers=session_headers,
+        )
+        return _parse_mcp_tools(data) if status_code == 200 else []
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError) as exc:
         logger.debug("MCP discovery failed: %s", exc)
-
-    return tools
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -285,23 +397,26 @@ async def _try_openai_functions_discovery(
     for path in tool_endpoints:
         url = f"{base_url}{path}"
         try:
-            resp = await client.get(url)
-            if resp.status_code != 200:
+            status_code, data = await _read_json_limited(client, "GET", url)
+            if status_code != 200 or not isinstance(data, (dict, list)):
                 continue
-
-            data = resp.json()
 
             # Handle agent.json well-known format
             if path == "/.well-known/agent.json":
+                if not isinstance(data, dict):
+                    continue
                 raw_tools = data.get("tools", [])
             else:
-                raw_tools = data if isinstance(data, list) else data.get("tools",
-                    data.get("functions", []))
+                raw_tools = data if isinstance(data, list) else data.get(
+                    "tools", data.get("functions", []),
+                )
 
             if not isinstance(raw_tools, list):
                 continue
 
-            for raw in raw_tools:
+            for raw in raw_tools[:MAX_DISCOVERED_TOOLS]:
+                if not isinstance(raw, dict):
+                    continue
                 tool = _parse_openai_function(raw)
                 if tool:
                     tools.append(tool)
@@ -309,7 +424,7 @@ async def _try_openai_functions_discovery(
             if tools:
                 break
 
-        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
             logger.debug("OpenAI functions discovery at %s failed: %s", path, exc)
             continue
 
@@ -362,18 +477,26 @@ async def _try_openapi_discovery(
     for path in spec_paths:
         url = f"{base_url}{path}"
         try:
-            resp = await client.get(url)
-            if resp.status_code != 200:
+            status_code, spec = await _read_json_limited(client, "GET", url)
+            if status_code != 200 or not isinstance(spec, dict):
                 continue
-
-            spec = resp.json()
             if spec.get("openapi") is None and spec.get("swagger") is None:
                 continue
 
             paths = spec.get("paths", {})
+            if not isinstance(paths, dict):
+                continue
             for route, methods in paths.items():
+                if len(tools) >= MAX_DISCOVERED_TOOLS:
+                    break
+                if not isinstance(methods, dict):
+                    continue
                 for method, details in methods.items():
+                    if len(tools) >= MAX_DISCOVERED_TOOLS:
+                        break
                     if method.upper() not in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+                        continue
+                    if not isinstance(details, dict):
                         continue
 
                     name = details.get("operationId") or f"{method}_{route}"
@@ -416,7 +539,7 @@ async def _try_openapi_discovery(
             if tools:
                 break
 
-        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
             logger.debug("OpenAPI discovery at %s failed: %s", path, exc)
             continue
 

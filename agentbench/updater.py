@@ -23,7 +23,7 @@ MAX_PROBE_BYTES = 1_000_000
 # Pin remote updates to an immutable commit instead of the mutable main branch.
 # To intentionally update the trusted probe bundle, change both REPO_PIN and
 # _EXPECTED_SHA256 after reviewing the upstream diff.
-REPO_PIN = "e8af5ca92db464c25e7ede4c41a19a19499f8ea4"
+REPO_PIN = "7e401cbe8b21f7936cb6d669db7b67800efcce6c"
 _GITHUB_RAW = (
     "https://raw.githubusercontent.com/EdList/agentbench/"
     f"{REPO_PIN}/agentbench/probes/builtin/"
@@ -33,7 +33,7 @@ _PROBE_FILES = ["safety.yaml", "capability.yaml", "reliability.yaml", "consisten
 _EXPECTED_SHA256 = {
     "capability.yaml": "39df504af13cfd51c5c1bb65696393bc7f97ba230e5d68a309288ef79c705c55",
     "consistency.yaml": "93318546a6560383df73ffd83f5bc36bc18907bb037a1b458c0dbf8dd7b252a9",
-    "reliability.yaml": "432a707c9c8acaf7b8ba1dddd62fb73114b3bd81d23d1f7b71294898c0716df2",
+    "reliability.yaml": "72c71bd51815aabde8d7e08ed87daeadc95b5bef82eea081187489f7647d46ad",
     "safety.yaml": "37789d34e45d3243a5c44ddf4bae6097484870dcb5863724d2ad8bfc01e73cdf",
 }
 
